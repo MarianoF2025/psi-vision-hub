@@ -11,27 +11,35 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 export interface Conversation {
   id: string
   chatwoot_conversation_id: number
-  chatwoot_contact_id: number
-  nombre: string
-  telefono: string
-  email?: string
+  persona_id: string
   canal: string
   area: string
-  subetiqueta?: string
   estado: string
-  inbox_id: number
-  inbox_name: string
+  created_at: string
+  updated_at: string
+  persona?: {
+    id: string
+    telefono: string
+    nombre: string | null
+    email: string | null
+  }
+  // Campos legacy para compatibilidad
+  chatwoot_contact_id?: number
+  nombre?: string
+  telefono?: string
+  email?: string
+  subetiqueta?: string
+  inbox_id?: number
+  inbox_name?: string
   inbox?: string
   assignee_id?: number
   assignee_name?: string
   asignado_a?: string
-  total_mensajes: number
-  ultimo_mensaje: string
-  ts_ultimo_mensaje: string
+  total_mensajes?: number
+  ultimo_mensaje?: string
+  ts_ultimo_mensaje?: string
   mensajes_no_leidos?: number
-  ultima_actividad: string
-  created_at: string
-  updated_at: string
+  ultima_actividad?: string
 }
 
 export interface MessageAttachment {

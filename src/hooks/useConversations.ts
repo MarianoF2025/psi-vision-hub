@@ -36,17 +36,22 @@ export function useConversations(
       // Evitar múltiples fetches simultáneos
       const now = Date.now()
       if (isRealtimeUpdate && now - lastFetchTimeRef.current < 2000) {
-        console.log('Evitando fetch duplicado de conversaciones')
+        // Evitando fetch duplicado de conversaciones
         return
       }
       
-      console.log('Fetching conversations with filters:', { inboxId, assigneeId }, isRealtimeUpdate ? '(realtime)' : '')
-      
       // Llamada real a Supabase - usando la tabla conversaciones directamente
-      console.log('Consultando tabla conversaciones')
       let query = supabase
         .from('conversacion')
-        .select('*')
+        .select(`
+          *,
+          persona:persona_id (
+            id,
+            telefono,
+            nombre,
+            email
+          )
+        `)
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -111,12 +116,8 @@ export function useConversations(
     fetchConversations(true)
   })
 
-  // Fallback: polling si el realtime no está conectado
-  useEffect(() => {
-    if (isConnected) return
-    console.warn('Realtime no disponible. Activando polling de conversaciones cada 6s...')
-    const id = setInterval(() => fetchConversations(true), 6000)
-    return () => clearInterval(id)
+  
+    // return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected])
 

@@ -66,10 +66,10 @@ export default function ContactInfo({ contact, onUpdateContact }: ContactInfoPro
     <div className="h-full flex flex-col bg-white overflow-y-auto">
       {/* Header - EXACTO de Chatwoot */}
       <div className="p-6 text-center border-b border-gray-200">
-        <div className={`w-20 h-20 rounded-full ${getAvatarColor(contact.nombre || 'Usuario')} mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold`}>
-          {getInitials(contact.nombre || 'Usuario')}
+        <div className={`w-20 h-20 rounded-full ${getAvatarColor(contact.persona?.nombre || contact.nombre || 'Usuario')} mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold`}>
+          {getInitials(contact.persona?.nombre || contact.nombre || 'Usuario')}
         </div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-1">{contact.nombre || contact.telefono || 'Sin nombre'}</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">{contact.persona?.nombre || contact.nombre || contact.persona?.telefono || contact.telefono || 'Sin nombre'}</h2>
         <button 
           onClick={() => setIsEditing(!isEditing)}
           className="text-blue-500 text-sm hover:text-blue-600 transition-colors"
@@ -85,7 +85,7 @@ export default function ContactInfo({ contact, onUpdateContact }: ContactInfoPro
           <label className="text-xs text-gray-500 uppercase tracking-wide font-medium block mb-2">
             Teléfono
           </label>
-          <p className="text-sm text-gray-900">{contact.telefono}</p>
+          <p className="text-sm text-gray-900">{contact.persona?.telefono || contact.telefono}</p>
         </div>
 
         {/* Fecha de creación */}
@@ -207,7 +207,7 @@ export default function ContactInfo({ contact, onUpdateContact }: ContactInfoPro
             </button>
             <button 
               className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-              onClick={() => window.open(`https://wa.me/${contact.telefono.replace('+', '')}`, '_blank')}
+              onClick={() => window.open(`https://wa.me/${(contact.persona?.telefono || contact.telefono || '').replace('+', '')}`, '_blank')}
             >
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -218,7 +218,7 @@ export default function ContactInfo({ contact, onUpdateContact }: ContactInfoPro
             </button>
             <button 
               className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md transition-colors"
-              onClick={() => navigator.clipboard.writeText(contact.telefono)}
+              onClick={() => navigator.clipboard.writeText(contact.persona?.telefono || contact.telefono || '')}
             >
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -140,9 +140,10 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
     if (!chatwootConversationId) return
     if (isConnected) return
 
-    console.warn('Realtime no disponible. Activando polling de mensajes cada 2s...')
-    const id = setInterval(() => fetchMessages(true), 2000)
-    return () => clearInterval(id)
+    // POLLING DESACTIVADO - causaba loop infinito en consola
+    // console.warn('Realtime no disponible. Activando polling de mensajes cada 2s...')
+    // const id = setInterval(() => fetchMessages(true), 2000)
+    // return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, chatwootConversationId])
 

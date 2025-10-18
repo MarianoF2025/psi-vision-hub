@@ -77,16 +77,16 @@ export default function MessagesPanel({
           <div className="h-16 border-b border-gray-200 px-6 flex items-center justify-between">
             {/* Info contacto */}
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full ${getAvatarColor(conversation.nombre || 'Usuario')} flex items-center justify-center text-white font-semibold text-sm`}>
-                {getInitials(conversation.nombre || 'Usuario')}
+              <div className={`w-10 h-10 rounded-full ${getAvatarColor(conversation.persona?.nombre || conversation.nombre || 'Usuario')} flex items-center justify-center text-white font-semibold text-sm`}>
+                {getInitials(conversation.persona?.nombre || conversation.nombre || 'Usuario')}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-semibold text-gray-900">{conversation.nombre || conversation.telefono || 'Sin nombre'}</h2>
+                  <h2 className="font-semibold text-gray-900">{conversation.persona?.nombre || conversation.nombre || conversation.persona?.telefono || conversation.telefono || 'Sin nombre'}</h2>
                   <span className="w-2 h-2 rounded-full bg-green-500"></span>
                   <span className="text-xs text-gray-500">Activa</span>
                 </div>
-                <p className="text-xs text-gray-500">{conversation.telefono}</p>
+                <p className="text-xs text-gray-500">{conversation.persona?.telefono || conversation.telefono}</p>
               </div>
             </div>
             
