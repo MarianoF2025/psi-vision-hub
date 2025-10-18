@@ -1,3 +1,9 @@
+// ⚠️ CRÍTICO: Este hook usa 2 queries para cargar mensajes
+// 1. Busca UUID en tabla 'conversacion' usando chatwoot_conversation_id
+// 2. Busca mensajes en tabla 'interaccion' usando ese UUID
+// NO MODIFICAR sin consultar SUPABASE_SCHEMA.md
+
+'use client'
 // src/hooks/useMessages.ts
 'use client'
 
@@ -45,7 +51,6 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
       }
       setError(null)
       
-      console.log('🔍 PASO 1: Buscando conversación con chatwoot_conversation_id:', chatwootConversationId, 'Type:', typeof chatwootConversationId)
       
       // Paso 1: Obtener el UUID de la conversación
       const { data: conversacionData, error: conversacionError } = await supabase
@@ -54,7 +59,6 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
         .eq('chatwoot_conversation_id', chatwootConversationId)
         .single()
 
-      console.log('🔍 RESULTADO PASO 1:', { conversacionData, conversacionError, hasData: !!conversacionData })
 
       if (conversacionError) {
         console.error('❌ Error buscando conversación:', conversacionError)
@@ -73,8 +77,6 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
         return
       }
 
-      console.log('✅ UUID de conversación encontrado:', conversacionData.id)
-      console.log('🔍 PASO 2: Buscando mensajes con UUID:', conversacionData.id)
       setConversationUuid(conversacionData.id)
       
       // Paso 2: Buscar mensajes con el UUID
@@ -84,22 +86,12 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
         .eq('conversacion_id', conversacionData.id)
         .order('created_at', { ascending: true })
 
-      console.log('🔍 RESULTADO PASO 2:', { dataLength: data?.length || 0, error: error, hasData: !!data, data: data })
       
       if (error) {
         console.error('❌ Error en mensajes:', error.message)
       }
       
-      if (data && data.length > 0) {
-        console.log('✅ Mensajes cargados:', data.length)
-      } else {
-        console.log('📝 No hay mensajes en esta conversación')
-      }
       
-      // DEBUG TEMPORALMENTE DESACTIVADO
-      // console.log('=== DEBUG MENSAJES ===')
-      // console.log('Consultando vista vw_mensajes_conversacion con ID:', chatwootConversationId)
-      // console.log('Datos recibidos de vw_mensajes_conversacion:', data)
       // if (data && data.length > 0) {
       //   const ultimoMensaje = data[data.length - 1] // El último mensaje
       //   console.log('Último mensaje real:', {
@@ -122,7 +114,6 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
         throw error
       }
 
-      // console.log('Messages loaded successfully:', data?.length || 0, 'messages')
       setMessages(data || [])
       lastFetchTimeRef.current = now
     } catch (err) {
@@ -141,7 +132,6 @@ export function useMessages(chatwootConversationId?: number): UseMessagesReturn 
 
   // Suscripción a cambios en tiempo real
   const { isConnected } = useRealtimeMessages(conversationUuid, () => {
-        // console.log('🔄 Actualizando mensajes por realtime...')
     fetchMessages(true)
   })
 

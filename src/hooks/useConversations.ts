@@ -1,3 +1,4 @@
+
 // src/hooks/useConversations.ts
 'use client'
 
@@ -88,10 +89,6 @@ export function useConversations(
         throw error
       }
 
-      // console.log('📋 Conversations loaded successfully:', data?.length || 0, 'conversations')
-      if (data && data.length > 0) {
-        console.log('✅ Conversaciones cargadas:', data.length)
-      }
       setConversations(data || [])
       lastFetchTimeRef.current = now
     } catch (err) {
@@ -111,7 +108,6 @@ export function useConversations(
 
   // Suscripción a cambios en tiempo real
   const { isConnected } = useRealtimeConversations(() => {
-        // console.log('🔄 Actualizando conversaciones por realtime...')
     fetchConversations(true)
   })
 
