@@ -1,16 +1,35 @@
 @import "tailwindcss";
 
 :root {
+  /* Paleta de colores EXACTA de Chatwoot */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111827;
+  
+  /* Primarios Chatwoot */
+  --chatwoot-primary: #1f93ff;
+  --chatwoot-primary-hover: #0d7ce8;
+  
+  /* Grises Chatwoot */
+  --chatwoot-gray-50: #f9fafb;
+  --chatwoot-gray-100: #f3f4f6;
+  --chatwoot-gray-200: #e5e7eb;
+  --chatwoot-gray-500: #6b7280;
+  --chatwoot-gray-600: #4b5563;
+  --chatwoot-gray-900: #111827;
+  
+  /* Mensajes */
+  --chatwoot-message-outbound: #1f93ff;
+  --chatwoot-message-inbound: #f3f4f6;
+  
+  /* Bordes */
+  --chatwoot-border: #e5e7eb;
+  
+  /* Estados */
+  --chatwoot-success: #10b981;
+  --chatwoot-warning: #f59e0b;
+  --chatwoot-error: #ef4444;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -20,7 +39,144 @@
 }
 
 body {
-  background: var(--background);
+  background: var(--chatwoot-gray-50);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Escalado global para el CRM - hacer que se vea como al 80% de zoom */
+.crm-container {
+  transform: scale(0.8);
+  transform-origin: top left;
+  width: 125%; /* Compensar el escalado */
+  height: 125%;
+}
+
+/* Utilidades básicas de componentes */
+.container-psi {
+  /* 1920px + padding */
+  max-width: 1920px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Animaciones suaves para el CRM */
+.crm-transition {
+  transition: all 150ms ease-in-out;
+}
+
+.crm-hover {
+  transition: all 200ms ease-in-out;
+}
+
+.crm-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.crm-button {
+  transition: all 150ms ease-in-out;
+}
+
+.crm-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.crm-button:active {
+  transform: translateY(0);
+}
+
+/* Animación de aparición para mensajes */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: fadeInUp 200ms ease-out;
+}
+
+/* Animaciones para conversaciones */
+@keyframes slideToTop {
+  0% { 
+    transform: translateY(20px);
+    opacity: 0.8;
+  }
+  100% { 
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes highlightNew {
+  0% { 
+    background-color: rgba(59, 130, 246, 0.1);
+    transform: scale(1.02);
+  }
+  100% { 
+    background-color: transparent;
+    transform: scale(1);
+  }
+}
+
+.animate-slide-to-top {
+  animation: slideToTop 0.5s ease-out;
+}
+
+.animate-highlight-new {
+  animation: highlightNew 1s ease-out;
+}
+
+/* Animación de pulso para indicadores */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.pulse-animation {
+  animation: pulse 2s infinite;
+}
+
+@keyframes toast-in {
+  0% { transform: translateY(6px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* Animación de fade-in para indicador de escritura */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 300ms ease-out;
+}
+
+/* Animación de bounce para puntos de escritura */
+@keyframes typing-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
 }

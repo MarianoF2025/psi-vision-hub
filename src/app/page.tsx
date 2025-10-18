@@ -1,103 +1,127 @@
-import Image from "next/image";
+"use client";
+import Container from "@/components/layout/Container";
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import { Check as CheckIcon, Monitor, MessageSquare, Database, Brain, Layers } from "lucide-react";
+import { useAuth } from "@/components/providers/AuthProvider";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const { user } = useAuth();
+  const router = useRouter();
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+  function handleAccess(target: string) {
+    if (user) {
+      router.push(target);
+    } else {
+      router.push(`/login?next=${encodeURIComponent(target)}`);
+    }
+  }
+
+  return (
+    <div className="min-h-dvh bg-psi-body text-[#1f2937]">
+      {/* Hero */}
+      <main>
+        <Container>
+        <section className="py-10 sm:py-14">
+          <h1 className="text-center text-[24px] sm:text-[28px] md:text-[32px] font-semibold text-[#111827]">PSI Plataforma Integral</h1>
+          <p className="mt-2 text-center text-[13px] sm:text-[14px] text-[#6b7280] max-w-[680px] mx-auto">
+            Centraliza todas tus procesos empresariales. Desde marketing y ventas hasta gestión de clientes y
+            administración educativa.
+          </p>
+        </section>
+
+        {/* Main two cards */}
+        <section className="grid gap-5 md:grid-cols-2">
+          {/* PSI Vision Hub */}
+          <Card className="p-5 flex flex-col">
+            <div className="flex items-center gap-3">
+              <div className="size-9 rounded-full bg-psi-red/10 flex items-center justify-center text-psi-red"><Monitor size={18} /></div>
+              <div>
+                <h3 className="text-[14px] font-semibold text-[#111827]">PSI Vision Hub</h3>
+                <p className="text-[11px] text-[#6b7280] -mt-0.5">Marketing, Ventas & Analítica</p>
+              </div>
+            </div>
+            <p className="mt-3 text-[12px] leading-5 text-[#4b5563]">
+              Vision Hub integra todas tus labores de marketing, ventas y alumnos en un solo
+              espacio. Te muestra métricas en tiempo real y te avisa cuando algo necesita
+              atención.
+            </p>
+            <ul className="mt-3 space-y-2 text-[12px] text-[#374151]">
+              <li className="flex gap-2"><Check className="text-psi-red"/>Marketing: CPL, ROI y rendimiento por canal</li>
+              <li className="flex gap-2"><Check className="text-psi-red"/>Venta: conversión, ranking y vendedores</li>
+              <li className="flex gap-2"><Check className="text-psi-red"/>Alumnos: retención, progreso y satisfacción</li>
+              <li className="flex gap-2"><Check className="text-psi-red"/>KPIs: alertas y recomendaciones automáticas</li>
+            </ul>
+            <div className="mt-3 rounded-md bg-psi-red/10 px-3 py-2 text-[12px] text-psi-red">
+              Datos claros para decidir mejor, todos los días.
+            </div>
+            <div className="mt-auto pt-2">
+              <Button variant="danger" onClick={() => handleAccess('/dashboard')}>Acceder</Button>
+            </div>
+          </Card>
+
+          {/* PSI CRM-COM */}
+          <Card className="p-5 flex flex-col">
+            <div className="flex items-center gap-3">
+              <div className="size-9 rounded-full bg-psi-blue/10 flex items-center justify-center text-psi-blue"><MessageSquare size={18} /></div>
+              <div>
+                <h3 className="text-[14px] font-semibold text-[#111827]">PSI CRM-COM</h3>
+                <p className="text-[11px] text-[#6b7280] -mt-0.5">Tu espacio de trabajo en WhatsApp</p>
+              </div>
+            </div>
+            <p className="mt-3 text-[12px] leading-5 text-[#4b5563]">
+              CRM-COM te ayuda a tratar todo en un solo lugar: contactos, mensajes y
+              segmentación. Podrás ver cada conversación, marcar su estado y dejar que el
+              sistema de recordatorio se encargue.
+            </p>
+            <ul className="mt-3 space-y-2 text-[12px] text-[#374151]">
+              <li className="flex gap-2"><Check className="text-psi-blue"/>Bandeja ordenada por tipo de contacto</li>
+              <li className="flex gap-2"><Check className="text-psi-blue"/>Seguimiento automático y recordatorios</li>
+              <li className="flex gap-2"><Check className="text-psi-blue"/>Historial completo y buscabilidad en Supabase</li>
+              <li className="flex gap-2"><Check className="text-psi-blue"/>Integración directa con Vision Hub</li>
+            </ul>
+            <div className="mt-3 rounded-md bg-[#f3f6ff] px-3 py-2 text-[12px] text-[#4b5563]">
+              <div className="flex items-center gap-2">
+                <span className="size-4 rounded-full border border-[#d4dcff] inline-flex items-center justify-center">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" className="text-psi-blue"><circle cx="12" cy="12" r="9" strokeWidth="2"/></svg>
+                </span>
+                <span>Simple, organizado y hecho para trabajar tranquilo.</span>
+              </div>
+            </div>
+            <div className="mt-auto pt-2">
+              <Button onClick={() => handleAccess('/crm')}>Acceder</Button>
+            </div>
+          </Card>
+        </section>
+
+        {/* Bottom features */}
+        <section className="mt-6 grid gap-4 sm:grid-cols-3">
+          <Feature iconBg="bg-[#e8fff2]" iconColor="text-[#22c55e]" title="Datos Unificados" desc="Toda tu información empresarial en un solo lugar."><Database size={16}/></Feature>
+          <Feature iconBg="bg-[#f3e8ff]" iconColor="text-[#a855f7]" title="Inteligencia Artificial" desc="Alertas automáticas y recomendaciones inteligentes."><Brain size={16}/></Feature>
+          <Feature iconBg="bg-[#fff3e6]" iconColor="text-[#f59e0b]" title="Escalabilidad" desc="Módulos que crecen con tu organización."><Layers size={16}/></Feature>
+        </section>
+        <div className="h-10"/>
+        </Container>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
+  );
+}
+
+function Check({ className }: { className?: string }) {
+  return (
+    <span className={`mt-0.5 inline-flex size-4 items-center justify-center ${className}`}>
+      <CheckIcon size={14} />
+    </span>
+  );
+}
+
+function Feature({ iconBg, iconColor, title, desc, children }: { iconBg: string; iconColor: string; title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <Card className="p-4">
+      <div className={`mb-2 inline-flex size-8 items-center justify-center rounded-full ${iconBg} ${iconColor}`}>{children}</div>
+      <div className="text-[12px] font-semibold text-[#111827]">{title}</div>
+      <div className="mt-1 text-[11px] text-[#6b7280]">{desc}</div>
+    </Card>
   );
 }
