@@ -6,25 +6,42 @@ import { parseAttributionFromReferral, parseUtmParams } from '@/lib/router/meta'
 // Endpoint para recibir webhooks de WhatsApp (Cloud API o n8n)
 export async function POST(request: NextRequest) {
   try {
+    // Log headers para debugging
+    const contentType = request.headers.get('content-type');
+    const contentLength = request.headers.get('content-length');
+    console.log(`Webhook recibido - Content-Type: ${contentType}, Content-Length: ${contentLength}`);
+    
     // Leer el body como texto primero para debugging
-    const bodyText = await request.text();
+    let bodyText: string;
+    try {
+      bodyText = await request.text();
+    } catch (readError: any) {
+      console.error('Error leyendo body:', readError);
+      return NextResponse.json(
+        { error: 'Error al leer el body del request', details: readError.message },
+        { status: 400 }
+      );
+    }
     
     if (!bodyText || bodyText.trim().length === 0) {
       console.error('Webhook recibido con body vacío');
+      console.error('Headers recibidos:', Object.fromEntries(request.headers.entries()));
       return NextResponse.json(
-        { error: 'Body vacío' },
+        { error: 'Body vacío', contentType, contentLength },
         { status: 400 }
       );
     }
 
+    console.log(`Body recibido (${bodyText.length} caracteres):`, bodyText.substring(0, 200));
+
     let body: any;
     try {
       body = JSON.parse(bodyText);
-    } catch (parseError) {
+    } catch (parseError: any) {
       console.error('Error parseando JSON:', parseError);
-      console.error('Body recibido:', bodyText.substring(0, 500));
+      console.error('Body recibido (primeros 500 chars):', bodyText.substring(0, 500));
       return NextResponse.json(
-        { error: 'JSON inválido' },
+        { error: 'JSON inválido', details: parseError.message, bodyPreview: bodyText.substring(0, 100) },
         { status: 400 }
       );
     }
