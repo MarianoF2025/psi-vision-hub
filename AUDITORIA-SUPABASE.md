@@ -1,168 +1,126 @@
-# 🔍 Auditoría de Tablas Supabase - Análisis y Ajustes
+# 🔍 Auditoría de Tablas Supabase - Estado Actual
 
-## 📊 Tablas Analizadas
+## ✅ Estado: Código Ajustado
 
-### 1. Tabla `conversaciones` (Real vs Código)
+El código en `lib/router/processor.ts` **YA ESTÁ CORREGIDO** para usar la estructura real de Supabase.
 
-#### ✅ Campos que el código usa y EXISTEN:
-- `id` (uuid) ✅
-- `telefono` (text) ✅
-- `area` (text) ✅
-- `estado` (text) ✅
-- `ts_ultimo_mensaje` (timestamp) ✅
-- `created_at` (timestamp) ✅
-- `updated_at` (timestamp) ✅
-- `contacto_id` (uuid) ✅ - El código usa pero como `contacto_id`
-- `agente_id` (uuid) ✅ - Existe pero no se usa en router
+## 📊 Tablas Usadas
 
-#### ⚠️ Campos que el código intenta usar pero NO EXISTEN en la tabla real:
-- `nombre` (text) - El código no lo usa directamente, pero existe en la tabla
-- `menu_actual` (text) - **NO EXISTE** - El código intenta actualizarlo
-- `submenu_actual` (text) - **NO EXISTE** - El código intenta actualizarlo
-- `ticket_activo` (uuid) - **NO EXISTE** - El código intenta actualizarlo
-- `ticket_numero` (text) - **NO EXISTE** - El código intenta actualizarlo
-- `ultima_interaccion` (timestamp) - **NO EXISTE** - El código intenta actualizarlo
+### 1. Tabla `tickets` (Sistema de Tickets)
+**Estructura Real:**
+- `ticket_id` (TEXT, NOT NULL) - Número único PSI-YYYY-XXXXXX
+- `conversacion_id` (UUID)
+- `telefono` (TEXT, NOT NULL)
+- `area` (TEXT, NOT NULL)
+- `origen` (TEXT) - default 'n8n', usamos 'Router Automático'
+- `estado` (TEXT) - default 'abierto'
+- `prioridad` (TEXT) - default 'normal'
+- `metadata` (JSONB) - Auditoría completa
+- `ts_abierto`, `ts_en_progreso`, `ts_resuelto`, `ts_cerrado` (timestamps)
 
-#### 📝 Campos que EXISTEN en la tabla real pero el código NO usa:
-- `assignee_id` (integer)
-- `ventana_72h_activa`, `ventana_72h_inicio`, `ventana_72h_fin`
-- `ventana_24h_activa`, `ventana_24h_inicio`, `ventana_24h_fin`
-- `primera_respuesta_enviada` (boolean)
-- `ts_ultima_derivacion` (timestamp)
-- `ultimo_menu_enviado` (timestamp)
-- `inbox_id` (integer)
-- `ultimo_mensaje_at` (timestamp)
-- `inicio`, `fin` (timestamps)
-- `derived_inbox_id` (bigint)
-- `last_message_at` (timestamp)
-- `metadata` (jsonb)
-- `inbox_destino`, `api_destino` (text)
-- `caja` (text)
-- `titulo` (text)
-- `prioridad` (text) - Existe pero no se usa en router
-- `canal` (text)
-- `ultimo_mensaje` (text)
-- `inbox_name` (text)
-- `subetiqueta` (text)
-- `assignee_name` (text)
-- `inbox_whatsapp_number` (text)
-- `modo` (text)
-- `etiqueta`, `etiqueta_color` (text)
-- `etiquetas_adicionales` (array)
-- `tipo_contacto` (text)
-- `origen`, `origen_detalle` (text)
-- `router_estado` (text)
-- `ultima_derivacion` (text)
-- `resultado` (text)
-- `nombre` (text)
-- `curso` (text)
+**Uso en Código:**
+- ✅ Crea tickets en esta tabla
+- ✅ Genera `ticket_id` único
+- ✅ Guarda auditoría completa en `metadata`
 
-### 2. Tabla `mensajes` (Real vs Código)
+### 2. Tabla `derivaciones` (Tracking)
+**Estructura Real:**
+- `ticket_id` (TEXT, NULLABLE) - Referencia al ticket
+- `conversacion_id` (UUID)
+- `telefono` (TEXT, NOT NULL)
+- `area` (TEXT, NOT NULL)
+- `inbox_destino`, `api_destino` (TEXT)
+- `subetiqueta` (TEXT)
+- `status` (TEXT) - default 'enviada'
+- `payload` (JSONB)
+- `ts_derivacion`, `ts_ack` (timestamps)
 
-#### ✅ Campos que el código usa y EXISTEN:
-- `id` (uuid) ✅
-- `conversacion_id` (uuid) ✅
-- `mensaje` (text) ✅
-- `remitente_tipo` (text) ✅
-- `remitente_nombre` (text) ✅
-- `remitente` (text) ✅ - Existe (compatibilidad)
-- `timestamp` (timestamp) ✅
-- `metadata` (jsonb) ✅
-- `tipo` (text) ✅
+**Uso en Código:**
+- ✅ Crea registro para tracking
+- ✅ Referencia `ticket_id` del ticket creado
+- ✅ Guarda información básica en `payload`
 
-#### 📝 Campos que EXISTEN pero el código NO usa:
-- `remitente_id` (uuid)
-- `whatsapp_message_id` (text)
-- `telefono` (text)
-- `direccion` (text)
-- `media_url`, `media_type` (text)
-- `attachments` (text)
-- `leido` (boolean)
-- `enviado` (boolean)
-- `duracion` (integer)
-- `created_at` (timestamp)
+### 3. Tabla `conversaciones`
+**Campos Usados:**
+- ✅ `area` - Actualizado al área destino
+- ✅ `estado` - Mantiene 'activa'
+- ✅ `router_estado` - 'derivada' o 'principal'
+- ✅ `subetiqueta` - Subárea seleccionada
+- ✅ `submenu_actual` - Subárea seleccionada (existe)
+- ✅ `ts_ultima_derivacion` - Timestamp
+- ✅ `ultima_derivacion` - Número de ticket (TEXT)
+- ✅ `metadata` - Información adicional (JSONB)
+- ✅ `ts_ultimo_mensaje`, `last_message_at`, `ultimo_mensaje_at` - Timestamps
 
-### 3. Tabla `derivaciones` (Real vs Código)
+### 4. Tabla `mensajes`
+**Campos Usados:**
+- ✅ `conversacion_id` (UUID)
+- ✅ `mensaje` (TEXT)
+- ✅ `remitente_tipo` (TEXT) - 'system', 'user', 'agent'
+- ✅ `remitente_nombre` (TEXT)
+- ✅ `remitente` (TEXT) - Mantenido para compatibilidad
+- ✅ `timestamp` (TIMESTAMPTZ)
+- ✅ `metadata` (JSONB)
 
-#### ⚠️ PROBLEMA CRÍTICO: La tabla real tiene estructura diferente
+### 5. Tabla `audit_log`
+**Estructura Real:**
+- `conversacion_id` (UUID)
+- `telefono` (TEXT)
+- `actor` (TEXT) - 'Sistema Router'
+- `accion` (TEXT) - 'ticket_creado'
+- `datos` (JSONB) - Información del ticket
 
-**Tabla Real:**
-- `id` (uuid)
-- `conversacion_id` (uuid) ✅
-- `ticket_id` (text) - **NO es UUID, es TEXT**
-- `telefono` (text) ✅
-- `area` (text) ✅
-- `inbox_destino` (text)
-- `api_destino` (text)
-- `subetiqueta` (text)
-- `status` (text)
-- `payload` (jsonb)
-- `response` (jsonb)
-- `error_text` (text)
-- `ts_derivacion` (timestamp)
-- `ts_ack` (timestamp)
-- `requiere_proxy` (boolean)
-- `created_at`, `updated_at` (timestamps)
+**Uso en Código:**
+- ✅ Registra eventos de creación de tickets
 
-**Tabla que el código intenta crear:**
-- `ticket_numero` (text) - **NO EXISTE en tabla real**
-- `nombre_contacto` (text) - **NO EXISTE**
-- `area_origen`, `area_destino` (text) - **NO EXISTE** (solo `area`)
-- `motivo` (text) - **NO EXISTE**
-- `contexto_completo` (jsonb) - **NO EXISTE** (pero existe `payload`)
-- `estado` (text) - **NO EXISTE** (existe `status`)
-- `prioridad` (text) - **NO EXISTE**
-- `asignado_a` (text) - **NO EXISTE**
-- `fecha_asignacion`, `fecha_primera_respuesta`, `fecha_resolucion` - **NO EXISTEN**
-- `tiempo_respuesta_minutos` (integer) - **NO EXISTE**
-- `satisfaccion_cliente` (integer) - **NO EXISTE**
-- `notas_internas` (text) - **NO EXISTE**
-- `derivado_por` (text) - **NO EXISTE**
+## ✅ Mapeo de Campos
 
-## 🔧 Ajustes Necesarios
-
-### 1. Ajustar código para usar tabla `derivaciones` existente
-
-La tabla `derivaciones` ya existe pero con estructura diferente. Opciones:
-
-**Opción A:** Usar la tabla existente y adaptar el código
-**Opción B:** Crear nueva tabla `tickets` separada
-**Opción C:** Modificar la tabla existente (agregar columnas)
-
-### 2. Ajustar campos de `conversaciones`
-
-El código intenta actualizar campos que no existen:
-- `menu_actual` → Usar `router_estado` o `metadata`
-- `submenu_actual` → Usar `subetiqueta` o `metadata`
-- `ticket_activo` → Usar `metadata` o campo existente
-- `ticket_numero` → Usar `metadata` o campo existente
-- `ultima_interaccion` → Usar `ts_ultimo_mensaje` o `last_message_at`
-
-### 3. Mapeo de campos sugerido
-
+### Creación de Ticket
 ```typescript
-// En lugar de:
-conversacion.menu_actual = 'principal'
-conversacion.submenu_actual = 'Alumnos'
-conversacion.ticket_activo = ticketId
-conversacion.ticket_numero = 'PSI-2025-000001'
-
-// Usar:
-conversacion.router_estado = 'principal' // o 'derivada'
-conversacion.subetiqueta = 'Alumnos'
-conversacion.metadata = {
-  ...conversacion.metadata,
-  ticket_activo: ticketId,
-  ticket_numero: 'PSI-2025-000001',
-  menu_actual: 'principal',
-  submenu_actual: 'Alumnos'
+// Tabla tickets
+{
+  ticket_id: "PSI-2025-000001",
+  conversacion_id: conversationId,
+  telefono: conversacion.telefono,
+  area: conversationArea,
+  origen: "Router Automático",
+  estado: "abierto",
+  prioridad: "normal" | "alta",
+  metadata: {
+    // Auditoría completa
+    nombre_contacto, area_origen, area_destino, motivo,
+    contexto_completo: { mensajes, menu_recorrido, opciones_seleccionadas },
+    derivado_por: "Router Automático"
+  },
+  ts_abierto: timestamp
 }
 ```
 
-## 📋 Recomendaciones
+### Actualización de Conversación
+```typescript
+// Tabla conversaciones
+{
+  area: conversationArea,
+  estado: "activa",
+  router_estado: "derivada",
+  subetiqueta: subarea,
+  submenu_actual: subarea,
+  ts_ultima_derivacion: timestamp,
+  ultima_derivacion: ticketNumero,
+  metadata: {
+    ...metadataActual,
+    ticket_activo: ticket.id,
+    ticket_numero: ticketNumero,
+    menu_actual: "derivada",
+    ultima_interaccion: timestamp
+  }
+}
+```
 
-1. **NO ejecutar** `001_create_tickets_system.sql` tal como está
-2. **Adaptar el código** para usar la estructura real de `derivaciones`
-3. **Usar `metadata` JSONB** en `conversaciones` para campos adicionales
-4. **Mapear campos** según la estructura real
+## 📋 Notas Importantes
 
+1. **NO se necesita ejecutar ningún SQL** - Las tablas ya existen
+2. **El código está ajustado** para usar la estructura real
+3. **Se usa `metadata` JSONB** para información adicional
+4. **Se crean tickets en tabla `tickets`** (no en `derivaciones`)
+5. **Se crean registros en `derivaciones`** solo para tracking

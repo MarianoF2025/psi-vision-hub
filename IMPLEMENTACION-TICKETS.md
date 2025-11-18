@@ -2,60 +2,77 @@
 
 ## ✅ Completado
 
-### 1. SQL Migration (`supabase/migrations/001_create_tickets_system.sql`)
-- ✅ Tabla `derivaciones` (tickets) con auditoría completa
-- ✅ Tabla `ticket_eventos` para trail de auditoría
-- ✅ Índices para performance
-- ✅ Triggers para `updated_at` automático
-- ✅ Vista `vista_rendimiento_areas` para métricas
-- ✅ Campos adicionales en `conversaciones` (ticket_activo, ticket_numero, menu_actual, etc.)
-
-### 2. Router Processor (`lib/router/processor.ts`)
+### 1. Router Processor (`lib/router/processor.ts`)
 - ✅ `saveMessage()` corregido para usar `remitente_tipo` y `remitente_nombre`
-- ✅ `generateTicketNumber()` - Genera números únicos PSI-YYYY-XXXXXX
-- ✅ `deriveConversation()` - Crea tickets con auditoría completa
+- ✅ `generateTicketNumber()` - Genera números únicos PSI-YYYY-XXXXXX desde tabla `tickets`
+- ✅ `deriveConversation()` - Crea tickets en tabla `tickets` con auditoría completa
 - ✅ `obtenerHistorialCompleto()` - Obtiene todo el historial de mensajes
 - ✅ `determinarPrioridad()` - Asigna prioridad basada en motivo e historial
 - ✅ `obtenerTiempoRespuesta()` - Tiempos estimados por área
 - ✅ `extraerOpcionesSeleccionadas()` - Extrae opciones del menú seleccionadas
 - ✅ `getMenuState()` y `hasSystemMessages()` actualizados para usar `remitente_tipo`
 - ✅ Mensaje de derivación incluye número de ticket y tiempo estimado
+- ✅ Crea registro en `derivaciones` para tracking
+- ✅ Registra eventos en `audit_log`
 
-### 3. Flujo Completo
+### 2. Flujo Completo
 ```
 Usuario envía mensaje → Router detecta primera interacción → Muestra menú principal
 Usuario selecciona opción (ej: "2") → Muestra submenú
-Usuario selecciona submenú (ej: "22") → Crea ticket → Deriva conversación → Envía mensaje con ticket
+Usuario selecciona submenú (ej: "22") → Crea ticket en tabla tickets → Crea derivación → Actualiza conversación → Envía mensaje con ticket
 ```
+
+### 3. Estructura de Datos Usada
+
+**Tabla `tickets` (existente):**
+- `ticket_id` (TEXT, NOT NULL) - Número único PSI-YYYY-XXXXXX
+- `conversacion_id` (UUID)
+- `telefono` (TEXT, NOT NULL)
+- `area` (TEXT, NOT NULL)
+- `origen` (TEXT) - 'Router Automático'
+- `estado` (TEXT) - 'abierto', 'en_progreso', 'resuelto', 'cerrado'
+- `prioridad` (TEXT) - 'normal', 'alta', 'urgente'
+- `metadata` (JSONB) - Contexto completo, historial, opciones seleccionadas
+- `ts_abierto`, `ts_en_progreso`, `ts_resuelto`, `ts_cerrado` (timestamps)
+
+**Tabla `derivaciones` (existente, para tracking):**
+- `ticket_id` (TEXT) - Referencia al ticket
+- `conversacion_id` (UUID)
+- `telefono` (TEXT, NOT NULL)
+- `area` (TEXT, NOT NULL)
+- `inbox_destino`, `api_destino` (TEXT)
+- `status` (TEXT) - 'enviada'
+- `payload` (JSONB) - Datos básicos de derivación
+- `ts_derivacion`, `ts_ack` (timestamps)
+
+**Tabla `conversaciones` (actualizada):**
+- `area` - Actualizado al área destino
+- `estado` - Mantiene 'activa'
+- `router_estado` - 'derivada'
+- `subetiqueta` - Subárea seleccionada
+- `submenu_actual` - Subárea seleccionada
+- `ts_ultima_derivacion` - Timestamp de derivación
+- `ultima_derivacion` - Número de ticket
+- `metadata` - Información adicional (ticket_activo, ticket_numero, etc.)
 
 ## 📋 Pendiente
 
-### 1. Ejecutar SQL en Supabase
-```sql
--- Ejecutar el archivo: supabase/migrations/001_create_tickets_system.sql
--- En Supabase Studio > SQL Editor
-```
-
-### 2. Componentes CRM (Frontend)
+### 1. Componentes CRM (Frontend)
 - [ ] `components/crm/TicketsSidebar.tsx` - Sidebar con lista de tickets
 - [ ] `components/crm/TicketDetails.tsx` - Vista detallada de ticket
 - [ ] Integrar en `components/crm/CRMInterface.tsx`
 - [ ] Tipos TypeScript para tickets (`lib/types/tickets.ts`)
 
-### 3. Testing
+### 2. Testing
 - [ ] Probar flujo completo en local
-- [ ] Verificar que se crean tickets correctamente
-- [ ] Verificar que se guarda contexto completo
-- [ ] Verificar que se registran eventos
+- [ ] Verificar que se crean tickets correctamente en tabla `tickets`
+- [ ] Verificar que se crean derivaciones en tabla `derivaciones`
+- [ ] Verificar que se guarda contexto completo en `metadata`
+- [ ] Verificar que se registran eventos en `audit_log`
 
 ## 🧪 Testing Local
 
-### 1. Ejecutar SQL en Supabase
-1. Abrir Supabase Studio
-2. Ir a SQL Editor
-3. Copiar y ejecutar `supabase/migrations/001_create_tickets_system.sql`
-
-### 2. Probar Webhook
+### 1. Probar Webhook
 ```powershell
 # Mensaje inicial
 $body = @{
@@ -77,48 +94,63 @@ $body = @{
 Invoke-RestMethod -Uri "http://localhost:3001/api/router/whatsapp/webhook" -Method POST -Body $body -ContentType "application/json"
 ```
 
-### 3. Verificar en Supabase
+### 2. Verificar en Supabase
 - Tabla `conversaciones` debe tener nueva conversación
-- Tabla `mensajes` debe tener mensajes con `remitente_tipo`
-- Tabla `derivaciones` debe tener ticket después de derivar
-- Tabla `ticket_eventos` debe tener evento de creación
+- Tabla `mensajes` debe tener mensajes con `remitente_tipo` y `remitente_nombre`
+- Tabla `tickets` debe tener ticket después de derivar (con `ticket_id` PSI-YYYY-XXXXXX)
+- Tabla `derivaciones` debe tener registro de derivación
+- Tabla `audit_log` debe tener evento de creación de ticket
 
 ## 📊 Estructura de Datos
 
-### Ticket (derivaciones)
+### Ticket (tabla tickets)
 ```typescript
 {
-  ticket_numero: "PSI-2025-000001",
+  ticket_id: "PSI-2025-000001",
   conversacion_id: "uuid",
   telefono: "5491133901743",
-  area_origen: "PSI Principal",
-  area_destino: "Alumnos",
-  motivo: "Alumnos - Clases y cronograma",
-  contexto_completo: {
-    mensajes: [...],
-    menu_recorrido: "Alumnos",
-    opciones_seleccionadas: ["2", "22"]
+  area: "Alumnos",
+  origen: "Router Automático",
+  estado: "abierto",
+  prioridad: "normal",
+  metadata: {
+    nombre_contacto: "5491133901743",
+    area_origen: "PSI Principal",
+    area_destino: "Alumnos",
+    motivo: "Alumnos - Clases y cronograma",
+    contexto_completo: {
+      mensajes: [...],
+      menu_recorrido: "Alumnos",
+      opciones_seleccionadas: ["2", "22"]
+    },
+    derivado_por: "Router Automático"
   },
-  estado: "Pendiente",
-  prioridad: "Normal"
+  ts_abierto: "2025-01-18T..."
 }
 ```
 
-### Evento de Ticket
+### Derivación (tabla derivaciones)
 ```typescript
 {
-  ticket_id: "uuid",
-  evento_tipo: "creado",
-  descripcion: "Ticket creado por derivación automática",
-  usuario: "Sistema Router",
-  metadata: {...}
+  ticket_id: "PSI-2025-000001",
+  conversacion_id: "uuid",
+  telefono: "5491133901743",
+  area: "Alumnos",
+  inbox_destino: "Alumnos",
+  api_destino: "webhook_url",
+  status: "enviada",
+  payload: {
+    ticket_id: "PSI-2025-000001",
+    motivo: "Alumnos - Clases y cronograma",
+    area_origen: "PSI Principal",
+    area_destino: "Alumnos"
+  },
+  ts_derivacion: "2025-01-18T..."
 }
 ```
 
 ## 🔄 Próximos Pasos
 
-1. **Ejecutar SQL en Supabase** (CRÍTICO)
-2. **Probar en local** - Verificar que funciona
-3. **Implementar componentes CRM** - Vista de tickets
-4. **Deploy a producción** - Cuando esté probado
-
+1. **Probar en local** - Verificar que funciona con estructura real
+2. **Implementar componentes CRM** - Vista de tickets
+3. **Deploy a producción** - Cuando esté probado
