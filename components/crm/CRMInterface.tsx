@@ -29,39 +29,53 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [inboxStats, setInboxStats] = useState<Record<string, number>>({});
+  const [error, setError] = useState<string | null>(null);
 
   const supabase = createClient();
 
   // Cargar conversaciones y estadísticas
   useEffect(() => {
-    loadConversations();
-    loadInboxStats();
-    
-    // Suscribirse a cambios en tiempo real
-    const channel = supabase
-      .channel('conversations-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'conversaciones',
-        },
-        () => {
-          loadConversations();
-          loadInboxStats();
-        }
-      )
-      .subscribe();
+    try {
+      loadConversations();
+      loadInboxStats();
+      
+      // Suscribirse a cambios en tiempo real
+      const channel = supabase
+        .channel('conversations-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'conversaciones',
+          },
+          () => {
+            loadConversations();
+            loadInboxStats();
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('Suscrito a cambios en tiempo real');
+          } else if (status === 'CHANNEL_ERROR') {
+            console.error('Error en suscripción a tiempo real');
+            setError('Error de conexión en tiempo real');
+          }
+        });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    } catch (error: any) {
+      console.error('Error en useEffect:', error);
+      setError(`Error al inicializar: ${error?.message || 'Error desconocido'}`);
+    }
   }, [selectedInbox]);
 
   const loadConversations = async () => {
     try {
       setLoading(true);
+      setError(null);
       
       // Construir query base
       let query = supabase
@@ -86,12 +100,14 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
       // Ordenar por último mensaje
       query = query.order('ts_ultimo_mensaje', { ascending: false, nullsFirst: false });
 
-      const { data, error } = await query;
+      const { data, error: queryError } = await query;
 
-      if (error) {
-        console.error('Error loading conversations:', error);
-        console.error('Error details:', JSON.stringify(error, null, 2));
-        throw error;
+      if (queryError) {
+        console.error('Error loading conversations:', queryError);
+        console.error('Error details:', JSON.stringify(queryError, null, 2));
+        setError(`Error al cargar conversaciones: ${queryError.message}`);
+        setConversations([]);
+        return;
       }
 
       console.log(`Cargadas ${data?.length || 0} conversaciones para inbox: ${selectedInbox}`);
@@ -109,8 +125,10 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
       }));
 
       setConversations(transformedConversations);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading conversations:', error);
+      setError(`Error inesperado: ${error?.message || 'Error desconocido'}`);
+      setConversations([]);
     } finally {
       setLoading(false);
     }
@@ -167,11 +185,36 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
       />
 
       {/* Panel de Chat - flex-1 */}
-      <ChatPanel
-        conversation={selectedConversation}
-        user={user}
-        onUpdateConversation={loadConversations}
-      />
+      <div className="flex-1 flex flex-col relative">
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 m-4 rounded">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium">{error}</p>
+                <button
+                  onClick={() => {
+                    setError(null);
+                    loadConversations();
+                  }}
+                  className="mt-2 text-sm underline"
+                >
+                  Reintentar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <ChatPanel
+          conversation={selectedConversation}
+          user={user}
+          onUpdateConversation={loadConversations}
+        />
+      </div>
 
       {/* Panel de Información de Contacto - 250px */}
       <ContactInfo
