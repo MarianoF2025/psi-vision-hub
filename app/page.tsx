@@ -68,20 +68,20 @@ export default async function HomePage() {
       <div className="flex-1 ml-64">
         <Header userName={user?.name} userEmail={user?.email} />
         
-        <main className="pt-24 pb-12">
-          <div className="max-w-7xl mx-auto px-8">
+        <main className="pt-16 pb-8">
+          <div className="max-w-6xl mx-auto px-6">
             {/* Título principal */}
-            <div className="mb-12 text-center">
-              <h1 className="text-5xl font-bold text-gray-900 mb-4">
+            <div className="mb-8 text-center">
+              <h1 className="text-4xl font-bold text-gray-900 mb-3">
                 PSI Plataforma Integral
               </h1>
-              <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+              <p className="text-lg text-gray-600 max-w-3xl mx-auto leading-relaxed">
                 Centraliza todos tus procesos empresariales. Desde marketing y ventas hasta gestión de clientes y administración educativa.
               </p>
             </div>
 
             {/* Cards de módulos principales - 2 columnas */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
               {modules.slice(0, 2).map((module) => (
                 <ModuleCard
                   key={module.title}
@@ -100,30 +100,30 @@ export default async function HomePage() {
             </div>
 
             {/* Cards informativas adicionales - 3 columnas */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200 hover:shadow-lg transition-shadow">
-                <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center mb-4">
-                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 hover:shadow-lg transition-shadow">
+                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center mb-3">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">Datos Unificados</h3>
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">Datos Unificados</h3>
                 <p className="text-gray-600 text-sm">Toda la información empresarial en un solo lugar.</p>
               </div>
 
-              <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200 hover:shadow-lg transition-shadow">
-                <div className="w-12 h-12 rounded-lg bg-purple-100 flex items-center justify-center mb-4">
-                  <Brain className="w-6 h-6 text-purple-600" />
+              <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 hover:shadow-lg transition-shadow">
+                <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center mb-3">
+                  <Brain className="w-5 h-5 text-purple-600" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">Inteligencia Artificial</h3>
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">Inteligencia Artificial</h3>
                 <p className="text-gray-600 text-sm">Alertas automáticas y recomendaciones estratégicas.</p>
               </div>
 
-              <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200 hover:shadow-lg transition-shadow">
-                <div className="w-12 h-12 rounded-lg bg-orange-100 flex items-center justify-center mb-4">
-                  <Users className="w-6 h-6 text-orange-600" />
+              <div className="bg-white rounded-lg shadow-md p-4 border border-gray-200 hover:shadow-lg transition-shadow">
+                <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center mb-3">
+                  <Users className="w-5 h-5 text-orange-600" />
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">Escalabilidad</h3>
+                <h3 className="text-base font-bold text-gray-900 mb-1.5">Escalabilidad</h3>
                 <p className="text-gray-600 text-sm">Módulos que crecen con tu organización.</p>
               </div>
             </div>
