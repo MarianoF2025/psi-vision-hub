@@ -138,6 +138,15 @@ export class RouterProcessor {
         return await this.showMainMenu(conversation.id, phone);
       }
 
+      // Verificar si es la primera interacción (no hay mensajes del sistema previos)
+      const hasSystemMessages = await this.hasSystemMessages(conversation.id);
+      
+      if (!hasSystemMessages) {
+        // Primera interacción: mostrar menú principal automáticamente
+        console.log(`Primera interacción detectada, mostrando menú principal`);
+        return await this.showMainMenu(conversation.id, phone);
+      }
+
       // Obtener estado del menú
       const menuState = await this.getMenuState(conversation.id);
       console.log(`Estado del menú detectado:`, menuState);
@@ -541,6 +550,24 @@ export class RouterProcessor {
   private async updateMenuState(conversationId: string, menu: 'main' | MenuArea) {
     // El estado se guarda implícitamente en los mensajes del sistema
     // Podríamos crear una tabla de estados si es necesario
+  }
+
+  private async hasSystemMessages(conversationId: string): Promise<boolean> {
+    // Verificar si hay mensajes del sistema previos (antes del mensaje actual)
+    const { data: systemMessages, error } = await this.supabase
+      .from('mensajes')
+      .select('id')
+      .eq('conversacion_id', conversationId)
+      .eq('remitente', 'system')
+      .limit(1);
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error verificando mensajes del sistema:', error);
+      // En caso de error, asumir que no hay mensajes del sistema para mostrar el menú
+      return false;
+    }
+
+    return (systemMessages && systemMessages.length > 0) || false;
   }
 
   private async getLastInteraction(conversationId: string): Promise<Date | null> {
