@@ -1,0 +1,113 @@
+'use client';
+
+import Link from 'next/link';
+import { 
+  MessageSquare, 
+  LayoutDashboard, 
+  Brain, 
+  Eye, 
+  Lightbulb, 
+  MessageCircle,
+  LucideIcon 
+} from 'lucide-react';
+
+interface Feature {
+  text: string;
+}
+
+type IconName = 'eye' | 'messageSquare' | 'brain' | 'lightbulb' | 'messageCircle';
+
+const iconMap: Record<IconName, LucideIcon> = {
+  eye: Eye,
+  messageSquare: MessageSquare,
+  brain: Brain,
+  lightbulb: Lightbulb,
+  messageCircle: MessageCircle,
+};
+
+interface ModuleCardProps {
+  title: string;
+  subtitle: string;
+  description: string;
+  iconName: IconName;
+  href: string;
+  iconBgColor: string;
+  iconColor: string;
+  features: Feature[];
+  highlightText?: string;
+  highlightIconName?: IconName;
+}
+
+export default function ModuleCard({
+  title,
+  subtitle,
+  description,
+  iconName,
+  href,
+  iconBgColor,
+  iconColor,
+  features,
+  highlightText,
+  highlightIconName,
+}: ModuleCardProps) {
+  const Icon = iconMap[iconName];
+  const HighlightIcon = highlightIconName ? iconMap[highlightIconName] : null;
+
+  return (
+    <Link href={href} className="block">
+      <div className="group bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-200 h-full flex flex-col">
+        <div className="p-8 flex-1 flex flex-col">
+          {/* Icono circular */}
+          <div className={`w-20 h-20 rounded-full ${iconBgColor} flex items-center justify-center mb-6 group-hover:scale-105 transition-transform`}>
+            <Icon className={`w-10 h-10 ${iconColor}`} />
+          </div>
+
+          {/* Título y subtítulo */}
+          <h3 className="text-3xl font-bold text-gray-900 mb-2 group-hover:text-primary transition-colors">
+            {title}
+          </h3>
+          <p className="text-lg text-gray-600 mb-4 font-medium">
+            {subtitle}
+          </p>
+
+          {/* Descripción */}
+          <p className="text-gray-700 leading-relaxed mb-6">
+            {description}
+          </p>
+
+          {/* Lista de características */}
+          <ul className="space-y-3 mb-6 flex-1">
+            {features.map((feature, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <span className="text-primary mt-1.5">•</span>
+                <span className="text-gray-700 text-sm leading-relaxed">{feature.text}</span>
+              </li>
+            ))}
+          </ul>
+
+          {/* Sección destacada */}
+          {highlightText && HighlightIcon && (
+            <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
+              <div className="flex items-start gap-3">
+                <HighlightIcon className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                <p className="text-gray-700 text-sm font-medium leading-relaxed">
+                  {highlightText}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Botón de acceso */}
+          <div className="mt-auto">
+            <button className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2 group-hover:shadow-md">
+              Acceder
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}

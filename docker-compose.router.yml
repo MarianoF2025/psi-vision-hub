@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  psi-router:
+    image: psi-vision-hub-router:latest
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - CLOUD_API_TOKEN=${CLOUD_API_TOKEN}
+      - CLOUD_API_BASE_URL=${CLOUD_API_BASE_URL}
+      - CLOUD_API_PHONE_NUMBER_ID=${CLOUD_API_PHONE_NUMBER_ID}
+      - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN}
+      # Webhooks n8n - Envíos
+      - N8N_WEBHOOK_ENVIOS_ROUTER_CRM=${N8N_WEBHOOK_ENVIOS_ROUTER_CRM}
+      - N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION=${N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION}
+      - N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS=${N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS}
+      - N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD=${N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD}
+      - N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1=${N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1}
+      - N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_2=${N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_2}
+      - N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_3=${N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_3}
+      - N8N_WEBHOOK_FORWARD_PROSPECCION=${N8N_WEBHOOK_FORWARD_PROSPECCION}
+      # Webhooks n8n - Ingestas
+      - N8N_WEBHOOK_INGESTA_ROUTER_WSP4=${N8N_WEBHOOK_INGESTA_ROUTER_WSP4}
+      - N8N_WEBHOOK_INGESTA_ROUTER_ADMINISTRACION=${N8N_WEBHOOK_INGESTA_ROUTER_ADMINISTRACION}
+      - N8N_WEBHOOK_INGESTA_ROUTER_ALUMNOS=${N8N_WEBHOOK_INGESTA_ROUTER_ALUMNOS}
+      - N8N_WEBHOOK_INGESTA_ROUTER_COMUNIDAD=${N8N_WEBHOOK_INGESTA_ROUTER_COMUNIDAD}
+      - N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_1=${N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_1}
+      - N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_2=${N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_2}
+      - N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_3=${N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_3}
+      - N8N_WEBHOOK_INGESTA_DIRECTA_ADMINISTRACION=${N8N_WEBHOOK_INGESTA_DIRECTA_ADMINISTRACION}
+      - N8N_WEBHOOK_INGESTA_DIRECTA_ALUMNOS=${N8N_WEBHOOK_INGESTA_DIRECTA_ALUMNOS}
+      - N8N_WEBHOOK_INGESTA_DIRECTA_COMUNIDAD=${N8N_WEBHOOK_INGESTA_DIRECTA_COMUNIDAD}
+    networks:
+      - PsiNet
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        # Habilitar Traefik
+        - "traefik.enable=true"
+        # Router principal
+        - "traefik.http.routers.router-psi.rule=Host(`router.psivisionhub.com`)"
+        - "traefik.http.routers.router-psi.entrypoints=websecure"
+        - "traefik.http.routers.router-psi.tls=true"
+        - "traefik.http.routers.router-psi.tls.certresolver=letsencrypt"
+        # Servicio
+        - "traefik.http.services.router-psi.loadbalancer.server.port=3001"
+        # Red
+        - "traefik.docker.network=PsiNet"
+
+networks:
+  PsiNet:
+    external: true
+
