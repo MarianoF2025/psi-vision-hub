@@ -77,8 +77,8 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
 
       // Filtrar por área/inbox
       if (selectedInbox === 'PSI Principal') {
-        // PSI Principal combina mensajes del router principal
-        query = query.or('area.eq.PSI Principal,inbox_id.eq.PSI Principal');
+        // PSI Principal: buscar por área exacta
+        query = query.eq('area', 'PSI Principal');
       } else {
         query = query.eq('area', selectedInbox);
       }
@@ -90,8 +90,11 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
 
       if (error) {
         console.error('Error loading conversations:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
         throw error;
       }
+
+      console.log(`Cargadas ${data?.length || 0} conversaciones para inbox: ${selectedInbox}`);
 
       // Transformar datos para la UI
       const transformedConversations: Conversation[] = (data || []).map((conv: any) => ({
@@ -124,7 +127,7 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
           .select('id', { count: 'exact', head: true });
 
         if (area === 'PSI Principal') {
-          query = query.or('area.eq.PSI Principal,inbox_id.eq.PSI Principal');
+          query = query.eq('area', 'PSI Principal');
         } else {
           query = query.eq('area', area);
         }
