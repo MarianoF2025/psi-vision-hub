@@ -50,14 +50,27 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      const normalized = normalizeWhatsAppMessage(message, metadata);
-      if (!normalized.from) {
-        console.warn('Mensaje sin campo "from", ignorando:', message.id || message);
-        continue;
+      try {
+        const normalized = normalizeWhatsAppMessage(message, metadata);
+        if (!normalized.from) {
+          console.warn('Mensaje sin campo "from", ignorando:', message.id || message);
+          continue;
+        }
+        
+        console.log(`Procesando mensaje de ${normalized.from}: ${normalized.message?.substring(0, 50)}...`);
+        const result = await processor.processMessage(normalized);
+        
+        if (!result.success) {
+          console.error('Error procesando mensaje:', result.message);
+        } else {
+          console.log(`Mensaje procesado exitosamente. Conversación: ${result.conversationId}`);
+        }
+        
+        processedCount++;
+      } catch (error) {
+        console.error('Error procesando mensaje individual:', error);
+        // Continuar con el siguiente mensaje
       }
-      
-      await processor.processMessage(normalized);
-      processedCount++;
     }
 
     console.log(`Webhook procesado: ${processedCount} mensaje(s) de ${messagesToProcess.length} recibido(s)`);

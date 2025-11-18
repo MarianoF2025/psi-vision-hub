@@ -164,54 +164,92 @@ export class RouterProcessor {
   }
 
   private async findOrCreateConversation(phone: string) {
-    // Buscar conversación existente
-    const { data: existing } = await this.supabase
-      .from('conversaciones')
-      .select('*')
-      .eq('telefono', phone)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    try {
+      // Buscar conversación existente
+      const { data: existing, error: existingError } = await this.supabase
+        .from('conversaciones')
+        .select('*')
+        .eq('telefono', phone)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    if (existing) {
-      return existing;
-    }
+      if (existingError && existingError.code !== 'PGRST116') {
+        console.error('Error buscando conversación existente:', existingError);
+      }
 
-    // Buscar contacto existente
-    let { data: contact } = await this.supabase
-      .from('contactos')
-      .select('*')
-      .eq('telefono', phone)
-      .single();
+      if (existing) {
+        console.log(`Conversación existente encontrada: ${existing.id}`);
+        return existing;
+      }
 
-    // Crear contacto si no existe
-    if (!contact) {
-      const { data: newContact } = await this.supabase
+      // Buscar contacto existente
+      const { data: contact, error: contactError } = await this.supabase
         .from('contactos')
+        .select('*')
+        .eq('telefono', phone)
+        .maybeSingle();
+
+      if (contactError && contactError.code !== 'PGRST116') {
+        console.error('Error buscando contacto:', contactError);
+      }
+
+      let finalContact = contact;
+
+      // Crear contacto si no existe
+      if (!finalContact) {
+        console.log(`Creando nuevo contacto para ${phone}`);
+        const { data: newContact, error: insertContactError } = await this.supabase
+          .from('contactos')
+          .insert({
+            telefono: phone,
+            nombre: phone, // Por defecto
+          })
+          .select()
+          .single();
+
+        if (insertContactError) {
+          console.error('Error creando contacto:', insertContactError);
+          throw insertContactError;
+        }
+
+        if (!newContact) {
+          throw new Error('No se pudo crear el contacto');
+        }
+
+        finalContact = newContact;
+        console.log(`Contacto creado: ${finalContact.id}`);
+      }
+
+      // Crear nueva conversación
+      console.log(`Creando nueva conversación para contacto ${finalContact.id}`);
+      const { data: conversation, error: insertConvError } = await this.supabase
+        .from('conversaciones')
         .insert({
+          contacto_id: finalContact.id,
           telefono: phone,
-          nombre: phone, // Por defecto
+          area: 'PSI Principal',
+          estado: 'nueva',
+          ts_ultimo_mensaje: new Date().toISOString(),
         })
         .select()
         .single();
 
-      contact = newContact;
+      if (insertConvError) {
+        console.error('Error creando conversación:', insertConvError);
+        throw insertConvError;
+      }
+
+      if (!conversation) {
+        throw new Error('No se pudo crear la conversación');
+      }
+
+      console.log(`Conversación creada: ${conversation.id}`);
+      return conversation;
+    } catch (error) {
+      console.error('Error en findOrCreateConversation:', error);
+      throw error;
     }
-
-    // Crear nueva conversación
-    const { data: conversation } = await this.supabase
-      .from('conversaciones')
-      .insert({
-        contacto_id: contact!.id,
-        telefono: phone,
-        area: 'PSI Principal',
-        estado: 'nueva',
-        ts_ultimo_mensaje: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    return conversation;
   }
 
   private async showMainMenu(conversationId: string, phone: string): Promise<RouterResponse> {
