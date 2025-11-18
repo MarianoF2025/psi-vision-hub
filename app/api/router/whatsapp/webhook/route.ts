@@ -3,29 +3,65 @@ import { RouterProcessor } from '@/lib/router/processor';
 import { WhatsAppMessage, WhatsAppMedia } from '@/lib/router/types';
 import { parseAttributionFromReferral, parseUtmParams } from '@/lib/router/meta';
 
-// Endpoint para recibir webhooks de WhatsApp (Cloud API)
+// Endpoint para recibir webhooks de WhatsApp (Cloud API o n8n)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const entries = body.entry || [];
     const processor = new RouterProcessor();
 
-    for (const entry of entries) {
-      const changes = entry.changes || [];
-      for (const change of changes) {
-        const value = change.value || {};
-        const metadata = value.metadata || {};
-        const messages = value.messages || [];
+    // Detectar formato: estándar WhatsApp Cloud API o directo desde n8n
+    let messagesToProcess: any[] = [];
+    let metadata: any = {};
 
-        for (const message of messages) {
-          const normalized = normalizeWhatsAppMessage(message, metadata);
-          if (!normalized.from) continue;
-          await processor.processMessage(normalized);
+    // Formato 1: Estándar WhatsApp Cloud API (entry -> changes -> value)
+    if (body.entry && Array.isArray(body.entry)) {
+      for (const entry of body.entry) {
+        const changes = entry.changes || [];
+        for (const change of changes) {
+          const value = change.value || {};
+          metadata = value.metadata || {};
+          const messages = value.messages || [];
+          messagesToProcess.push(...messages);
         }
       }
     }
+    // Formato 2: Directo desde n8n (messages o statuses en root)
+    else if (body.messages && Array.isArray(body.messages)) {
+      metadata = body.metadata || {};
+      messagesToProcess = body.messages;
+    }
+    // Formato 3: Si viene un solo mensaje directamente
+    else if (body.from && body.message) {
+      messagesToProcess = [body];
+      metadata = body.metadata || {};
+    }
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    // Si no hay mensajes para procesar (solo statuses), retornar éxito
+    if (messagesToProcess.length === 0) {
+      console.log('Webhook recibido sin mensajes (solo statuses o formato desconocido)');
+      return NextResponse.json({ success: true, message: 'No messages to process' }, { status: 200 });
+    }
+
+    // Procesar mensajes
+    let processedCount = 0;
+    for (const message of messagesToProcess) {
+      // Ignorar statuses (delivered, read, etc.) - solo procesar mensajes reales
+      if (message.status || message.type === 'status') {
+        continue;
+      }
+
+      const normalized = normalizeWhatsAppMessage(message, metadata);
+      if (!normalized.from) {
+        console.warn('Mensaje sin campo "from", ignorando:', message.id || message);
+        continue;
+      }
+      
+      await processor.processMessage(normalized);
+      processedCount++;
+    }
+
+    console.log(`Webhook procesado: ${processedCount} mensaje(s) de ${messagesToProcess.length} recibido(s)`);
+    return NextResponse.json({ success: true, processed: processedCount }, { status: 200 });
   } catch (error) {
     console.error('Error processing webhook:', error);
     return NextResponse.json(
