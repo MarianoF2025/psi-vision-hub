@@ -72,16 +72,27 @@ export class RouterProcessor {
 
   async processMessage(message: WhatsAppMessage): Promise<RouterResponse> {
     try {
+      console.log(`🚀 RouterProcessor.processMessage iniciado`);
+      console.log(`   - From: ${message.from}`);
+      console.log(`   - Message: ${message.message?.substring(0, 100)}`);
+      console.log(`   - Type: ${message.type}`);
+      
       const phone = message.from;
       const originalText = message.message || '';
       const normalizedCommand = originalText.trim().toUpperCase();
+      
+      console.log(`   - Comando normalizado: "${normalizedCommand}"`);
 
       // Buscar o crear conversación
+      console.log(`🔍 Buscando o creando conversación para ${phone}`);
       const conversation = await this.findOrCreateConversation(phone);
 
       if (!conversation) {
+        console.error(`❌ No se pudo obtener o crear conversación para ${phone}`);
         return { success: false, message: 'Error al procesar conversación' };
       }
+      
+      console.log(`✅ Conversación encontrada/creada: ${conversation.id} (área: ${conversation.area})`);
 
       // Verificar anti-loop
       const lastInteraction = await this.getLastInteraction(conversation.id);
@@ -265,24 +276,35 @@ export class RouterProcessor {
   }
 
   private async showMainMenu(conversationId: string, phone: string): Promise<RouterResponse> {
-    const menuText = getMainMenuText();
-    
-    // Guardar mensaje del sistema ANTES de enviarlo
-    await this.saveMessage(conversationId, 'system', menuText);
-    // Pequeño delay para asegurar que se guardó
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // Actualizar estado del menú
-    await this.updateMenuState(conversationId, 'main');
+    try {
+      const menuText = getMainMenuText();
+      console.log(`📋 Mostrando menú principal para conversación ${conversationId}`);
+      
+      // Guardar mensaje del sistema ANTES de enviarlo
+      await this.saveMessage(conversationId, 'system', menuText);
+      // Pequeño delay para asegurar que se guardó
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Actualizar estado del menú
+      await this.updateMenuState(conversationId, 'main');
 
-    // Enviar mensaje
-    await this.sendWhatsAppMessage(phone, menuText);
+      // Enviar mensaje
+      await this.sendWhatsAppMessage(phone, menuText);
 
-    return {
-      success: true,
-      message: menuText,
-      conversationId,
-    };
+      console.log(`✅ Menú principal mostrado exitosamente`);
+      return {
+        success: true,
+        message: menuText,
+        conversationId,
+      };
+    } catch (error: any) {
+      console.error('❌ Error mostrando menú principal:', error);
+      return {
+        success: false,
+        message: `Error al mostrar menú: ${error.message}`,
+        conversationId,
+      };
+    }
   }
 
   private async processMainMenuSelection(
@@ -430,37 +452,53 @@ export class RouterProcessor {
     mensaje: string,
     metadata?: Record<string, any>
   ) {
-    console.log(`Guardando mensaje en conversación ${conversationId}, remitente: ${remitente}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
+    console.log(`💾 Guardando mensaje en conversación ${conversationId}, remitente: ${remitente}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
     
-    const { data, error } = await this.supabase
-      .from('mensajes')
-      .insert({
-        conversacion_id: conversationId,
-        mensaje,
-        remitente,
-        timestamp: new Date().toISOString(),
-        metadata,
-      })
-      .select();
+    try {
+      const { data, error } = await this.supabase
+        .from('mensajes')
+        .insert({
+          conversacion_id: conversationId,
+          mensaje,
+          remitente,
+          timestamp: new Date().toISOString(),
+          metadata,
+        })
+        .select();
 
-    if (error) {
-      console.error('Error guardando mensaje:', error);
-      throw error;
-    }
+      if (error) {
+        console.error('❌ Error guardando mensaje en Supabase:', error);
+        console.error('   - Código:', error.code);
+        console.error('   - Mensaje:', error.message);
+        console.error('   - Detalles:', error.details);
+        console.error('   - Hint:', error.hint);
+        throw error;
+      }
 
-    console.log(`Mensaje guardado exitosamente:`, data?.[0]?.id);
+      if (!data || data.length === 0) {
+        console.error('❌ No se retornó data después de insertar mensaje');
+        throw new Error('No se pudo guardar el mensaje - sin data retornada');
+      }
 
-    // Actualizar última actividad
-    const { error: updateError } = await this.supabase
-      .from('conversaciones')
-      .update({
-        ts_ultimo_mensaje: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conversationId);
+      console.log(`✅ Mensaje guardado exitosamente en Supabase. ID: ${data[0]?.id}`);
 
-    if (updateError) {
-      console.error('Error actualizando conversación:', updateError);
+      // Actualizar última actividad
+      const { error: updateError } = await this.supabase
+        .from('conversaciones')
+        .update({
+          ts_ultimo_mensaje: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversationId);
+
+      if (updateError) {
+        console.error('⚠️ Error actualizando conversación (no crítico):', updateError);
+      } else {
+        console.log(`✅ Conversación actualizada con ts_ultimo_mensaje`);
+      }
+    } catch (error: any) {
+      console.error('❌ Error crítico en saveMessage:', error);
+      throw error; // Re-lanzar para que el caller sepa que falló
     }
   }
 
@@ -590,15 +628,17 @@ export class RouterProcessor {
 
   private async sendWhatsAppMessage(to: string, message: string) {
     if (!CLOUD_API_TOKEN || !CLOUD_API_PHONE_NUMBER_ID) {
-      console.warn('WhatsApp Cloud API no configurada');
+      console.error('❌ WhatsApp Cloud API no configurada - CLOUD_API_TOKEN o CLOUD_API_PHONE_NUMBER_ID faltantes');
       return;
     }
 
     const sanitizedNumber = to.replace(/[^0-9]/g, '');
     const url = `${CLOUD_API_BASE_URL}/${CLOUD_API_PHONE_NUMBER_ID}/messages`;
 
+    console.log(`📤 Enviando mensaje WhatsApp a ${sanitizedNumber} (primeros 50 chars): ${message.substring(0, 50)}...`);
+
     try {
-      await fetch(url, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -611,8 +651,19 @@ export class RouterProcessor {
           text: { body: message },
         }),
       });
-    } catch (error) {
-      console.error('Error sending WhatsApp message:', error);
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        console.error(`❌ Error enviando mensaje WhatsApp (${response.status}):`, responseData);
+        throw new Error(`WhatsApp API error: ${JSON.stringify(responseData)}`);
+      }
+
+      console.log(`✅ Mensaje WhatsApp enviado exitosamente:`, responseData);
+      return responseData;
+    } catch (error: any) {
+      console.error('❌ Error sending WhatsApp message:', error);
+      throw error; // Re-lanzar para que el caller sepa que falló
     }
   }
 

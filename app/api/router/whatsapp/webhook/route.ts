@@ -93,23 +93,25 @@ export async function POST(request: NextRequest) {
       try {
         const normalized = normalizeWhatsAppMessage(message, metadata);
         if (!normalized.from) {
-          console.warn('Mensaje sin campo "from", ignorando:', message.id || message);
+          console.warn('⚠️ Mensaje sin campo "from", ignorando:', message.id || message);
           continue;
         }
         
-        console.log(`Procesando mensaje de ${normalized.from}: ${normalized.message?.substring(0, 50)}...`);
+        console.log(`🔄 Procesando mensaje de ${normalized.from}: ${normalized.message?.substring(0, 50)}...`);
         const result = await processor.processMessage(normalized);
         
         if (!result.success) {
-          console.error('Error procesando mensaje:', result.message);
+          console.error(`❌ Error procesando mensaje: ${result.message}`);
+          console.error(`   - Conversación: ${result.conversationId || 'N/A'}`);
         } else {
-          console.log(`Mensaje procesado exitosamente. Conversación: ${result.conversationId}`);
+          console.log(`✅ Mensaje procesado exitosamente. Conversación: ${result.conversationId}`);
         }
         
         processedCount++;
-      } catch (error) {
-        console.error('Error procesando mensaje individual:', error);
-        // Continuar con el siguiente mensaje
+      } catch (error: any) {
+        console.error('❌ Error crítico procesando mensaje individual:', error);
+        console.error('   - Stack:', error.stack);
+        // Continuar con el siguiente mensaje pero registrar el error
       }
     }
 
