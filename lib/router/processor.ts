@@ -413,7 +413,9 @@ export class RouterProcessor {
     mensaje: string,
     metadata?: Record<string, any>
   ) {
-    await this.supabase
+    console.log(`Guardando mensaje en conversación ${conversationId}, remitente: ${remitente}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
+    
+    const { data, error } = await this.supabase
       .from('mensajes')
       .insert({
         conversacion_id: conversationId,
@@ -421,16 +423,28 @@ export class RouterProcessor {
         remitente,
         timestamp: new Date().toISOString(),
         metadata,
-      });
+      })
+      .select();
+
+    if (error) {
+      console.error('Error guardando mensaje:', error);
+      throw error;
+    }
+
+    console.log(`Mensaje guardado exitosamente:`, data?.[0]?.id);
 
     // Actualizar última actividad
-    await this.supabase
+    const { error: updateError } = await this.supabase
       .from('conversaciones')
       .update({
         ts_ultimo_mensaje: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', conversationId);
+
+    if (updateError) {
+      console.error('Error actualizando conversación:', updateError);
+    }
   }
 
   private async getMenuState(conversationId: string): Promise<MenuState | null> {
@@ -446,10 +460,18 @@ export class RouterProcessor {
       console.error('Error obteniendo estado del menú:', error);
     }
 
+    console.log(`Buscando estado del menú en conversación ${conversationId}, encontré ${lastMessages?.length || 0} mensajes`);
+
     if (!lastMessages || lastMessages.length === 0) {
       console.log(`No hay mensajes, asumiendo menú principal`);
       return { conversationId, currentMenu: 'main', lastInteraction: new Date() };
     }
+
+    console.log(`Últimos mensajes encontrados (primeros 3):`, lastMessages.slice(0, 3).map(m => ({
+      id: m.id,
+      mensaje: (m.mensaje || '').substring(0, 50),
+      timestamp: m.timestamp
+    })));
 
     // Buscar el último mensaje del sistema (que contiene texto de menú)
     // Los mensajes del sistema tienen texto que empieza con "¡Hola!" o nombres de áreas
