@@ -434,22 +434,42 @@ export class RouterProcessor {
   }
 
   private async getMenuState(conversationId: string): Promise<MenuState | null> {
-    // Obtener último mensaje del sistema para determinar estado
-    const { data: lastSystemMessage, error } = await this.supabase
+    // Obtener últimos mensajes para determinar estado (sin filtrar por remitente ya que la columna puede no existir)
+    const { data: lastMessages, error } = await this.supabase
       .from('mensajes')
       .select('*')
       .eq('conversacion_id', conversationId)
-      .eq('remitente', 'system')
       .order('timestamp', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(10); // Obtener últimos 10 mensajes para buscar el del sistema
 
     if (error && error.code !== 'PGRST116') {
       console.error('Error obteniendo estado del menú:', error);
     }
 
+    if (!lastMessages || lastMessages.length === 0) {
+      console.log(`No hay mensajes, asumiendo menú principal`);
+      return { conversationId, currentMenu: 'main', lastInteraction: new Date() };
+    }
+
+    // Buscar el último mensaje del sistema (que contiene texto de menú)
+    // Los mensajes del sistema tienen texto que empieza con "¡Hola!" o nombres de áreas
+    let lastSystemMessage = null;
+    for (const msg of lastMessages) {
+      const messageText = msg.mensaje || '';
+      // Detectar si es mensaje del sistema por el contenido
+      if (messageText.includes('¡Hola! 👋') || 
+          messageText.startsWith('Administración:') ||
+          messageText.startsWith('Alumnos:') ||
+          messageText.startsWith('Inscripciones:') ||
+          messageText.startsWith('Comunidad:') ||
+          messageText.includes('Te derivamos con')) {
+        lastSystemMessage = msg;
+        break;
+      }
+    }
+
     if (!lastSystemMessage) {
-      console.log(`No hay mensajes del sistema, asumiendo menú principal`);
+      console.log(`No se encontró mensaje del sistema en los últimos mensajes, asumiendo menú principal`);
       return { conversationId, currentMenu: 'main', lastInteraction: new Date() };
     }
 
@@ -462,11 +482,17 @@ export class RouterProcessor {
       return { conversationId, currentMenu: 'main', lastInteraction: new Date(lastSystemMessage.timestamp) };
     }
 
+    if (messageText.includes('Te derivamos con')) {
+      // Si ya se derivó, el menú vuelve al principal
+      console.log(`Conversación ya derivada, asumiendo menú principal`);
+      return { conversationId, currentMenu: 'main', lastInteraction: new Date(lastSystemMessage.timestamp) };
+    }
+
     // Detectar área del submenú
     const areas: MenuArea[] = ['Administración', 'Alumnos', 'Inscripciones', 'Comunidad'];
     for (const area of areas) {
-      if (messageText.startsWith(area)) {
-        console.log(`Detectado submenú de "${area}" porque el mensaje empieza con "${area}"`);
+      if (messageText.startsWith(area + ':')) {
+        console.log(`Detectado submenú de "${area}" porque el mensaje empieza con "${area}:"`);
         return { conversationId, currentMenu: area, lastInteraction: new Date(lastSystemMessage.timestamp) };
       }
     }
