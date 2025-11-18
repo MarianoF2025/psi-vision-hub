@@ -258,8 +258,10 @@ export class RouterProcessor {
   private async showMainMenu(conversationId: string, phone: string): Promise<RouterResponse> {
     const menuText = getMainMenuText();
     
-    // Guardar mensaje del sistema
+    // Guardar mensaje del sistema ANTES de enviarlo
     await this.saveMessage(conversationId, 'system', menuText);
+    // Pequeño delay para asegurar que se guardó
+    await new Promise(resolve => setTimeout(resolve, 100));
     
     // Actualizar estado del menú
     await this.updateMenuState(conversationId, 'main');
@@ -293,7 +295,10 @@ export class RouterProcessor {
     const submenuText = getSubmenuText(option.area!);
     
     console.log(`Guardando mensaje del sistema con submenú`);
+    // Guardar mensaje ANTES de enviarlo
     await this.saveMessage(conversationId, 'system', submenuText);
+    // Pequeño delay para asegurar que se guardó
+    await new Promise(resolve => setTimeout(resolve, 100));
     await this.updateMenuState(conversationId, option.area!);
     console.log(`Enviando submenú por WhatsApp`);
     await this.sendWhatsAppMessage(phone, submenuText);
@@ -334,10 +339,13 @@ export class RouterProcessor {
     await this.deriveConversation(conversationId, option.area, option.subarea);
 
     // Enviar mensaje de derivación
-    const derivationMessage = `Te derivamos con ${option.area}${option.subarea ? ` - ${option.subarea}` : ''}. Un agente se comunicará contigo pronto. 👋`;
+    const derivationMessage = `Muchas gracias por contactarnos. Te estamos derivando con el área de ${option.area}${option.subarea ? ` - ${option.subarea}` : ''}. Un agente se comunicará contigo pronto. 👋`;
     
     console.log(`Enviando mensaje de derivación: ${derivationMessage}`);
+    // Guardar mensaje de derivación ANTES de enviarlo
     await this.saveMessage(conversationId, 'system', derivationMessage);
+    // Pequeño delay para asegurar que se guardó
+    await new Promise(resolve => setTimeout(resolve, 100));
     await this.sendWhatsAppMessage(phone, derivationMessage);
     
     const webhookPayload = {
@@ -478,13 +486,20 @@ export class RouterProcessor {
     let lastSystemMessage = null;
     for (const msg of lastMessages) {
       const messageText = msg.mensaje || '';
-      // Detectar si es mensaje del sistema por el contenido
-      if (messageText.includes('¡Hola! 👋') || 
-          messageText.startsWith('Administración:') ||
-          messageText.startsWith('Alumnos:') ||
-          messageText.startsWith('Inscripciones:') ||
-          messageText.startsWith('Comunidad:') ||
-          messageText.includes('Te derivamos con')) {
+      console.log(`Revisando mensaje: remitente=${msg.remitente || 'N/A'}, texto="${messageText.substring(0, 50)}"`);
+      
+      // Detectar si es mensaje del sistema por el contenido o por remitente
+      const isSystemMessage = 
+        msg.remitente === 'system' ||
+        messageText.includes('¡Hola! 👋') || 
+        messageText.startsWith('Administración:') ||
+        messageText.startsWith('Alumnos:') ||
+        messageText.startsWith('Inscripciones:') ||
+        messageText.startsWith('Comunidad:') ||
+        messageText.includes('Te derivamos con');
+      
+      if (isSystemMessage) {
+        console.log(`Mensaje del sistema encontrado: ${messageText.substring(0, 50)}`);
         lastSystemMessage = msg;
         break;
       }
