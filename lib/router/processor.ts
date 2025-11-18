@@ -412,18 +412,18 @@ En breve se pondrán en contacto contigo. 👋`;
   private async generateTicketNumber(): Promise<string> {
     const año = new Date().getFullYear();
     
-    // Obtener último número del año
+    // Obtener último número del año desde ticket_id (que es TEXT en la tabla real)
     const { data: ultimo } = await this.supabase
       .from('derivaciones')
-      .select('ticket_numero')
-      .ilike('ticket_numero', `PSI-${año}-%`)
+      .select('ticket_id')
+      .ilike('ticket_id', `PSI-${año}-%`)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
       
     let siguiente = 1;
-    if (ultimo?.ticket_numero) {
-      const partes = ultimo.ticket_numero.split('-');
+    if (ultimo?.ticket_id) {
+      const partes = ultimo.ticket_id.split('-');
       if (partes.length === 3) {
         siguiente = parseInt(partes[2]) + 1;
       }
@@ -470,6 +470,18 @@ En breve se pondrán en contacto contigo. 👋`;
     return tiempos[area] || '2-4 horas';
   }
 
+  private getApiDestino(area: string): string {
+    // Mapear área a API destino (webhook n8n)
+    const apiDestinos: Record<string, string> = {
+      'Administración': process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION || '',
+      'Alumnos': process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS || '',
+      'Ventas': process.env.N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1 || '',
+      'Comunidad': process.env.N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD || '',
+    };
+    
+    return apiDestinos[area] || '';
+  }
+
   private async deriveConversation(
     conversationId: string,
     area: MenuArea,
@@ -497,39 +509,64 @@ En breve se pondrán en contacto contigo. 👋`;
       // 3. Generar número de ticket
       const ticketNumero = await this.generateTicketNumber();
       console.log(`🎫 Ticket generado: ${ticketNumero}`);
+      
+      // Verificar si ya existe un ticket para esta conversación
+      const { data: ticketExistente } = await this.supabase
+        .from('derivaciones')
+        .select('id, ticket_id')
+        .eq('conversacion_id', conversationId)
+        .eq('status', 'Pendiente')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (ticketExistente) {
+        console.log(`⚠️ Ya existe un ticket pendiente para esta conversación: ${ticketExistente.ticket_id}`);
+        // Reutilizar ticket existente o crear uno nuevo según lógica de negocio
+      }
 
       // 4. Crear motivo de derivación
       const motivo = subarea 
         ? `${area} - ${subarea}`
         : `${area}`;
 
-      // 5. Crear ticket con auditoría completa
+      // 5. Crear ticket usando la estructura real de derivaciones
+      // La tabla real tiene: ticket_id (text), area (text), inbox_destino, api_destino, payload (jsonb), status
       const { data: ticket, error: ticketError } = await this.supabase
         .from('derivaciones')
         .insert({
-          ticket_numero: ticketNumero,
+          ticket_id: ticketNumero, // ticket_id es TEXT en la tabla real
           conversacion_id: conversationId,
           telefono: conversacion.telefono,
-          nombre_contacto: conversacion.nombre || conversacion.telefono,
-          area_origen: conversacion.area || 'PSI Principal',
-          area_destino: conversationArea,
-          motivo: motivo,
-          contexto_completo: {
-            mensajes: historialCompleto.map(m => ({
-              id: m.id,
-              mensaje: m.mensaje?.substring(0, 200),
-              remitente_tipo: m.remitente_tipo,
-              remitente_nombre: m.remitente_nombre,
-              timestamp: m.timestamp,
-            })),
-            menu_recorrido: conversacion.menu_actual || 'principal',
-            submenu_recorrido: conversacion.submenu_actual,
-            timestamp_inicio: conversacion.created_at,
-            opciones_seleccionadas: this.extraerOpcionesSeleccionadas(historialCompleto),
+          area: conversationArea, // Usar 'area' en lugar de 'area_destino'
+          inbox_destino: conversationArea, // Mapear área a inbox
+          api_destino: this.getApiDestino(conversationArea),
+          subetiqueta: subarea || null,
+          status: 'Pendiente', // Usar 'status' en lugar de 'estado'
+          payload: {
+            // Guardar toda la información de auditoría en payload (JSONB)
+            ticket_numero: ticketNumero,
+            nombre_contacto: conversacion.nombre || conversacion.telefono,
+            area_origen: conversacion.area || 'PSI Principal',
+            area_destino: conversationArea,
+            motivo: motivo,
+            contexto_completo: {
+              mensajes: historialCompleto.map(m => ({
+                id: m.id,
+                mensaje: m.mensaje?.substring(0, 200),
+                remitente_tipo: m.remitente_tipo,
+                remitente_nombre: m.remitente_nombre,
+                timestamp: m.timestamp,
+              })),
+            menu_recorrido: conversacion.router_estado || (conversacion.metadata as any)?.menu_actual || 'principal',
+            submenu_recorrido: conversacion.subetiqueta || (conversacion.metadata as any)?.submenu_actual,
+              timestamp_inicio: conversacion.created_at,
+              opciones_seleccionadas: this.extraerOpcionesSeleccionadas(historialCompleto),
+            },
+            prioridad: this.determinarPrioridad(motivo, historialCompleto),
+            derivado_por: 'Router Automático',
           },
-          estado: 'Pendiente',
-          prioridad: this.determinarPrioridad(motivo, historialCompleto),
-          derivado_por: 'Router Automático',
+          ts_derivacion: new Date().toISOString(),
         })
         .select()
         .single();
@@ -541,32 +578,65 @@ En breve se pondrán en contacto contigo. 👋`;
 
       console.log(`✅ Ticket creado exitosamente: ${ticket.id}`);
 
-      // 6. Registrar evento de creación
-      await this.supabase.from('ticket_eventos').insert({
-        ticket_id: ticket.id,
-        evento_tipo: 'creado',
-        descripcion: `Ticket creado por derivación automática: ${motivo}`,
-        usuario: 'Sistema Router',
-        metadata: {
-          area_origen: conversacion.area,
-          area_destino: conversationArea,
-          subarea,
-        },
-      });
+      // 6. Registrar evento de creación (si la tabla ticket_eventos existe)
+      // Si no existe, guardar en metadata de derivaciones
+      try {
+        await this.supabase.from('ticket_eventos').insert({
+          ticket_id: ticket.id,
+          evento_tipo: 'creado',
+          descripcion: `Ticket creado por derivación automática: ${motivo}`,
+          usuario: 'Sistema Router',
+          metadata: {
+            area_origen: conversacion.area,
+            area_destino: conversationArea,
+            subarea,
+          },
+        });
+      } catch (error: any) {
+        // Si la tabla no existe, guardar evento en payload de derivaciones
+        console.log('⚠️ Tabla ticket_eventos no existe, guardando evento en payload');
+        await this.supabase
+          .from('derivaciones')
+          .update({
+            payload: {
+              ...ticket.payload,
+              eventos: [
+                ...(ticket.payload?.eventos || []),
+                {
+                  evento_tipo: 'creado',
+                  descripcion: `Ticket creado por derivación automática: ${motivo}`,
+                  usuario: 'Sistema Router',
+                  timestamp: new Date().toISOString(),
+                },
+              ],
+            },
+          })
+          .eq('id', ticket.id);
+      }
 
-      // 7. Actualizar conversación con ticket
+      // 7. Actualizar conversación usando campos reales
+      // Usar metadata JSONB para campos que no existen en la tabla
+      const metadataActual = conversacion.metadata || {};
       const { error: updateError } = await this.supabase
         .from('conversaciones')
         .update({
           area: conversationArea,
           estado: 'Derivada',
-          menu_actual: 'derivada',
-          submenu_actual: subarea || null,
-          ticket_activo: ticket.id,
-          ticket_numero: ticketNumero,
+          router_estado: 'derivada', // Usar router_estado en lugar de menu_actual
+          subetiqueta: subarea || null, // Usar subetiqueta en lugar de submenu_actual
           ts_ultimo_mensaje: new Date().toISOString(),
+          last_message_at: new Date().toISOString(), // Usar last_message_at
+          ts_ultima_derivacion: new Date().toISOString(), // Campo real para última derivación
           updated_at: new Date().toISOString(),
-          ultima_interaccion: new Date().toISOString(),
+          metadata: {
+            ...metadataActual,
+            // Guardar información de ticket en metadata
+            ticket_activo: ticket.id,
+            ticket_numero: ticketNumero,
+            menu_actual: 'derivada',
+            submenu_actual: subarea || null,
+            ultima_interaccion: new Date().toISOString(),
+          },
         })
         .eq('id', conversationId);
 
