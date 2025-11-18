@@ -366,13 +366,25 @@ export class RouterProcessor {
 
     console.log(`Opción encontrada: ${option.area} - ${option.subarea}, derivando conversación ${conversationId}`);
     
-    // Derivar conversación al área correspondiente
-    await this.deriveConversation(conversationId, option.area, option.subarea);
+    // Derivar conversación al área correspondiente (crea ticket)
+    const ticket = await this.deriveConversation(conversationId, option.area, option.subarea);
+    const ticketNumero = ticket?.ticket_numero || 'PSI-XXXXXX';
+    const tiempoRespuesta = this.obtenerTiempoRespuesta(this.mapMenuAreaToConversationArea(option.area));
 
-    // Enviar mensaje de derivación
-    const derivationMessage = `Muchas gracias por contactarnos. Te estamos derivando con el área de ${option.area}${option.subarea ? ` - ${option.subarea}` : ''}. Un agente se comunicará contigo pronto. 👋`;
+    // Enviar mensaje de derivación con número de ticket
+    const derivationMessage = `✅ Te derivamos con *${option.area}*${option.subarea ? ` - ${option.subarea}` : ''}
+
+
+
+📋 *Número de ticket:* ${ticketNumero}
+
+🕐 *Tiempo estimado de respuesta:* ${tiempoRespuesta}
+
+
+
+En breve se pondrán en contacto contigo. 👋`;
     
-    console.log(`Enviando mensaje de derivación: ${derivationMessage}`);
+    console.log(`Enviando mensaje de derivación con ticket ${ticketNumero}`);
     // Guardar mensaje de derivación ANTES de enviarlo
     await this.saveMessage(conversationId, 'system', derivationMessage);
     // Pequeño delay para asegurar que se guardó
@@ -397,6 +409,67 @@ export class RouterProcessor {
     };
   }
 
+  private async generateTicketNumber(): Promise<string> {
+    const año = new Date().getFullYear();
+    
+    // Obtener último número del año
+    const { data: ultimo } = await this.supabase
+      .from('derivaciones')
+      .select('ticket_numero')
+      .ilike('ticket_numero', `PSI-${año}-%`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+      
+    let siguiente = 1;
+    if (ultimo?.ticket_numero) {
+      const partes = ultimo.ticket_numero.split('-');
+      if (partes.length === 3) {
+        siguiente = parseInt(partes[2]) + 1;
+      }
+    }
+    
+    return `PSI-${año}-${siguiente.toString().padStart(6, '0')}`;
+  }
+
+  private async obtenerHistorialCompleto(conversationId: string): Promise<any[]> {
+    const { data: mensajes, error } = await this.supabase
+      .from('mensajes')
+      .select('*')
+      .eq('conversacion_id', conversationId)
+      .order('timestamp', { ascending: true });
+
+    if (error) {
+      console.error('Error obteniendo historial:', error);
+      return [];
+    }
+
+    return mensajes || [];
+  }
+
+  private determinarPrioridad(motivo: string, historial: any[]): string {
+    // Lógica simple: si hay muchas interacciones o palabras clave, alta prioridad
+    const palabrasUrgentes = ['urgente', 'problema', 'error', 'no funciona', 'no puedo'];
+    const motivoLower = motivo.toLowerCase();
+    
+    if (palabrasUrgentes.some(p => motivoLower.includes(p)) || historial.length > 10) {
+      return 'Alta';
+    }
+    
+    return 'Normal';
+  }
+
+  private obtenerTiempoRespuesta(area: string): string {
+    const tiempos: Record<string, string> = {
+      'Administración': '2-4 horas',
+      'Alumnos': '1-2 horas',
+      'Ventas': '30 minutos - 1 hora',
+      'Comunidad': '1-2 horas',
+    };
+    
+    return tiempos[area] || '2-4 horas';
+  }
+
   private async deriveConversation(
     conversationId: string,
     area: MenuArea,
@@ -404,34 +477,124 @@ export class RouterProcessor {
   ) {
     // Mapear área del menú a área de conversación
     const conversationArea = this.mapMenuAreaToConversationArea(area);
-    console.log(`Derivando conversación ${conversationId} de "PSI Principal" a "${conversationArea}"${subarea ? ` (${subarea})` : ''}`);
+    console.log(`🎫 Derivando conversación ${conversationId} de "PSI Principal" a "${conversationArea}"${subarea ? ` (${subarea})` : ''}`);
 
-    // Actualizar conversación
-    const updates: any = {
-      area: conversationArea,
-      estado: 'activa',
-      ts_ultimo_mensaje: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    try {
+      // 1. Obtener conversación actual
+      const { data: conversacion, error: convError } = await this.supabase
+        .from('conversaciones')
+        .select('*')
+        .eq('id', conversationId)
+        .single();
 
-    // Agregar etiqueta/subarea si existe
-    if (subarea) {
-      // TODO: Implementar sistema de etiquetas
-      console.log(`Subárea "${subarea}" detectada (sistema de etiquetas pendiente)`);
-    }
+      if (convError || !conversacion) {
+        throw new Error(`No se pudo obtener conversación: ${convError?.message}`);
+      }
 
-    const { data, error } = await this.supabase
-      .from('conversaciones')
-      .update(updates)
-      .eq('id', conversationId)
-      .select();
+      // 2. Obtener historial completo
+      const historialCompleto = await this.obtenerHistorialCompleto(conversationId);
+      
+      // 3. Generar número de ticket
+      const ticketNumero = await this.generateTicketNumber();
+      console.log(`🎫 Ticket generado: ${ticketNumero}`);
 
-    if (error) {
-      console.error(`Error derivando conversación:`, error);
+      // 4. Crear motivo de derivación
+      const motivo = subarea 
+        ? `${area} - ${subarea}`
+        : `${area}`;
+
+      // 5. Crear ticket con auditoría completa
+      const { data: ticket, error: ticketError } = await this.supabase
+        .from('derivaciones')
+        .insert({
+          ticket_numero: ticketNumero,
+          conversacion_id: conversationId,
+          telefono: conversacion.telefono,
+          nombre_contacto: conversacion.nombre || conversacion.telefono,
+          area_origen: conversacion.area || 'PSI Principal',
+          area_destino: conversationArea,
+          motivo: motivo,
+          contexto_completo: {
+            mensajes: historialCompleto.map(m => ({
+              id: m.id,
+              mensaje: m.mensaje?.substring(0, 200),
+              remitente_tipo: m.remitente_tipo,
+              remitente_nombre: m.remitente_nombre,
+              timestamp: m.timestamp,
+            })),
+            menu_recorrido: conversacion.menu_actual || 'principal',
+            submenu_recorrido: conversacion.submenu_actual,
+            timestamp_inicio: conversacion.created_at,
+            opciones_seleccionadas: this.extraerOpcionesSeleccionadas(historialCompleto),
+          },
+          estado: 'Pendiente',
+          prioridad: this.determinarPrioridad(motivo, historialCompleto),
+          derivado_por: 'Router Automático',
+        })
+        .select()
+        .single();
+
+      if (ticketError || !ticket) {
+        console.error('❌ Error creando ticket:', ticketError);
+        throw new Error(`No se pudo crear ticket: ${ticketError?.message}`);
+      }
+
+      console.log(`✅ Ticket creado exitosamente: ${ticket.id}`);
+
+      // 6. Registrar evento de creación
+      await this.supabase.from('ticket_eventos').insert({
+        ticket_id: ticket.id,
+        evento_tipo: 'creado',
+        descripcion: `Ticket creado por derivación automática: ${motivo}`,
+        usuario: 'Sistema Router',
+        metadata: {
+          area_origen: conversacion.area,
+          area_destino: conversationArea,
+          subarea,
+        },
+      });
+
+      // 7. Actualizar conversación con ticket
+      const { error: updateError } = await this.supabase
+        .from('conversaciones')
+        .update({
+          area: conversationArea,
+          estado: 'Derivada',
+          menu_actual: 'derivada',
+          submenu_actual: subarea || null,
+          ticket_activo: ticket.id,
+          ticket_numero: ticketNumero,
+          ts_ultimo_mensaje: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          ultima_interaccion: new Date().toISOString(),
+        })
+        .eq('id', conversationId);
+
+      if (updateError) {
+        console.error('⚠️ Error actualizando conversación:', updateError);
+      }
+
+      console.log(`✅ Conversación derivada exitosamente con ticket ${ticketNumero}`);
+      return ticket;
+    } catch (error: any) {
+      console.error('❌ Error en deriveConversation:', error);
       throw error;
     }
+  }
 
-    console.log(`Conversación derivada exitosamente. Actualizada:`, data?.[0]);
+  private extraerOpcionesSeleccionadas(historial: any[]): string[] {
+    // Extraer opciones seleccionadas del historial (números como "1", "2", "22", etc.)
+    const opciones: string[] = [];
+    for (const msg of historial) {
+      if (msg.remitente_tipo === 'user' && msg.mensaje) {
+        const texto = msg.mensaje.trim();
+        // Si es un número simple (1-9) o doble (11-99), es una opción
+        if (/^[1-9]$|^[1-9][0-9]$/.test(texto)) {
+          opciones.push(texto);
+        }
+      }
+    }
+    return opciones;
   }
 
   private mapMenuAreaToConversationArea(menuArea: MenuArea): string {
@@ -452,7 +615,24 @@ export class RouterProcessor {
     mensaje: string,
     metadata?: Record<string, any>
   ) {
-    console.log(`💾 Guardando mensaje en conversación ${conversationId}, remitente: ${remitente}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
+    // Determinar remitente_tipo y remitente_nombre basado en el valor de remitente
+    let remitente_tipo: string;
+    let remitente_nombre: string;
+    
+    if (remitente === 'system') {
+      remitente_tipo = 'system';
+      remitente_nombre = 'Router PSI';
+    } else if (remitente.match(/^549\d+$/)) {
+      // Es un número de teléfono (usuario)
+      remitente_tipo = 'user';
+      remitente_nombre = remitente;
+    } else {
+      // Asumir que es un agente o email
+      remitente_tipo = 'agent';
+      remitente_nombre = remitente;
+    }
+    
+    console.log(`💾 Guardando mensaje en conversación ${conversationId}, remitente_tipo: ${remitente_tipo}, remitente_nombre: ${remitente_nombre}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
     
     try {
       const { data, error } = await this.supabase
@@ -460,7 +640,10 @@ export class RouterProcessor {
         .insert({
           conversacion_id: conversationId,
           mensaje,
-          remitente,
+          remitente_tipo,
+          remitente_nombre,
+          // Mantener remitente para compatibilidad si existe la columna
+          ...(remitente && { remitente }),
           timestamp: new Date().toISOString(),
           metadata,
         })
@@ -533,17 +716,18 @@ export class RouterProcessor {
     let lastSystemMessage = null;
     for (const msg of lastMessages) {
       const messageText = msg.mensaje || '';
-      console.log(`Revisando mensaje: remitente=${msg.remitente || 'N/A'}, texto="${messageText.substring(0, 50)}"`);
+      console.log(`Revisando mensaje: remitente_tipo=${msg.remitente_tipo || 'N/A'}, remitente_nombre=${msg.remitente_nombre || 'N/A'}, texto="${messageText.substring(0, 50)}"`);
       
-      // Detectar si es mensaje del sistema por el contenido o por remitente
+      // Detectar si es mensaje del sistema por el tipo o por contenido
       const isSystemMessage = 
-        msg.remitente === 'system' ||
+        msg.remitente_tipo === 'system' ||
         messageText.includes('¡Hola! 👋') || 
         messageText.startsWith('Administración:') ||
         messageText.startsWith('Alumnos:') ||
         messageText.startsWith('Inscripciones:') ||
         messageText.startsWith('Comunidad:') ||
-        messageText.includes('Te derivamos con');
+        messageText.includes('Te derivamos con') ||
+        messageText.includes('Número de ticket:');
       
       if (isSystemMessage) {
         console.log(`Mensaje del sistema encontrado: ${messageText.substring(0, 50)}`);
@@ -596,7 +780,7 @@ export class RouterProcessor {
       .from('mensajes')
       .select('id')
       .eq('conversacion_id', conversationId)
-      .eq('remitente', 'system')
+      .eq('remitente_tipo', 'system')
       .limit(1);
 
     if (error && error.code !== 'PGRST116') {
