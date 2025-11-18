@@ -38,29 +38,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Crear mensaje en la base de datos
-    // Los mensajes desde el CRM son enviados por agentes
-    const insertData: any = {
-      conversacion_id: conversacion_id,
-      mensaje: mensaje,
-      remitente_tipo: 'agente',
-      remitente_nombre: user.email || remitente || 'Agente',
-      timestamp: new Date().toISOString(),
-    };
-
-    // Intentar obtener el ID del usuario/agente si existe en contactos o perfiles
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', user.id)
-      .maybeSingle();
-    
-    if (profile) {
-      insertData.remitente_id = profile.id;
-    }
-
     const { data: message, error: messageError } = await supabase
       .from('mensajes')
-      .insert(insertData)
+      .insert({
+        conversacion_id: conversacion_id,
+        mensaje: mensaje,
+        remitente: remitente || user.email || 'system',
+        timestamp: new Date().toISOString(),
+      })
       .select()
       .single();
 

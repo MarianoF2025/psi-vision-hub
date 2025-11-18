@@ -63,8 +63,7 @@ export async function POST(request: NextRequest) {
       await supabase.from('mensajes').insert({
         conversacion_id: conversationId,
         mensaje: message,
-        remitente_tipo: 'system',
-        remitente_nombre: 'Sistema PSI',
+        remitente: 'system',
         timestamp: new Date().toISOString(),
       });
 

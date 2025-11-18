@@ -27,18 +27,11 @@ export interface Message {
   id: string;
   conversacion_id: string;
   mensaje: string;
-  // Schema real de Supabase
-  remitente_tipo: string; // 'system' | 'contacto' | 'agente'
-  remitente_nombre: string;
-  remitente_id?: string; // UUID del contacto o agente
+  remitente: string;
   timestamp: string;
   tipo?: MessageType;
   estado?: 'sent' | 'delivered' | 'read';
   metadata?: Record<string, any>;
-  // Campos calculados para compatibilidad
-  remitente?: string; // Deprecated: usar remitente_nombre
-  from_phone?: string; // Mapeado desde remitente_nombre
-  is_from_contact?: boolean; // Calculado
 }
 
 // Estructura real de Supabase: conversaciones

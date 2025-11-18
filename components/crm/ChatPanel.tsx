@@ -76,20 +76,13 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
       if (error) throw error;
       
       // Transformar mensajes para la UI
-      const transformedMessages: Message[] = (data || []).map((msg: any) => {
-        // Usar remitente_nombre o remitente_tipo según corresponda
-        const fromPhone = msg.remitente_nombre || msg.remitente_tipo || 'unknown';
-        const isFromContact = msg.remitente_tipo === 'contacto' && 
-          (fromPhone === conversation.telefono || fromPhone === conversation.contactos?.telefono);
-        
-        return {
-          ...msg,
-          conversation_id: msg.conversacion_id,
-          content: msg.mensaje,
-          from_phone: fromPhone,
-          is_from_contact: isFromContact,
-        };
-      });
+      const transformedMessages: Message[] = (data || []).map((msg: any) => ({
+        ...msg,
+        conversation_id: msg.conversacion_id,
+        content: msg.mensaje,
+        from_phone: msg.remitente,
+        is_from_contact: msg.remitente === conversation.telefono || msg.remitente === conversation.contactos?.telefono,
+      }));
       
       setMessages(transformedMessages);
     } catch (error) {
@@ -108,13 +101,13 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
     setSending(true);
     try {
       // Enviar mensaje a través de la API
-      // El endpoint determinará el remitente_tipo y remitente_nombre automáticamente
       const response = await fetch('/api/messages/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversacion_id: conversation.id,
           mensaje: newMessage.trim(),
+          remitente: user?.email || 'system',
         }),
       });
 
@@ -206,9 +199,7 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
         {messages.map((message) => {
           // Determinar si el mensaje es del contacto
           const contactPhone = conversation.contactos?.telefono || conversation.telefono;
-          const isFromContact = message.is_from_contact || 
-            (message.remitente_tipo === 'contacto' && 
-             (message.remitente_nombre === contactPhone || message.from_phone === contactPhone));
+          const isFromContact = message.remitente === contactPhone;
           const messageDate = format(new Date(message.timestamp), 'HH:mm');
           const messageContent = message.mensaje || '';
 

@@ -421,42 +421,17 @@ export class RouterProcessor {
     mensaje: string,
     metadata?: Record<string, any>
   ) {
-    // Determinar tipo y nombre del remitente
-    const isSystem = remitente === 'system';
-    const remitenteTipo = isSystem ? 'system' : 'contacto';
-    const remitenteNombre = isSystem ? 'Sistema PSI' : remitente;
+    console.log(`Guardando mensaje en conversación ${conversationId}, remitente: ${remitente}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
     
-    console.log(`Guardando mensaje en conversación ${conversationId}, remitente_tipo: ${remitenteTipo}, remitente_nombre: ${remitenteNombre}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
-    
-    const insertData: any = {
-      conversacion_id: conversationId,
-      mensaje,
-      remitente_tipo: remitenteTipo,
-      remitente_nombre: remitenteNombre,
-      timestamp: new Date().toISOString(),
-    };
-
-    // Si hay metadata, agregarlo
-    if (metadata) {
-      insertData.metadata = metadata;
-    }
-
-    // Si es un contacto, intentar obtener el contacto_id
-    if (!isSystem) {
-      const { data: contact } = await this.supabase
-        .from('contactos')
-        .select('id')
-        .eq('telefono', remitente)
-        .maybeSingle();
-      
-      if (contact) {
-        insertData.remitente_id = contact.id;
-      }
-    }
-
     const { data, error } = await this.supabase
       .from('mensajes')
-      .insert(insertData)
+      .insert({
+        conversacion_id: conversationId,
+        mensaje,
+        remitente,
+        timestamp: new Date().toISOString(),
+        metadata,
+      })
       .select();
 
     if (error) {
@@ -481,8 +456,7 @@ export class RouterProcessor {
   }
 
   private async getMenuState(conversationId: string): Promise<MenuState | null> {
-    // Obtener últimos mensajes para determinar estado
-    // Buscamos mensajes del sistema (remitente_tipo = 'system') que contengan texto de menú
+    // Obtener últimos mensajes para determinar estado (sin filtrar por remitente ya que la columna puede no existir)
     const { data: lastMessages, error } = await this.supabase
       .from('mensajes')
       .select('*')
@@ -508,16 +482,15 @@ export class RouterProcessor {
     })));
 
     // Buscar el último mensaje del sistema (que contiene texto de menú)
-    // Los mensajes del sistema tienen remitente_tipo = 'system' o texto que empieza con "¡Hola!" o nombres de áreas
+    // Los mensajes del sistema tienen texto que empieza con "¡Hola!" o nombres de áreas
     let lastSystemMessage = null;
     for (const msg of lastMessages) {
       const messageText = msg.mensaje || '';
-      const remitenteTipo = msg.remitente_tipo || 'N/A';
-      console.log(`Revisando mensaje: remitente_tipo=${remitenteTipo}, remitente_nombre=${msg.remitente_nombre || 'N/A'}, texto="${messageText.substring(0, 50)}"`);
+      console.log(`Revisando mensaje: remitente=${msg.remitente || 'N/A'}, texto="${messageText.substring(0, 50)}"`);
       
-      // Detectar si es mensaje del sistema por remitente_tipo o por contenido
+      // Detectar si es mensaje del sistema por el contenido o por remitente
       const isSystemMessage = 
-        remitenteTipo === 'system' ||
+        msg.remitente === 'system' ||
         messageText.includes('¡Hola! 👋') || 
         messageText.startsWith('Administración:') ||
         messageText.startsWith('Alumnos:') ||
