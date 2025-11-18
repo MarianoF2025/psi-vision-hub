@@ -6,7 +6,30 @@ import { parseAttributionFromReferral, parseUtmParams } from '@/lib/router/meta'
 // Endpoint para recibir webhooks de WhatsApp (Cloud API o n8n)
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Leer el body como texto primero para debugging
+    const bodyText = await request.text();
+    
+    if (!bodyText || bodyText.trim().length === 0) {
+      console.error('Webhook recibido con body vacío');
+      return NextResponse.json(
+        { error: 'Body vacío' },
+        { status: 400 }
+      );
+    }
+
+    let body: any;
+    try {
+      body = JSON.parse(bodyText);
+    } catch (parseError) {
+      console.error('Error parseando JSON:', parseError);
+      console.error('Body recibido:', bodyText.substring(0, 500));
+      return NextResponse.json(
+        { error: 'JSON inválido' },
+        { status: 400 }
+      );
+    }
+
+    console.log('Webhook recibido:', JSON.stringify(body, null, 2).substring(0, 500));
     const processor = new RouterProcessor();
 
     // Detectar formato: estándar WhatsApp Cloud API o directo desde n8n
