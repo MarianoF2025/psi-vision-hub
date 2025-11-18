@@ -204,7 +204,7 @@ export class RouterProcessor {
       .insert({
         contacto_id: contact!.id,
         telefono: phone,
-        area: 'WSP4 Router',
+        area: 'PSI Principal',
         estado: 'nueva',
         ts_ultimo_mensaje: new Date().toISOString(),
       })

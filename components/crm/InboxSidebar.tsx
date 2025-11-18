@@ -33,7 +33,7 @@ interface InboxSidebarProps {
 
 interface InboxItem {
   id: string;
-  type: InboxType | 'WSP4 Router';
+  type: InboxType;
   label: string;
   icon: typeof ShoppingCart;
   count: number;
@@ -42,9 +42,9 @@ interface InboxItem {
 
 const inboxes: InboxItem[] = [
   { 
-    id: 'wsp4-router',
-    type: 'WSP4 Router' as any,
-    label: 'WSP4 Router',
+    id: 'psi-principal',
+    type: 'PSI Principal',
+    label: 'PSI Principal',
     icon: Router,
     count: 8,
   },
@@ -55,9 +55,9 @@ const inboxes: InboxItem[] = [
     icon: ShoppingCart,
     count: 0,
     subInboxes: [
-      { id: 'ventas-1', label: 'Ventas 1 - Meta Ads', count: 0 },
-      { id: 'ventas-2', label: 'Ventas 2 - Google Ads', count: 0 },
-      { id: 'ventas-3', label: 'Ventas 3 - TikTok Ads', count: 0 },
+      { id: 'ventas-1', label: 'Ventas 1', count: 0 },
+      { id: 'ventas-2', label: 'Ventas 2', count: 0 },
+      { id: 'ventas-3', label: 'Ventas 3', count: 0 },
     ],
   },
   { 
@@ -116,7 +116,7 @@ export default function InboxSidebar({
   const handleInboxSelect = (inbox: InboxItem) => {
     if (inbox.subInboxes) {
       toggleInboxExpansion(inbox.id);
-    } else if (inbox.type !== 'WSP4 Router') {
+    } else {
       onSelectInbox(inbox.type as InboxType);
     }
   };
@@ -176,7 +176,7 @@ export default function InboxSidebar({
           const isExpanded = expandedInboxes.has(inbox.id);
           const isSelected = selectedInbox === inbox.type;
           // Mapear IDs de inbox a áreas de Supabase
-          const statsKey = inbox.id === 'wsp4-router' ? 'WSP4 Router' : inbox.type;
+          const statsKey = inbox.id === 'psi-principal' ? 'PSI Principal' : inbox.type;
           const count = inboxStats[statsKey] || inboxStats[inbox.id] || inbox.count || 0;
           const Icon = inbox.icon;
 

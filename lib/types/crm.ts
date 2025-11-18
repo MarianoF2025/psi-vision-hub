@@ -1,6 +1,6 @@
 // Tipos para el sistema CRM-COM - Estructura real de Supabase
 
-export type InboxType = 'Ventas' | 'Alumnos' | 'Administración' | 'Comunidad' | 'WSP4 Router';
+export type InboxType = 'Ventas' | 'Alumnos' | 'Administración' | 'Comunidad' | 'PSI Principal';
 
 export type ConversationStatus = 'nueva' | 'activa' | 'esperando' | 'resuelta' | 'cerrada';
 

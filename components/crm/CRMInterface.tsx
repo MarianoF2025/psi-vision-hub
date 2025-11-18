@@ -19,12 +19,12 @@ const areaToInboxMap: Record<string, InboxType> = {
   'Alumnos': 'Alumnos',
   'Administración': 'Administración',
   'Comunidad': 'Comunidad',
-  'WSP4 Router': 'WSP4 Router',
+  'PSI Principal': 'PSI Principal',
 };
 
 export default function CRMInterface({ user }: CRMInterfaceProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [selectedInbox, setSelectedInbox] = useState<InboxType>('Ventas');
+  const [selectedInbox, setSelectedInbox] = useState<InboxType>('PSI Principal');
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,9 +76,9 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         `);
 
       // Filtrar por área/inbox
-      if (selectedInbox === 'WSP4 Router') {
-        // WSP4 Router puede tener múltiples áreas o un campo específico
-        query = query.or('area.eq.WSP4 Router,inbox_id.eq.WSP4 Router');
+      if (selectedInbox === 'PSI Principal') {
+        // PSI Principal combina mensajes del router principal
+        query = query.or('area.eq.PSI Principal,inbox_id.eq.PSI Principal');
       } else {
         query = query.eq('area', selectedInbox);
       }
@@ -115,7 +115,7 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
 
   const loadInboxStats = async () => {
     try {
-      const areas = ['Ventas', 'Alumnos', 'Administración', 'Comunidad', 'WSP4 Router'];
+      const areas = ['Ventas', 'Alumnos', 'Administración', 'Comunidad', 'PSI Principal'];
       const stats: Record<string, number> = {};
 
       for (const area of areas) {
@@ -123,8 +123,8 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
           .from('conversaciones')
           .select('id', { count: 'exact', head: true });
 
-        if (area === 'WSP4 Router') {
-          query = query.or('area.eq.WSP4 Router,inbox_id.eq.WSP4 Router');
+        if (area === 'PSI Principal') {
+          query = query.or('area.eq.PSI Principal,inbox_id.eq.PSI Principal');
         } else {
           query = query.eq('area', area);
         }
