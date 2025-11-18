@@ -140,8 +140,10 @@ export class RouterProcessor {
 
       // Obtener estado del menú
       const menuState = await this.getMenuState(conversation.id);
+      console.log(`Estado del menú detectado:`, menuState);
 
       if (!menuState || menuState.currentMenu === 'main') {
+        console.log(`Procesando como selección de menú principal: "${normalizedCommand}"`);
         // Procesar selección del menú principal
         return await this.processMainMenuSelection(
           conversation.id,
@@ -149,6 +151,7 @@ export class RouterProcessor {
           normalizedCommand
         );
       } else {
+        console.log(`Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
         // Procesar selección del submenú
         return await this.processSubmenuSelection(
           conversation.id, 
@@ -276,18 +279,23 @@ export class RouterProcessor {
     phone: string,
     selection: string
   ): Promise<RouterResponse> {
+    console.log(`Procesando selección de menú principal: "${selection}"`);
     const option = findMainMenuOption(selection);
 
     if (!option) {
+      console.log(`Opción "${selection}" no encontrada en menú principal, mostrando menú principal`);
       // Opción inválida, mostrar menú principal
       return await this.showMainMenu(conversationId, phone);
     }
 
+    console.log(`Opción encontrada: ${option.label} (${option.area}), mostrando submenú`);
     // Mostrar submenú
     const submenuText = getSubmenuText(option.area!);
     
+    console.log(`Guardando mensaje del sistema con submenú`);
     await this.saveMessage(conversationId, 'system', submenuText);
     await this.updateMenuState(conversationId, option.area!);
+    console.log(`Enviando submenú por WhatsApp`);
     await this.sendWhatsAppMessage(phone, submenuText);
 
     return {
@@ -304,9 +312,11 @@ export class RouterProcessor {
     selection: string,
     area: MenuArea
   ): Promise<RouterResponse> {
+    console.log(`Procesando selección de submenú: "${selection}" en área "${area}"`);
     const option = findSubmenuOption(area, selection);
 
     if (!option) {
+      console.log(`Opción "${selection}" no encontrada en submenú de "${area}"`);
       // Opción inválida, mostrar submenú actual
       const submenuText = getSubmenuText(area);
       await this.sendWhatsAppMessage(phone, submenuText);
@@ -318,20 +328,26 @@ export class RouterProcessor {
       };
     }
 
+    console.log(`Opción encontrada: ${option.area} - ${option.subarea}, derivando conversación ${conversationId}`);
+    
     // Derivar conversación al área correspondiente
     await this.deriveConversation(conversationId, option.area, option.subarea);
 
     // Enviar mensaje de derivación
     const derivationMessage = `Te derivamos con ${option.area}${option.subarea ? ` - ${option.subarea}` : ''}. Un agente se comunicará contigo pronto. 👋`;
     
+    console.log(`Enviando mensaje de derivación: ${derivationMessage}`);
     await this.saveMessage(conversationId, 'system', derivationMessage);
     await this.sendWhatsAppMessage(phone, derivationMessage);
-    await this.notifyAreaWebhook(option.area, {
+    
+    const webhookPayload = {
       conversationId,
       phone,
       area: option.area,
       subarea: option.subarea,
-    });
+    };
+    console.log(`Notificando webhook de área con payload:`, webhookPayload);
+    await this.notifyAreaWebhook(option.area, webhookPayload);
 
     return {
       success: true,
@@ -349,6 +365,7 @@ export class RouterProcessor {
   ) {
     // Mapear área del menú a área de conversación
     const conversationArea = this.mapMenuAreaToConversationArea(area);
+    console.log(`Derivando conversación ${conversationId} de "PSI Principal" a "${conversationArea}"${subarea ? ` (${subarea})` : ''}`);
 
     // Actualizar conversación
     const updates: any = {
@@ -361,12 +378,21 @@ export class RouterProcessor {
     // Agregar etiqueta/subarea si existe
     if (subarea) {
       // TODO: Implementar sistema de etiquetas
+      console.log(`Subárea "${subarea}" detectada (sistema de etiquetas pendiente)`);
     }
 
-    await this.supabase
+    const { data, error } = await this.supabase
       .from('conversaciones')
       .update(updates)
-      .eq('id', conversationId);
+      .eq('id', conversationId)
+      .select();
+
+    if (error) {
+      console.error(`Error derivando conversación:`, error);
+      throw error;
+    }
+
+    console.log(`Conversación derivada exitosamente. Actualizada:`, data?.[0]);
   }
 
   private mapMenuAreaToConversationArea(menuArea: MenuArea): string {
@@ -409,23 +435,30 @@ export class RouterProcessor {
 
   private async getMenuState(conversationId: string): Promise<MenuState | null> {
     // Obtener último mensaje del sistema para determinar estado
-    const { data: lastSystemMessage } = await this.supabase
+    const { data: lastSystemMessage, error } = await this.supabase
       .from('mensajes')
       .select('*')
       .eq('conversacion_id', conversationId)
       .eq('remitente', 'system')
       .order('timestamp', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error obteniendo estado del menú:', error);
+    }
 
     if (!lastSystemMessage) {
+      console.log(`No hay mensajes del sistema, asumiendo menú principal`);
       return { conversationId, currentMenu: 'main', lastInteraction: new Date() };
     }
 
     // Determinar menú actual basado en el contenido del mensaje
     const messageText = lastSystemMessage.mensaje || '';
+    console.log(`Último mensaje del sistema (primeros 100 chars): ${messageText.substring(0, 100)}`);
     
     if (messageText.includes('¡Hola! 👋')) {
+      console.log(`Detectado menú principal por "¡Hola! 👋"`);
       return { conversationId, currentMenu: 'main', lastInteraction: new Date(lastSystemMessage.timestamp) };
     }
 
@@ -433,10 +466,12 @@ export class RouterProcessor {
     const areas: MenuArea[] = ['Administración', 'Alumnos', 'Inscripciones', 'Comunidad'];
     for (const area of areas) {
       if (messageText.startsWith(area)) {
+        console.log(`Detectado submenú de "${area}" porque el mensaje empieza con "${area}"`);
         return { conversationId, currentMenu: area, lastInteraction: new Date(lastSystemMessage.timestamp) };
       }
     }
 
+    console.log(`No se detectó área específica, asumiendo menú principal`);
     return { conversationId, currentMenu: 'main', lastInteraction: new Date() };
   }
 
