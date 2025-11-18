@@ -840,8 +840,32 @@ En breve se pondrán en contacto contigo. 👋`;
   }
 
   private async updateMenuState(conversationId: string, menu: 'main' | MenuArea) {
-    // El estado se guarda implícitamente en los mensajes del sistema
-    // Podríamos crear una tabla de estados si es necesario
+    // Actualizar router_estado en conversaciones usando campos reales
+    const estado = menu === 'main' ? 'principal' : menu;
+    
+    // Obtener metadata actual
+    const { data: conv } = await this.supabase
+      .from('conversaciones')
+      .select('metadata')
+      .eq('id', conversationId)
+      .single();
+    
+    const metadataActual = (conv?.metadata as any) || {};
+    
+    const { error } = await this.supabase
+      .from('conversaciones')
+      .update({
+        router_estado: estado,
+        metadata: {
+          ...metadataActual,
+          menu_actual: estado,
+        },
+      })
+      .eq('id', conversationId);
+    
+    if (error) {
+      console.error('⚠️ Error actualizando estado del menú:', error);
+    }
   }
 
   private async hasSystemMessages(conversationId: string): Promise<boolean> {
