@@ -1,9 +1,18 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+const fs = require('fs');
 
 // Cargar variables de entorno desde .env
-const envVars = {};
-// Copiar todas las variables de entorno que empiezan con las que necesitamos
+const envPath = path.join(__dirname, '.env');
+let envVars = {};
+
+if (fs.existsSync(envPath)) {
+  require('dotenv').config({ path: envPath });
+  console.log(`✅ Archivo .env encontrado en: ${envPath}`);
+} else {
+  console.error(`❌ Archivo .env NO encontrado en: ${envPath}`);
+}
+
+// Copiar todas las variables de entorno necesarias
 const envKeys = [
   'NODE_ENV', 'PORT', 'LOG_LEVEL', 'ANTILOOP_MINUTES',
   'WEBHOOK_VERIFY_TOKEN',
@@ -20,8 +29,12 @@ const envKeys = [
 envKeys.forEach(key => {
   if (process.env[key]) {
     envVars[key] = process.env[key];
+  } else {
+    console.warn(`⚠️  Variable ${key} no encontrada en .env`);
   }
 });
+
+console.log(`📋 Variables cargadas: ${Object.keys(envVars).length} de ${envKeys.length}`);
 
 module.exports = {
   apps: [
