@@ -6,6 +6,11 @@ const config: Config = {
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
+  safelist: [
+    'bg-[#DCF8C6]',
+    'bg-[#EFEAE2]',
+    'bg-white',
+  ],
   theme: {
     extend: {
       colors: {
@@ -29,6 +34,11 @@ const config: Config = {
             medium: "#475569",
             light: "#F1F5F9",
           },
+        },
+        whatsapp: {
+          messageSent: "#DCF8C6",
+          messageReceived: "#FFFFFF",
+          background: "#EFEAE2",
         },
       },
     },
