@@ -12,6 +12,12 @@ webhookRouter.get('/webhook/whatsapp/:inbox', verifyWebhook);
 
 webhookRouter.post('/webhook/whatsapp/wsp4', async (req, res, next) => {
   try {
+    // Si es webhook de status directo de WhatsApp Cloud API (sin messages)
+    if (req.body.messaging_product === 'whatsapp' && !req.body.messages) {
+      Logger.info('Webhook de status WhatsApp Cloud API ignorado (WSP4)');
+      return res.status(200).json({ success: true, ignored: true });
+    }
+
     const { error, value } = webhookPayloadSchema.validate(req.body);
     if (error) {
       Logger.warn('Payload invalido WSP4', { error });
@@ -28,6 +34,12 @@ webhookRouter.post('/webhook/whatsapp/wsp4', async (req, res, next) => {
 
 webhookRouter.post('/webhook/whatsapp/ventas1', async (req, res, next) => {
   try {
+    // Si es webhook de status directo de WhatsApp Cloud API (sin messages)
+    if (req.body.messaging_product === 'whatsapp' && !req.body.messages) {
+      Logger.info('Webhook de status WhatsApp Cloud API ignorado (VENTAS1)');
+      return res.status(200).json({ success: true, ignored: true });
+    }
+
     const telefono = req.body?.messages?.[0]?.from;
     const texto = req.body?.messages?.[0]?.text?.body || '';
 
@@ -63,6 +75,12 @@ const redirAreas: Record<string, Area> = {
 
 webhookRouter.post('/webhook/whatsapp/:area', async (req, res, next) => {
   try {
+    // Si es webhook de status directo de WhatsApp Cloud API (sin messages)
+    if (req.body.messaging_product === 'whatsapp' && !req.body.messages) {
+      Logger.info(`Webhook de status WhatsApp Cloud API ignorado (${req.params.area})`);
+      return res.status(200).json({ success: true, ignored: true });
+    }
+
     const areaParam = req.params.area.toLowerCase();
     const area = redirAreas[areaParam];
     if (!area) {
@@ -80,4 +98,5 @@ webhookRouter.post('/webhook/whatsapp/:area', async (req, res, next) => {
     next(err);
   }
 });
+
 
