@@ -114,15 +114,19 @@ export class RouterProcessor {
       console.log(`✅ Conversación encontrada/creada: ${conversation.id} (área: ${conversation.area})`);
 
       // Verificar anti-loop
+      console.log(`🔄 Verificando anti-loop para conversación ${conversation.id}...`);
       const lastInteraction = await this.getLastInteraction(conversation.id);
+      console.log(`📅 Última interacción:`, lastInteraction ? lastInteraction.toISOString() : 'N/A');
       if (lastInteraction && this.isWithinAntiLoopWindow(lastInteraction)) {
         // Ignorar mensaje si está dentro de la ventana anti-loop
+        console.log(`⏸️ Anti-loop activo, ignorando mensaje`);
         return { 
           success: true, 
           message: 'Mensaje procesado (anti-loop activo)',
           conversationId: conversation.id 
         };
       }
+      console.log(`✅ Anti-loop no activo, continuando con procesamiento`);
 
       // Guardar mensaje en la base de datos y notificar ingesta
       const metadata: Record<string, any> = {
@@ -152,10 +156,16 @@ export class RouterProcessor {
 
       // Verificar si es la primera interacción ANTES de guardar el mensaje
       // Esto evita que el mensaje del usuario interfiera con la detección
+      console.log(`🔍 Verificando si hay mensajes del sistema ANTES de guardar mensaje del usuario...`);
       const hasSystemMessages = await this.hasSystemMessages(conversation.id);
+      console.log(`📊 Resultado hasSystemMessages: ${hasSystemMessages}`);
       
       // Guardar mensaje del usuario en la base de datos
+      console.log(`💾 Guardando mensaje del usuario en base de datos...`);
       await this.saveMessage(conversation.id, phone, originalText, metadata);
+      console.log(`✅ Mensaje del usuario guardado`);
+      
+      console.log(`📤 Notificando webhook de ingesta...`);
       const ingestionKey = this.getIngestionKey(conversation.area);
       await this.notifyIngestionWebhook(ingestionKey, {
         conversationId: conversation.id,
@@ -163,6 +173,7 @@ export class RouterProcessor {
         message: originalText,
         media: metadata.media,
       });
+      console.log(`✅ Webhook de ingesta notificado`);
 
       // Procesar comando o selección
       if (normalizedCommand === 'MENU') {
