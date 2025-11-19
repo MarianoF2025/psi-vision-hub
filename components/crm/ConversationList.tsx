@@ -126,9 +126,9 @@ export default function ConversationList({
   }, [conversations.length]);
 
   return (
-    <div className="w-[300px] bg-white border-r border-gray-200 flex flex-col">
+    <div className="w-[300px] bg-white border-r border-gray-200 flex flex-col h-screen">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 space-y-3">
+      <div className="p-4 border-b border-gray-200 space-y-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Conversaciones</h2>
           <div className="flex items-center gap-2">
@@ -205,7 +205,8 @@ export default function ConversationList({
       {/* Lista de conversaciones con scroll automático */}
       <div 
         ref={listContainerRef}
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto overflow-x-hidden"
+        style={{ minHeight: 0 }}
       >
         {loading ? (
           <div className="flex items-center justify-center h-full">

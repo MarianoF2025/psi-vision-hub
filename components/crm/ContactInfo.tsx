@@ -15,7 +15,7 @@ export default function ContactInfo({ contact, conversation }: ContactInfoProps)
 
   if (!contact && !conversation) {
     return (
-      <div className="w-[250px] bg-white border-l border-gray-200 flex items-center justify-center">
+      <div className="w-[250px] bg-white border-l border-gray-200 flex items-center justify-center h-screen">
         <p className="text-sm text-gray-500 text-center px-4">
           Selecciona una conversación para ver la información del contacto
         </p>
@@ -40,9 +40,9 @@ export default function ContactInfo({ contact, conversation }: ContactInfoProps)
   };
 
   return (
-    <div className="w-[250px] bg-white border-l border-gray-200 flex flex-col overflow-y-auto">
+    <div className="w-[250px] bg-white border-l border-gray-200 flex flex-col h-screen">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-900">Información del Contacto</h3>
           <button
@@ -68,7 +68,7 @@ export default function ContactInfo({ contact, conversation }: ContactInfoProps)
       </div>
 
       {/* Información del contacto */}
-      <div className="flex-1 p-4 space-y-4">
+      <div className="flex-1 p-4 space-y-4 overflow-y-auto overflow-x-hidden" style={{ minHeight: 0 }}>
         {/* Estado y Resultado */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">

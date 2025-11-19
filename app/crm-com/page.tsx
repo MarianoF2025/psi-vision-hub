@@ -30,7 +30,7 @@ export default async function CRMComPage() {
     }
 
     return (
-      <div className="fixed inset-0 overflow-hidden">
+      <div className="h-screen w-screen overflow-auto">
         <CRMInterface user={user} />
       </div>
     );
@@ -44,7 +44,7 @@ export default async function CRMComPage() {
     if (isDevelopment) {
       console.log('🔧 Modo desarrollo: permitiendo acceso con usuario mock después de error');
       return (
-        <div className="fixed inset-0 overflow-hidden">
+        <div className="h-screen w-screen overflow-auto">
           <CRMInterface user={MOCK_USER} />
         </div>
       );

@@ -156,9 +156,9 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
   const contactName = conversation.contactos?.nombre || conversation.contactos?.telefono || conversation.telefono || 'Contacto';
 
   return (
-    <div className="flex-1 flex flex-col bg-white">
+    <div className="flex-1 flex flex-col bg-white" style={{ minHeight: 0, height: '100%' }}>
       {/* Header del chat */}
-      <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white">
+      <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-white flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
             <span className="text-sm font-medium text-blue-700">
@@ -188,7 +188,7 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
 
       {/* Selector de estado */}
       {conversation && (
-        <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+        <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-700">Estado:</span>
             <StatusSelector
@@ -213,7 +213,12 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
       {/* Área de mensajes con scroll automático */}
       <div 
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-4"
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4"
+        style={{ 
+          minHeight: 0,
+          backgroundColor: '#EFEAE2',
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cdefs%3E%3Cpattern id=\'grid\' width=\'100\' height=\'100\' patternUnits=\'userSpaceOnUse\'%3E%3Cpath d=\'M 100 0 L 0 0 0 100\' fill=\'none\' stroke=\'%23e5e5e5\' stroke-width=\'0.5\' opacity=\'0.2\'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\'100\' height=\'100\' fill=\'url(%23grid)\'/%3E%3C/svg%3E")'
+        }}
       >
         {messages.map((message) => {
           // Determinar si el mensaje es del contacto
@@ -228,18 +233,18 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
               className={`flex ${isFromContact ? 'justify-start' : 'justify-end'}`}
             >
               <div
-                className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                className={`max-w-[70%] rounded-lg px-3 py-2 shadow-sm ${
                   isFromContact
-                    ? 'bg-white border border-gray-200'
-                    : 'bg-primary text-white'
+                    ? 'bg-white'
+                    : 'bg-[#DCF8C6]'
                 }`}
               >
-                <p className={`text-sm ${isFromContact ? 'text-gray-900' : 'text-white'}`}>
+                <p className={`text-sm ${isFromContact ? 'text-gray-900' : 'text-gray-900'}`}>
                   {messageContent}
                 </p>
                 <div
                   className={`flex items-center gap-1 mt-1 text-xs ${
-                    isFromContact ? 'text-gray-500' : 'text-white/70'
+                    isFromContact ? 'text-gray-500' : 'text-gray-600'
                   }`}
                 >
                   <span>{messageDate}</span>
@@ -262,7 +267,7 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
       </div>
 
       {/* Input de mensaje */}
-      <div className="p-4 border-t border-gray-200 bg-white">
+      <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0">
         <form onSubmit={handleSendMessage} className="flex items-end gap-2">
           <div className="flex-1 flex items-end gap-2">
             <button

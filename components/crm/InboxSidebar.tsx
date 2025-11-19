@@ -40,6 +40,7 @@ interface InboxItem {
   subInboxes?: Array<{ id: string; label: string; count: number }>;
 }
 
+// Todas las bandejas de entrada están activas y funcionales
 const inboxes: InboxItem[] = [
   { 
     id: 'psi-principal',
@@ -133,12 +134,12 @@ export default function InboxSidebar({
 
   return (
     <div
-      className={`bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ${
+      className={`bg-white border-r border-gray-200 flex flex-col h-screen transition-all duration-300 ${
         isCollapsed ? 'w-16' : 'w-[250px]'
       }`}
     >
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-4 border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
           {!isCollapsed && (
             <div className="flex items-center gap-2">
@@ -167,11 +168,11 @@ export default function InboxSidebar({
 
       {/* Bandejas de Entrada */}
       {!isCollapsed && (
-        <div className="px-3 py-2">
+        <div className="px-3 py-2 flex-shrink-0">
           <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Bandejas de Entrada</h3>
         </div>
       )}
-      <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-1" style={{ minHeight: 0 }}>
         {inboxes.map((inbox) => {
           const isExpanded = expandedInboxes.has(inbox.id);
           const isSelected = selectedInbox === inbox.type;
@@ -238,10 +239,10 @@ export default function InboxSidebar({
       {/* Funciones */}
       {!isCollapsed && (
         <>
-          <div className="px-3 py-2 border-t border-gray-200">
+          <div className="px-3 py-2 border-t border-gray-200 flex-shrink-0">
             <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Funciones</h3>
           </div>
-          <nav className="px-2 pb-2 space-y-1">
+          <nav className="px-2 pb-2 space-y-1 flex-shrink-0">
             {functions.map((func) => {
               const Icon = func.icon;
               return (
@@ -260,7 +261,7 @@ export default function InboxSidebar({
 
       {/* Footer con modo oscuro y usuario */}
       {!isCollapsed && (
-        <div className="p-4 border-t border-gray-200 space-y-4">
+        <div className="p-4 border-t border-gray-200 space-y-4 flex-shrink-0">
           {/* Modo Oscuro */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

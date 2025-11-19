@@ -89,11 +89,20 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
           )
         `);
 
-      // Filtrar por área/inbox
+      // Filtrar por área/inbox - Todas las bandejas activas
       if (selectedInbox === 'PSI Principal') {
         // PSI Principal: buscar por área exacta
         query = query.eq('area', 'PSI Principal');
+      } else if (selectedInbox === 'Ventas') {
+        query = query.eq('area', 'Ventas');
+      } else if (selectedInbox === 'Alumnos') {
+        query = query.eq('area', 'Alumnos');
+      } else if (selectedInbox === 'Administración') {
+        query = query.eq('area', 'Administración');
+      } else if (selectedInbox === 'Comunidad') {
+        query = query.eq('area', 'Comunidad');
       } else {
+        // Fallback: usar el valor directamente
         query = query.eq('area', selectedInbox);
       }
 
@@ -136,7 +145,8 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
 
   const loadInboxStats = async () => {
     try {
-      const areas = ['Ventas', 'Alumnos', 'Administración', 'Comunidad', 'PSI Principal'];
+      // Todas las bandejas activas
+      const areas: InboxType[] = ['PSI Principal', 'Ventas', 'Alumnos', 'Administración', 'Comunidad'];
       const stats: Record<string, number> = {};
 
       for (const area of areas) {
@@ -144,26 +154,27 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
           .from('conversaciones')
           .select('id', { count: 'exact', head: true });
 
-        if (area === 'PSI Principal') {
-          query = query.eq('area', 'PSI Principal');
-        } else {
-          query = query.eq('area', area);
-        }
+        // Filtrar por área específica
+        query = query.eq('area', area);
 
         const { count, error } = await query;
         if (!error) {
           stats[area] = count || 0;
+        } else {
+          console.warn(`Error cargando estadísticas para ${area}:`, error);
+          stats[area] = 0;
         }
       }
 
       setInboxStats(stats);
+      console.log('Estadísticas de bandejas cargadas:', stats);
     } catch (error) {
       console.error('Error loading inbox stats:', error);
     }
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden fixed inset-0">
+    <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar de Inboxes - 250px (colapsable) */}
       <InboxSidebar
         isCollapsed={isSidebarCollapsed}
@@ -185,7 +196,7 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
       />
 
       {/* Panel de Chat - flex-1 */}
-      <div className="flex-1 flex flex-col relative">
+      <div className="flex-1 flex flex-col relative h-screen" style={{ minHeight: 0 }}>
         {error && (
           <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 m-4 rounded">
             <div className="flex items-center">
