@@ -166,63 +166,94 @@ export class RouterProcessor {
       console.log(`✅ Mensaje del usuario guardado`);
       
       console.log(`📤 Notificando webhook de ingesta...`);
-      const ingestionKey = this.getIngestionKey(conversation.area);
-      await this.notifyIngestionWebhook(ingestionKey, {
-        conversationId: conversation.id,
-        phone,
-        message: originalText,
-        media: metadata.media,
-      });
-      console.log(`✅ Webhook de ingesta notificado`);
+      try {
+        const ingestionKey = this.getIngestionKey(conversation.area);
+        console.log(`🔑 Clave de ingesta: ${ingestionKey}`);
+        await this.notifyIngestionWebhook(ingestionKey, {
+          conversationId: conversation.id,
+          phone,
+          message: originalText,
+          media: metadata.media,
+        });
+        console.log(`✅ Webhook de ingesta notificado`);
+      } catch (error: any) {
+        console.error(`⚠️ Error notificando webhook de ingesta (no crítico):`, error);
+        // Continuar con el procesamiento aunque falle el webhook
+      }
 
       // Procesar comando o selección
-      if (normalizedCommand === 'MENU') {
-        return await this.showMainMenu(conversation.id, phone);
-      }
+      console.log(`🔄🔄🔄 INICIANDO PROCESAMIENTO DE COMANDO/SELECCIÓN`);
+      console.log(`   - Comando normalizado: "${normalizedCommand}"`);
+      console.log(`   - hasSystemMessages: ${hasSystemMessages}`);
+      
+      try {
+        if (normalizedCommand === 'MENU') {
+          console.log(`📋 Comando MENU detectado, mostrando menú principal`);
+          return await this.showMainMenu(conversation.id, phone);
+        }
 
-      if (normalizedCommand === 'VOLVER') {
-        return await this.showMainMenu(conversation.id, phone);
-      }
+        if (normalizedCommand === 'VOLVER') {
+          console.log(`↩️ Comando VOLVER detectado, mostrando menú principal`);
+          return await this.showMainMenu(conversation.id, phone);
+        }
 
-      // Si es la primera interacción (no hay mensajes del sistema previos), mostrar menú automáticamente
-      if (!hasSystemMessages) {
-        // Primera interacción: mostrar menú principal automáticamente
-        console.log(`🎯 Primera interacción detectada (sin mensajes del sistema previos), mostrando menú principal automáticamente`);
-        return await this.showMainMenu(conversation.id, phone);
-      }
+        // Si es la primera interacción (no hay mensajes del sistema previos), mostrar menú automáticamente
+        if (!hasSystemMessages) {
+          // Primera interacción: mostrar menú principal automáticamente
+          console.log(`🎯 Primera interacción detectada (sin mensajes del sistema previos), mostrando menú principal automáticamente`);
+          return await this.showMainMenu(conversation.id, phone);
+        }
 
-      // Obtener estado del menú
-      console.log(`🔍 Obteniendo estado del menú para conversación ${conversation.id}...`);
-      const menuState = await this.getMenuState(conversation.id);
-      console.log(`📊 Estado del menú detectado:`, JSON.stringify(menuState, null, 2));
+        // Obtener estado del menú
+        console.log(`🔍 Obteniendo estado del menú para conversación ${conversation.id}...`);
+        let menuState: MenuState | null = null;
+        try {
+          menuState = await this.getMenuState(conversation.id);
+          console.log(`📊 Estado del menú detectado:`, JSON.stringify(menuState, null, 2));
+        } catch (error: any) {
+          console.error(`❌ Error obteniendo estado del menú:`, error);
+          console.log(`⚠️ Continuando con procesamiento asumiendo menú principal`);
+        }
 
-      if (!menuState) {
-        console.log(`⚠️ No se pudo obtener estado del menú, asumiendo menú principal`);
-        console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
-        return await this.processMainMenuSelection(
-          conversation.id,
-          phone,
-          normalizedCommand
-        );
-      }
+        if (!menuState) {
+          console.log(`⚠️ No se pudo obtener estado del menú, asumiendo menú principal`);
+          console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
+          return await this.processMainMenuSelection(
+            conversation.id,
+            phone,
+            normalizedCommand
+          );
+        }
 
-      if (menuState.currentMenu === 'main') {
-        console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
-        // Procesar selección del menú principal
-        return await this.processMainMenuSelection(
-          conversation.id,
-          phone,
-          normalizedCommand
-        );
-      } else {
-        console.log(`🔄 Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
-        // Procesar selección del submenú
-        return await this.processSubmenuSelection(
-          conversation.id, 
-          phone, 
-          normalizedCommand, 
-          menuState.currentMenu as MenuArea
-        );
+        if (menuState.currentMenu === 'main') {
+          console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
+          // Procesar selección del menú principal
+          return await this.processMainMenuSelection(
+            conversation.id,
+            phone,
+            normalizedCommand
+          );
+        } else {
+          console.log(`🔄 Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
+          // Procesar selección del submenú
+          return await this.processSubmenuSelection(
+            conversation.id, 
+            phone, 
+            normalizedCommand, 
+            menuState.currentMenu as MenuArea
+          );
+        }
+      } catch (error: any) {
+        console.error(`❌❌❌ ERROR CRÍTICO en procesamiento de comando/selección:`, error);
+        console.error(`   - Stack:`, error.stack);
+        console.error(`   - Comando: "${normalizedCommand}"`);
+        console.error(`   - Conversación: ${conversation.id}`);
+        // Retornar error pero no lanzar excepción para no romper el webhook
+        return {
+          success: false,
+          message: `Error procesando comando: ${error.message}`,
+          conversationId: conversation.id,
+        };
       }
     } catch (error) {
       console.error('Error processing message:', error);
