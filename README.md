@@ -108,50 +108,13 @@ psi-vision-hub/
 │   ├── auth.ts           # Funciones de autenticación
 │   └── utils.ts          # Utilidades generales
 └── middleware.ts         # Middleware de Next.js para auth
-└── lib/router/          # Router WSP4 integrado
-    ├── types.ts         # Tipos del router
-    ├── menus.ts         # Definición de menús
-    └── processor.ts     # Procesador de mensajes
 ```
 
-## 📱 Router WSP4
+## 📱 Router PSI
 
-El Router WSP4 está integrado en el módulo CRM-COM y procesa mensajes de WhatsApp automáticamente. Procesa menús interactivos, deriva conversaciones a áreas específicas y gestiona multimedia.
+El Router PSI es un proyecto separado que procesa mensajes de WhatsApp automáticamente. Está desplegado de forma independiente y se comunica con el CRM a través de Supabase.
 
-### Funcionalidades
-
-- **Menús automáticos**: Sistema de menús principal y submenús por área
-- **Derivación inteligente**: Deriva conversaciones a áreas según selección del usuario
-- **Anti-loop**: Previene loops de mensajes (ventana de 15 minutos)
-- **Comandos**: MENU (volver al menú principal) y VOLVER (volver al menú anterior)
-- **Soporte multimedia**: descarga y almacenamiento de audios, imágenes, documentos, stickers y videos
-- **Tracking Meta Ads**: captura UTM/campaign/adset/ad IDs y los vincula con cada conversación
-
-### Endpoints API
-
-- `POST /api/router/whatsapp/webhook` - Recibe webhooks de WhatsApp
-- `POST /api/router/messages/send` - Envía mensajes a través del router
-- `GET /api/router/conversations/:id` - Obtiene estado de una conversación
-
-### Configuración WhatsApp
-
-Agrega estas variables a tu `.env.local`:
-
-```
-# WhatsApp Cloud API
-CLOUD_API_TOKEN=...
-CLOUD_API_BASE_URL=https://graph.facebook.com/v24.0
-CLOUD_API_PHONE_NUMBER_ID=...
-WHATSAPP_VERIFY_TOKEN=tu_verify_token
-
-# Supabase (media storage y service role)
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_STORAGE_BUCKET_AUDIOS=audios
-SUPABASE_STORAGE_BUCKET_DOCUMENTOS=documentos
-
-# Opcional: transcripciones de audio
-OPENAI_API_KEY=...
-```
+**Nota:** El Router ha sido separado del CRM para mejor escalabilidad y mantenibilidad. Ver el proyecto `psi-router` para más información.
 
 ## 🚢 Deployment
 
