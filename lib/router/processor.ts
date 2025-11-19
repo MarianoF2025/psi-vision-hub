@@ -181,11 +181,22 @@ export class RouterProcessor {
       }
 
       // Obtener estado del menú
+      console.log(`🔍 Obteniendo estado del menú para conversación ${conversation.id}...`);
       const menuState = await this.getMenuState(conversation.id);
-      console.log(`Estado del menú detectado:`, menuState);
+      console.log(`📊 Estado del menú detectado:`, JSON.stringify(menuState, null, 2));
 
-      if (!menuState || menuState.currentMenu === 'main') {
-        console.log(`Procesando como selección de menú principal: "${normalizedCommand}"`);
+      if (!menuState) {
+        console.log(`⚠️ No se pudo obtener estado del menú, asumiendo menú principal`);
+        console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
+        return await this.processMainMenuSelection(
+          conversation.id,
+          phone,
+          normalizedCommand
+        );
+      }
+
+      if (menuState.currentMenu === 'main') {
+        console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
         // Procesar selección del menú principal
         return await this.processMainMenuSelection(
           conversation.id,
@@ -193,7 +204,7 @@ export class RouterProcessor {
           normalizedCommand
         );
       } else {
-        console.log(`Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
+        console.log(`🔄 Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
         // Procesar selección del submenú
         return await this.processSubmenuSelection(
           conversation.id, 
@@ -362,16 +373,20 @@ export class RouterProcessor {
     phone: string,
     selection: string
   ): Promise<RouterResponse> {
-    console.log(`Procesando selección de menú principal: "${selection}"`);
+    console.log(`🔄🔄🔄 processMainMenuSelection INICIADO para selección: "${selection}"`);
+    console.log(`   - Conversación: ${conversationId}`);
+    console.log(`   - Teléfono: ${phone}`);
+    
     const option = findMainMenuOption(selection);
+    console.log(`🔍 Opción buscada: "${selection}", resultado:`, option ? `${option.label} (${option.area})` : 'NO ENCONTRADA');
 
     if (!option) {
-      console.log(`Opción "${selection}" no encontrada en menú principal, mostrando menú principal`);
+      console.log(`⚠️ Opción "${selection}" no encontrada en menú principal, mostrando menú principal`);
       // Opción inválida, mostrar menú principal
       return await this.showMainMenu(conversationId, phone);
     }
 
-    console.log(`Opción encontrada: ${option.label} (${option.area}), mostrando submenú`);
+    console.log(`✅ Opción encontrada: ${option.label} (${option.area}), mostrando submenú`);
     // Mostrar submenú
     const submenuText = getSubmenuText(option.area!);
     
