@@ -47,12 +47,10 @@ module.exports = {
       env: {
         NODE_ENV: 'development',
         PORT: process.env.PORT || envVars.PORT || 3002,
-        ...envVars,
       },
       env_production: {
         NODE_ENV: 'production',
         PORT: process.env.PORT || envVars.PORT || 3002,
-        ...envVars,
       },
       watch: false,
       autorestart: true,

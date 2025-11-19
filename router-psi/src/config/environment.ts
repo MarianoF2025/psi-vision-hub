@@ -12,6 +12,10 @@ if (result.error) {
   Logger.warn(`No se pudo cargar .env desde ${envPath}, usando variables de entorno del sistema`);
 } else {
   Logger.info(`✅ Variables de entorno cargadas desde ${envPath}`);
+  // Forzar recarga de process.env después de dotenv
+  if (result.parsed) {
+    Object.assign(process.env, result.parsed);
+  }
 }
 
 const envSchema = Joi.object({
