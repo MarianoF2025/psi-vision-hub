@@ -3,15 +3,15 @@ import path from 'path';
 import Joi from 'joi';
 import { Logger } from '../utils/logger';
 
-// Cargar .env desde el directorio raíz de router-psi
-// __dirname en dist será dist/config, entonces ../../.env apunta a router-psi/.env
-const envPath = path.join(__dirname, '../../.env');
+// Cargar .env desde el directorio de trabajo actual (router-psi)
+// PM2 ejecuta desde router-psi según cwd en ecosystem.config.cjs
+const envPath = path.join(process.cwd(), '.env');
 const result = dotenv.config({ path: envPath });
 
 if (result.error) {
   Logger.warn(`No se pudo cargar .env desde ${envPath}, usando variables de entorno del sistema`);
 } else {
-  Logger.info(`Variables de entorno cargadas desde ${envPath}`);
+  Logger.info(`✅ Variables de entorno cargadas desde ${envPath}`);
 }
 
 const envSchema = Joi.object({
