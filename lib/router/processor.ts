@@ -984,7 +984,7 @@ En breve se pondrán en contacto contigo. 👋`;
       return { conversationId, currentMenu: 'main', lastInteraction: new Date() };
     }
 
-    console.log(`Últimos mensajes encontrados (primeros 3):`, lastMessages.slice(0, 3).map(m => ({
+    console.log(`Últimos mensajes encontrados (primeros 3):`, lastMessages.slice(0, 3).map((m: any) => ({
       id: m.id,
       mensaje: (m.mensaje || '').substring(0, 50),
       timestamp: m.timestamp
