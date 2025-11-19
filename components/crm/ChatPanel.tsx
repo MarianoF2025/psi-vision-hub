@@ -58,10 +58,24 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
     }
   }, [conversation?.id]);
 
-  // Scroll automático al final
+  // Scroll automático al final cuando cambian los mensajes
   useEffect(() => {
-    scrollToBottom();
+    if (messages.length > 0) {
+      // Usar setTimeout para asegurar que el DOM se actualizó
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+    }
   }, [messages]);
+
+  // Scroll automático cuando se carga una nueva conversación
+  useEffect(() => {
+    if (conversation) {
+      setTimeout(() => {
+        scrollToBottom();
+      }, 200);
+    }
+  }, [conversation?.id]);
 
   const loadMessages = async () => {
     if (!conversation) return;
@@ -94,8 +108,23 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
   };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'end',
+        inline: 'nearest'
+      });
+    }
   };
+
+  // Scroll automático cuando se envía un mensaje
+  useEffect(() => {
+    if (messages.length > 0 && !sending) {
+      setTimeout(() => {
+        scrollToBottom();
+      }, 150);
+    }
+  }, [messages.length, sending]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -197,8 +226,14 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
         onUpdate={onUpdateConversation}
       />
 
-      {/* Área de mensajes con scroll */}
-      <div className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-4">
+      {/* Área de mensajes con scroll automático */}
+      <div 
+        className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-4"
+        style={{ 
+          scrollBehavior: 'smooth',
+          overscrollBehavior: 'contain'
+        }}
+      >
         {messages.map((message) => {
           // Determinar si el mensaje es del contacto
           const contactPhone = conversation.contactos?.telefono || conversation.telefono;

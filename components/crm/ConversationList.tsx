@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Conversation, InboxType } from '@/lib/types/crm';
 import { User } from '@/lib/types';
 import { Search, Filter, MoreVertical } from 'lucide-react';
@@ -28,6 +28,7 @@ export default function ConversationList({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterTab, setFilterTab] = useState<'mine' | 'unassigned' | 'all'>('mine');
   const [lastMessages, setLastMessages] = useState<Record<string, string>>({});
+  const listContainerRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
   // Cargar último mensaje de cada conversación
@@ -104,6 +105,41 @@ export default function ConversationList({
   const mineCount = conversations.filter((c) => c.asignado_a === user?.id).length;
   const unassignedCount = conversations.filter((c) => !c.asignado_a).length;
   const allCount = conversations.length;
+
+  // Scroll automático al inicio cuando cambian las conversaciones o el inbox
+  useEffect(() => {
+    if (listContainerRef.current && !loading && filteredConversations.length > 0) {
+      // Scroll suave al inicio (donde están las conversaciones más recientes)
+      setTimeout(() => {
+        if (listContainerRef.current) {
+          listContainerRef.current.scrollTo({
+            top: 0,
+            behavior: 'smooth',
+          });
+        }
+      }, 100);
+    }
+  }, [selectedInbox, filteredConversations.length, loading]);
+
+  // Scroll automático cuando se agregan nuevas conversaciones
+  useEffect(() => {
+    if (listContainerRef.current && conversations.length > 0) {
+      // Solo hacer scroll si el usuario está cerca del inicio (top)
+      const container = listContainerRef.current;
+      const isNearTop = container.scrollTop < 100;
+      
+      if (isNearTop) {
+        setTimeout(() => {
+          if (listContainerRef.current) {
+            listContainerRef.current.scrollTo({
+              top: 0,
+              behavior: 'smooth',
+            });
+          }
+        }, 150);
+      }
+    }
+  }, [conversations.length]);
 
   return (
     <div className="w-[300px] bg-white border-r border-gray-200 flex flex-col">
@@ -182,8 +218,15 @@ export default function ConversationList({
         </div>
       </div>
 
-      {/* Lista de conversaciones con scroll exclusivo */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Lista de conversaciones con scroll automático */}
+      <div 
+        ref={listContainerRef}
+        className="flex-1 overflow-y-auto"
+        style={{ 
+          scrollBehavior: 'smooth',
+          overscrollBehavior: 'contain'
+        }}
+      >
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
