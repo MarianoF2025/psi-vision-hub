@@ -1,3 +1,23 @@
+const path = require('path');
+const fs = require('fs');
+
+// Cargar variables de entorno desde .env si existe
+let envVars = {};
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  envContent.split('\n').forEach(line => {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) {
+      const [key, ...valueParts] = trimmed.split('=');
+      if (key && valueParts.length > 0) {
+        const value = valueParts.join('=').replace(/^["']|["']$/g, '');
+        envVars[key.trim()] = value.trim();
+      }
+    }
+  });
+}
+
 module.exports = {
   apps: [
     {
@@ -8,11 +28,13 @@ module.exports = {
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'development',
-        PORT: process.env.PORT || 3002,
+        PORT: process.env.PORT || envVars.PORT || 3002,
+        ...envVars,
       },
       env_production: {
         NODE_ENV: 'production',
-        PORT: process.env.PORT || 3002,
+        PORT: process.env.PORT || envVars.PORT || 3002,
+        ...envVars,
       },
       watch: false,
       autorestart: true,
