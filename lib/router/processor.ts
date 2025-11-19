@@ -65,15 +65,20 @@ const INGESTA_WEBHOOKS: Record<string, string | undefined> = {
 };
 
 export class RouterProcessor {
-  private supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  private supabase: ReturnType<typeof createClient>;
 
   constructor() {
-    // Validar configuración de Supabase
+    console.log(`🔧 RouterProcessor.constructor INICIADO`);
+    
+    // Validar configuración ANTES de crear cliente
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    console.log(`🔍 Validando configuración de Supabase...`);
+    console.log(`   - URL presente: ${!!supabaseUrl}`);
+    console.log(`   - URL valor: ${supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : 'N/A'}`);
+    console.log(`   - Key presente: ${!!supabaseKey}`);
+    console.log(`   - Key tipo: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY'}`);
     
     if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') {
       console.error('❌ ERROR CRÍTICO: NEXT_PUBLIC_SUPABASE_URL no configurado');
@@ -85,22 +90,45 @@ export class RouterProcessor {
       throw new Error('Clave de Supabase no está configurada');
     }
     
-    console.log(`✅ RouterProcessor inicializado con Supabase URL: ${supabaseUrl.substring(0, 30)}...`);
-    console.log(`✅ Usando clave: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY'}`);
+    console.log(`✅ Configuración validada, creando cliente Supabase...`);
+    // Crear cliente DESPUÉS de validar
+    this.supabase = createClient(supabaseUrl, supabaseKey);
+    
+    console.log(`✅ RouterProcessor inicializado correctamente`);
+    console.log(`   - Supabase URL: ${supabaseUrl.substring(0, 30)}...`);
+    console.log(`   - Usando clave: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY'}`);
   }
 
   async processMessage(message: WhatsAppMessage): Promise<RouterResponse> {
+    const startTime = Date.now();
     try {
-      console.log(`🚀 RouterProcessor.processMessage iniciado`);
+      console.log(`🚀🚀🚀 RouterProcessor.processMessage INICIADO 🚀🚀🚀`);
+      console.log(`   - Timestamp: ${new Date().toISOString()}`);
       console.log(`   - From: ${message.from}`);
       console.log(`   - Message: ${message.message?.substring(0, 100)}`);
       console.log(`   - Type: ${message.type}`);
+      console.log(`   - MessageId: ${message.messageId || 'N/A'}`);
+      
+      // VALIDACIÓN TEMPRANA DE ENTRADA
+      console.log(`🔍 VALIDANDO ENTRADA...`);
+      if (!message.from) {
+        console.error(`❌ ERROR: Mensaje sin campo 'from'`);
+        return { success: false, message: 'Mensaje sin remitente' };
+      }
+      
+      if (!this.isValidPhone(message.from)) {
+        console.error(`❌ ERROR: Número de teléfono inválido: ${message.from}`);
+        return { success: false, message: 'Número de teléfono inválido' };
+      }
+      
+      console.log(`✅ Validación de entrada exitosa`);
       
       const phone = message.from;
       const originalText = message.message || '';
       const normalizedCommand = originalText.trim().toUpperCase();
       
       console.log(`   - Comando normalizado: "${normalizedCommand}"`);
+      console.log(`   - Longitud del mensaje: ${originalText.length} caracteres`);
 
       // Buscar o crear conversación
       console.log(`🔍 Buscando o creando conversación para ${phone}`);
@@ -198,56 +226,99 @@ export class RouterProcessor {
         }
 
         // Si es la primera interacción (no hay mensajes del sistema previos), mostrar menú automáticamente
+        console.log(`🔍 Evaluando si es primera interacción...`);
+        console.log(`   - hasSystemMessages: ${hasSystemMessages}`);
+        console.log(`   - !hasSystemMessages: ${!hasSystemMessages}`);
+        
         if (!hasSystemMessages) {
           // Primera interacción: mostrar menú principal automáticamente
-          console.log(`🎯 Primera interacción detectada (sin mensajes del sistema previos), mostrando menú principal automáticamente`);
-          return await this.showMainMenu(conversation.id, phone);
+          console.log(`🎯🎯🎯 PRIMERA INTERACCIÓN DETECTADA 🎯🎯🎯`);
+          console.log(`   - Sin mensajes del sistema previos`);
+          console.log(`   - Ejecutando showMainMenu()...`);
+          const result = await this.showMainMenu(conversation.id, phone);
+          console.log(`✅ showMainMenu() completado, retornando resultado`);
+          return result;
         }
+        
+        console.log(`➡️ NO es primera interacción, continuando con procesamiento de selección`);
 
         // Obtener estado del menú
-        console.log(`🔍 Obteniendo estado del menú para conversación ${conversation.id}...`);
+        console.log(`🔍🔍🔍 Obteniendo estado del menú para conversación ${conversation.id}...`);
         let menuState: MenuState | null = null;
+        const menuStateStartTime = Date.now();
+        
         try {
+          console.log(`   - Llamando a getMenuState()...`);
           menuState = await this.getMenuState(conversation.id);
+          const menuStateTime = Date.now() - menuStateStartTime;
+          console.log(`   - getMenuState() completado en ${menuStateTime}ms`);
           console.log(`📊 Estado del menú detectado:`, JSON.stringify(menuState, null, 2));
+          
+          if (menuState) {
+            console.log(`   - currentMenu: ${menuState.currentMenu}`);
+            console.log(`   - lastInteraction: ${menuState.lastInteraction.toISOString()}`);
+          } else {
+            console.log(`   - menuState es null`);
+          }
         } catch (error: any) {
-          console.error(`❌ Error obteniendo estado del menú:`, error);
+          const menuStateTime = Date.now() - menuStateStartTime;
+          console.error(`❌❌❌ ERROR obteniendo estado del menú:`, error);
+          console.error(`   - Stack:`, error.stack);
+          console.error(`   - Tiempo hasta error: ${menuStateTime}ms`);
           console.log(`⚠️ Continuando con procesamiento asumiendo menú principal`);
         }
 
         if (!menuState) {
-          console.log(`⚠️ No se pudo obtener estado del menú, asumiendo menú principal`);
+          console.log(`⚠️⚠️⚠️ menuState es NULL - Asumiendo menú principal`);
           console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
-          return await this.processMainMenuSelection(
+          console.log(`   - Llamando a processMainMenuSelection()...`);
+          const result = await this.processMainMenuSelection(
             conversation.id,
             phone,
             normalizedCommand
           );
+          console.log(`✅ processMainMenuSelection() completado`);
+          return result;
         }
 
+        console.log(`📊 Evaluando estado del menú para determinar flujo...`);
+        console.log(`   - menuState.currentMenu: "${menuState.currentMenu}"`);
+        console.log(`   - Es 'main'?: ${menuState.currentMenu === 'main'}`);
+
         if (menuState.currentMenu === 'main') {
-          console.log(`🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
+          console.log(`🔄🔄🔄 Procesando como selección de menú principal: "${normalizedCommand}"`);
+          console.log(`   - Llamando a processMainMenuSelection()...`);
           // Procesar selección del menú principal
-          return await this.processMainMenuSelection(
+          const result = await this.processMainMenuSelection(
             conversation.id,
             phone,
             normalizedCommand
           );
+          console.log(`✅ processMainMenuSelection() completado`);
+          return result;
         } else {
-          console.log(`🔄 Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
+          console.log(`🔄🔄🔄 Procesando como selección de submenú: "${normalizedCommand}" en área "${menuState.currentMenu}"`);
+          console.log(`   - Llamando a processSubmenuSelection()...`);
           // Procesar selección del submenú
-          return await this.processSubmenuSelection(
+          const result = await this.processSubmenuSelection(
             conversation.id, 
             phone, 
             normalizedCommand, 
             menuState.currentMenu as MenuArea
           );
+          console.log(`✅ processSubmenuSelection() completado`);
+          return result;
         }
       } catch (error: any) {
-        console.error(`❌❌❌ ERROR CRÍTICO en procesamiento de comando/selección:`, error);
+        const totalTime = Date.now() - startTime;
+        console.error(`❌❌❌ ERROR CRÍTICO en procesamiento de comando/selección ❌❌❌`);
+        console.error(`   - Tiempo hasta error: ${totalTime}ms`);
+        console.error(`   - Error:`, error);
+        console.error(`   - Mensaje: ${error.message}`);
         console.error(`   - Stack:`, error.stack);
         console.error(`   - Comando: "${normalizedCommand}"`);
         console.error(`   - Conversación: ${conversation.id}`);
+        console.error(`   - Teléfono: ${phone}`);
         // Retornar error pero no lanzar excepción para no romper el webhook
         return {
           success: false,
@@ -255,9 +326,23 @@ export class RouterProcessor {
           conversationId: conversation.id,
         };
       }
-    } catch (error) {
-      console.error('Error processing message:', error);
-      return { success: false, message: 'Error al procesar mensaje' };
+      
+      const totalTime = Date.now() - startTime;
+      console.log(`✅✅✅ RouterProcessor.processMessage COMPLETADO exitosamente en ${totalTime}ms ✅✅✅`);
+      // Este return nunca debería ejecutarse, pero lo dejamos por seguridad
+      return {
+        success: false,
+        message: 'Flujo completado sin retorno explícito',
+        conversationId: conversation.id,
+      };
+    } catch (error: any) {
+      const totalTime = Date.now() - startTime;
+      console.error(`❌❌❌ ERROR GENERAL en processMessage ❌❌❌`);
+      console.error(`   - Tiempo hasta error: ${totalTime}ms`);
+      console.error(`   - Error:`, error);
+      console.error(`   - Mensaje: ${error.message}`);
+      console.error(`   - Stack:`, error.stack);
+      return { success: false, message: `Error al procesar mensaje: ${error.message}` };
     }
   }
 
@@ -993,39 +1078,96 @@ En breve se pondrán en contacto contigo. 👋`;
   }
 
   private async hasSystemMessages(conversationId: string): Promise<boolean> {
-    // Verificar si hay mensajes del sistema previos (antes del mensaje actual)
-    console.log(`🔍 Verificando si hay mensajes del sistema para conversación ${conversationId}`);
-    const { data: systemMessages, error } = await this.supabase
-      .from('mensajes')
-      .select('id, remitente_tipo, mensaje')
-      .eq('conversacion_id', conversationId)
-      .eq('remitente_tipo', 'system')
-      .limit(5); // Obtener más para debugging
+    console.log(`🔍🔍🔍 hasSystemMessages INICIADO para conversación ${conversationId}`);
+    const startTime = Date.now();
+    
+    try {
+      // Verificar si hay mensajes del sistema previos (antes del mensaje actual)
+      console.log(`   - Ejecutando query en Supabase...`);
+      const { data: systemMessages, error } = await this.supabase
+        .from('mensajes')
+        .select('id, remitente_tipo, mensaje, timestamp')
+        .eq('conversacion_id', conversationId)
+        .eq('remitente_tipo', 'system')
+        .order('timestamp', { ascending: false })
+        .limit(5);
 
-    if (error && error.code !== 'PGRST116') {
-      console.error('❌ Error verificando mensajes del sistema:', error);
-      // En caso de error, asumir que no hay mensajes del sistema para mostrar el menú
+      const queryTime = Date.now() - startTime;
+      console.log(`   - Query completada en ${queryTime}ms`);
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          console.log(`   - No hay mensajes del sistema (código PGRST116 - no encontrado)`);
+          console.log(`✅ hasSystemMessages COMPLETADO: false (sin mensajes)`);
+          return false;
+        }
+        console.error(`❌ ERROR verificando mensajes del sistema:`, error);
+        console.error(`   - Código: ${error.code}`);
+        console.error(`   - Mensaje: ${error.message}`);
+        console.error(`   - Detalles: ${JSON.stringify(error.details)}`);
+        // En caso de error, asumir que no hay mensajes del sistema para mostrar el menú
+        console.log(`⚠️ Asumiendo false debido a error`);
+        console.log(`✅ hasSystemMessages COMPLETADO: false (error)`);
+        return false;
+      }
+
+      const hasMessages = (systemMessages && systemMessages.length > 0) || false;
+      const totalTime = Date.now() - startTime;
+      
+      console.log(`📊 Resultado de query:`);
+      console.log(`   - Mensajes encontrados: ${systemMessages?.length || 0}`);
+      if (systemMessages && systemMessages.length > 0) {
+        console.log(`   - Detalles de mensajes:`);
+        systemMessages.forEach((m, idx) => {
+          console.log(`     ${idx + 1}. ID: ${m.id}, Preview: ${m.mensaje?.substring(0, 50)}..., Timestamp: ${m.timestamp}`);
+        });
+      }
+      console.log(`   - Tiempo total: ${totalTime}ms`);
+      console.log(`✅ hasSystemMessages COMPLETADO: ${hasMessages}`);
+      
+      return hasMessages;
+    } catch (error: any) {
+      const totalTime = Date.now() - startTime;
+      console.error(`❌❌❌ EXCEPCIÓN en hasSystemMessages:`, error);
+      console.error(`   - Stack:`, error.stack);
+      console.error(`   - Tiempo hasta error: ${totalTime}ms`);
+      console.log(`⚠️ Asumiendo false debido a excepción`);
+      console.log(`✅ hasSystemMessages COMPLETADO: false (excepción)`);
       return false;
     }
-
-    const hasMessages = (systemMessages && systemMessages.length > 0) || false;
-    console.log(`📊 Mensajes del sistema encontrados: ${systemMessages?.length || 0}`, 
-                systemMessages?.map(m => ({ id: m.id, preview: m.mensaje?.substring(0, 50) })));
-    console.log(`✅ hasSystemMessages retorna: ${hasMessages}`);
-    
-    return hasMessages;
+  }
+  
+  private isValidPhone(phone: string): boolean {
+    // Validar formato básico de teléfono (debe empezar con 549 y tener al menos 10 dígitos)
+    return /^549\d{8,}$/.test(phone);
   }
 
   private async getLastInteraction(conversationId: string): Promise<Date | null> {
-    const { data: lastMessage } = await this.supabase
-      .from('mensajes')
-      .select('timestamp')
-      .eq('conversacion_id', conversationId)
-      .order('timestamp', { ascending: false })
-      .limit(1)
-      .single();
+    console.log(`🔍 getLastInteraction INICIADO para conversación ${conversationId}`);
+    try {
+      const { data: lastMessage, error } = await this.supabase
+        .from('mensajes')
+        .select('timestamp')
+        .eq('conversacion_id', conversationId)
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-    return lastMessage ? new Date(lastMessage.timestamp) : null;
+      if (error && error.code !== 'PGRST116') {
+        console.error(`❌ Error obteniendo última interacción:`, error);
+        console.log(`✅ getLastInteraction COMPLETADO: null (error)`);
+        return null;
+      }
+
+      const result = lastMessage ? new Date(lastMessage.timestamp) : null;
+      console.log(`   - Última interacción: ${result ? result.toISOString() : 'N/A'}`);
+      console.log(`✅ getLastInteraction COMPLETADO: ${result ? result.toISOString() : 'null'}`);
+      return result;
+    } catch (error: any) {
+      console.error(`❌ Excepción en getLastInteraction:`, error);
+      console.log(`✅ getLastInteraction COMPLETADO: null (excepción)`);
+      return null;
+    }
   }
 
   private isWithinAntiLoopWindow(lastInteraction: Date): boolean {
