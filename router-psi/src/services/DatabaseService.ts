@@ -60,6 +60,15 @@ class DatabaseService {
 
     const contacto = await this.buscarOCrearContacto(telefono, {});
 
+    // Mapear área a inbox_id
+    // WSP4 (ADMINISTRACION) usa inbox_id 79828
+    // VENTAS1 usa inbox_id 81935
+    const inboxIdMap: Partial<Record<Area, number>> = {
+      [Area.ADMINISTRACION]: 79828, // WSP4 inbox_id
+      [Area.VENTAS1]: 81935,
+    };
+    const inbox_id = inboxIdMap[area] || null;
+
     const { data: convData, error: convError } = await supabaseAdmin
       .from('conversaciones')
       .insert({
@@ -71,6 +80,7 @@ class DatabaseService {
         ts_ultimo_mensaje: new Date().toISOString(),
         estado: 'nueva',
         router_estado: 'menu_principal',
+        inbox_id: inbox_id,
       })
       .select()
       .single();
@@ -84,17 +94,48 @@ class DatabaseService {
   }
 
   async saveMessage(message: Mensaje) {
+    // Determinar si es mensaje del usuario o del sistema
+    const isSystem = message.remitente === 'system';
+    const direccion = isSystem ? 'outbound' : 'inbound';
+    const remitente_tipo = isSystem ? 'system' : 'user';
+    
+    // Obtener el teléfono: del mensaje o de la conversación
+    let telefono = message.telefono;
+    if (!telefono) {
+      // Si no viene en el mensaje, obtenerlo de la conversación
+      const { data: conv } = await supabaseAdmin
+        .from('conversaciones')
+        .select('telefono')
+        .eq('id', message.conversacion_id)
+        .single();
+      telefono = conv?.telefono || message.remitente;
+    }
+
+    // Timestamp: usar el del mensaje o el actual
+    const timestamp = message.timestamp || new Date().toISOString();
+
+    const mensajeData = {
+      conversacion_id: message.conversacion_id,
+      remitente: message.remitente,
+      tipo: message.tipo,
+      mensaje: message.mensaje || '',
+      telefono: telefono,
+      direccion: direccion,
+      remitente_tipo: remitente_tipo,
+      timestamp: timestamp,
+      whatsapp_message_id: message.whatsapp_message_id,
+      metadata: message.metadata || {},
+      created_at: timestamp,
+    };
+
     const { data, error } = await supabaseAdmin
       .from('mensajes')
-      .insert({
-        ...message,
-        created_at: message.timestamp || new Date().toISOString(),
-      })
+      .insert(mensajeData)
       .select()
       .single();
 
     if (error) {
-      Logger.error('Error guardando mensaje', { error, message });
+      Logger.error('Error guardando mensaje', { error, message: mensajeData });
       throw error;
     }
 
@@ -102,15 +143,18 @@ class DatabaseService {
       mensajeId: data?.id,
       conversacionId: message.conversacion_id,
       remitente: message.remitente,
+      remitente_tipo,
+      direccion,
+      telefono,
       tipo: message.tipo,
     });
 
     await supabaseAdmin
       .from('conversaciones')
       .update({
-        ts_ultimo_mensaje: new Date().toISOString(),
+        ts_ultimo_mensaje: timestamp,
         updated_at: new Date().toISOString(),
-        ultimo_mensaje: message.mensaje,
+        ultimo_mensaje: message.mensaje || '',
       })
       .eq('id', message.conversacion_id);
 

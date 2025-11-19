@@ -33,6 +33,8 @@ class MessageProcessor {
       remitente: telefono,
       tipo: message.type,
       mensaje: texto,
+      telefono: telefono, // Agregar teléfono explícitamente
+      timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(), // Convertir timestamp de WhatsApp
       whatsapp_message_id: message.id,
       metadata: {
         interactive: message.interactive,
