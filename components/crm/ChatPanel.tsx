@@ -58,8 +58,6 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
     }
   }, [conversation?.id]);
 
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-
   const loadMessages = async () => {
     if (!conversation) return;
 
