@@ -65,7 +65,7 @@ const INGESTA_WEBHOOKS: Record<string, string | undefined> = {
 };
 
 export class RouterProcessor {
-  private supabase: ReturnType<typeof createClient>;
+  private supabase: any; // Usar any temporalmente para evitar errores de tipo con Supabase
 
   constructor() {
     console.log(`🔧 RouterProcessor.constructor INICIADO`);
@@ -1118,7 +1118,7 @@ En breve se pondrán en contacto contigo. 👋`;
       console.log(`   - Mensajes encontrados: ${systemMessages?.length || 0}`);
       if (systemMessages && systemMessages.length > 0) {
         console.log(`   - Detalles de mensajes:`);
-        systemMessages.forEach((m, idx) => {
+        systemMessages.forEach((m: any, idx: number) => {
           console.log(`     ${idx + 1}. ID: ${m.id}, Preview: ${m.mensaje?.substring(0, 50)}..., Timestamp: ${m.timestamp}`);
         });
       }
