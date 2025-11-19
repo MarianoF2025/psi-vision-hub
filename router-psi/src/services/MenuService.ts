@@ -67,33 +67,55 @@ const SUBMENUS: Record<Area, { title: string; options: Record<string, string> }>
 
 export class MenuService {
   getMenuPrincipal(): MenuResponse {
-    return { reply: MENU_PRINCIPAL, submenu: 'principal' };
+    console.log('[MenuService] Generando menú principal');
+    const response = { reply: MENU_PRINCIPAL, submenu: 'principal' };
+    console.log('[MenuService] Menú principal generado:', { 
+      replyLength: response.reply.length,
+      submenu: response.submenu 
+    });
+    return response;
   }
 
   procesarEntrada(texto: string): MenuResponse {
     const normalizado = texto.trim().toLowerCase();
+    console.log('[MenuService] Procesando entrada:', { texto, normalizado });
+
+    // Detectar saludos y devolver menú principal
+    const saludos = ['hola', 'hi', 'buenos dias', 'buenas tardes', 'buenas noches', 'buen dia', 'buenas'];
+    if (saludos.includes(normalizado)) {
+      console.log('[MenuService] Saludo detectado, devolviendo menú principal');
+      return this.getMenuPrincipal();
+    }
 
     if (['menu', 'volver'].includes(normalizado)) {
+      console.log('[MenuService] Comando MENU/VOLVER detectado');
       return this.getMenuPrincipal();
     }
 
     const seleccion = normalizado.replace(/[^0-9]/g, '');
+    console.log('[MenuService] Selección extraída:', { seleccion, normalizado });
 
     switch (seleccion) {
       case '1':
+        console.log('[MenuService] Opción 1 seleccionada - Administración');
         return this.buildSubmenu(Area.ADMINISTRACION);
       case '2':
+        console.log('[MenuService] Opción 2 seleccionada - Alumnos');
         return this.buildSubmenu(Area.ALUMNOS);
       case '3':
+        console.log('[MenuService] Opción 3 seleccionada - Inscripciones');
         return this.buildSubmenu(Area.INSCRIPCIONES);
       case '4':
+        console.log('[MenuService] Opción 4 seleccionada - Comunidad');
         return this.buildSubmenu(Area.COMUNIDAD);
       case '5':
+        console.log('[MenuService] Opción 5 seleccionada - Otra consulta');
         return {
           reply: 'Contanos mas sobre tu consulta y un asesor te respondera en breve.',
           derivar: true,
         };
       default:
+        console.log('[MenuService] No es opción principal, procesando como submenu:', seleccion);
         return this.procesarSubmenuSeleccion(seleccion);
     }
   }
@@ -115,8 +137,11 @@ Escribi el codigo que mejor describa tu consulta o MENU para volver.`,
   }
 
   private procesarSubmenuSeleccion(seleccion: string): MenuResponse {
+    console.log('[MenuService] Buscando submenu para selección:', seleccion);
+    
     for (const [areaKey, submenu] of Object.entries(SUBMENUS)) {
       if (submenu.options[seleccion]) {
+        console.log('[MenuService] Submenu encontrado:', { areaKey, seleccion, opcion: submenu.options[seleccion] });
         return {
           reply: `Perfecto, derivamos tu consulta de ${submenu.title} (${submenu.options[seleccion]}). Un asesor te respondera en breve.`,
           area: areaKey as Area,
@@ -125,6 +150,7 @@ Escribi el codigo que mejor describa tu consulta o MENU para volver.`,
       }
     }
 
+    console.log('[MenuService] Selección no reconocida, devolviendo mensaje de error');
     return {
       reply: 'No reconocimos tu opcion. Por favor, escribi un numero valido o MENU para volver.',
     };
