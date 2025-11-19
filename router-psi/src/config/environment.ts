@@ -1,21 +1,29 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import Joi from 'joi';
 import { Logger } from '../utils/logger';
 
 // Cargar .env desde el directorio de trabajo actual (router-psi)
 // PM2 ejecuta desde router-psi según cwd en ecosystem.config.cjs
 const envPath = path.join(process.cwd(), '.env');
-const result = dotenv.config({ path: envPath });
 
-if (result.error) {
-  Logger.warn(`No se pudo cargar .env desde ${envPath}, usando variables de entorno del sistema`);
-} else {
-  Logger.info(`✅ Variables de entorno cargadas desde ${envPath}`);
-  // Forzar recarga de process.env después de dotenv
-  if (result.parsed) {
-    Object.assign(process.env, result.parsed);
+// Cargar .env de forma explícita
+if (fs.existsSync(envPath)) {
+  const result = dotenv.config({ path: envPath, override: true });
+  if (result.error) {
+    Logger.warn(`Error cargando .env: ${result.error.message}`);
+  } else if (result.parsed) {
+    // Asegurar que todas las variables se asignen a process.env
+    for (const [key, value] of Object.entries(result.parsed)) {
+      if (!process.env[key]) {
+        process.env[key] = value;
+      }
+    }
+    Logger.info(`✅ Variables de entorno cargadas desde ${envPath} (${Object.keys(result.parsed).length} variables)`);
   }
+} else {
+  Logger.warn(`Archivo .env no encontrado en ${envPath}`);
 }
 
 const envSchema = Joi.object({
