@@ -24,7 +24,7 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
   // Cargar mensajes cuando se selecciona una conversación
@@ -58,24 +58,7 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
     }
   }, [conversation?.id]);
 
-  // Scroll automático al final cuando cambian los mensajes
-  useEffect(() => {
-    if (messages.length > 0) {
-      // Usar setTimeout para asegurar que el DOM se actualizó
-      setTimeout(() => {
-        scrollToBottom();
-      }, 100);
-    }
-  }, [messages]);
-
-  // Scroll automático cuando se carga una nueva conversación
-  useEffect(() => {
-    if (conversation) {
-      setTimeout(() => {
-        scrollToBottom();
-      }, 200);
-    }
-  }, [conversation?.id]);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = async () => {
     if (!conversation) return;
@@ -108,21 +91,34 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
   };
 
   const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ 
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
         behavior: 'smooth',
-        block: 'end',
-        inline: 'nearest'
       });
     }
   };
 
+  // Scroll automático cuando cambian los mensajes
+  useEffect(() => {
+    if (messages.length > 0 && conversation) {
+      // Usar requestAnimationFrame para asegurar que el DOM se actualizó
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
+      });
+    }
+  }, [messages, conversation?.id]);
+
   // Scroll automático cuando se envía un mensaje
   useEffect(() => {
     if (messages.length > 0 && !sending) {
-      setTimeout(() => {
-        scrollToBottom();
-      }, 150);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          scrollToBottom();
+        }, 200);
+      });
     }
   }, [messages.length, sending]);
 
@@ -228,6 +224,7 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
 
       {/* Área de mensajes con scroll automático */}
       <div 
+        ref={messagesContainerRef}
         className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-4"
         style={{ 
           scrollBehavior: 'smooth',
@@ -278,7 +275,6 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Input de mensaje */}

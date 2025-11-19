@@ -110,14 +110,16 @@ export default function ConversationList({
   useEffect(() => {
     if (listContainerRef.current && !loading && filteredConversations.length > 0) {
       // Scroll suave al inicio (donde están las conversaciones más recientes)
-      setTimeout(() => {
-        if (listContainerRef.current) {
-          listContainerRef.current.scrollTo({
-            top: 0,
-            behavior: 'smooth',
-          });
-        }
-      }, 100);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (listContainerRef.current) {
+            listContainerRef.current.scrollTo({
+              top: 0,
+              behavior: 'smooth',
+            });
+          }
+        }, 100);
+      });
     }
   }, [selectedInbox, filteredConversations.length, loading]);
 
@@ -129,14 +131,16 @@ export default function ConversationList({
       const isNearTop = container.scrollTop < 100;
       
       if (isNearTop) {
-        setTimeout(() => {
-          if (listContainerRef.current) {
-            listContainerRef.current.scrollTo({
-              top: 0,
-              behavior: 'smooth',
-            });
-          }
-        }, 150);
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            if (listContainerRef.current) {
+              listContainerRef.current.scrollTo({
+                top: 0,
+                behavior: 'smooth',
+              });
+            }
+          }, 150);
+        });
       }
     }
   }, [conversations.length]);
