@@ -26,8 +26,8 @@ class MessageProcessor {
     antiLoop.touch(conversacion.id);
 
     const texto = message.text?.body || message.interactive?.button_reply?.title || '';
-    const menuResponse = menuService.procesarEntrada(texto);
-
+    
+    // 1. Guardar mensaje del usuario ANTES de procesar
     await databaseService.saveMessage({
       conversacion_id: conversacion.id,
       remitente: telefono,
@@ -38,6 +38,14 @@ class MessageProcessor {
         interactive: message.interactive,
       },
     });
+    Logger.info('Mensaje del usuario guardado en Supabase', {
+      conversacionId: conversacion.id,
+      telefono,
+      texto: texto.substring(0, 50),
+    });
+
+    // 2. Procesar lógica de menú
+    const menuResponse = menuService.procesarEntrada(texto);
 
     const updates = {
       router_estado: menuResponse.submenu || conversacion.router_estado,

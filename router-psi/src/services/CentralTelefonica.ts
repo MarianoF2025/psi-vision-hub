@@ -29,9 +29,10 @@ class CentralTelefonica {
       },
     });
 
-    Logger.info('Mensaje enviado desde central', {
+    Logger.info('Mensaje del sistema guardado y enviado', {
       conversacionId,
       contexto,
+      mensaje: mensaje.substring(0, 50),
     });
   }
 
@@ -44,4 +45,5 @@ class CentralTelefonica {
 }
 
 export const centralTelefonica = new CentralTelefonica();
+
 

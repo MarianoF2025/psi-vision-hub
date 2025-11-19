@@ -94,9 +94,16 @@ class DatabaseService {
       .single();
 
     if (error) {
-      Logger.error('Error guardando mensaje', { error });
+      Logger.error('Error guardando mensaje', { error, message });
       throw error;
     }
+
+    Logger.info('Mensaje guardado en Supabase', {
+      mensajeId: data?.id,
+      conversacionId: message.conversacion_id,
+      remitente: message.remitente,
+      tipo: message.tipo,
+    });
 
     await supabaseAdmin
       .from('conversaciones')
