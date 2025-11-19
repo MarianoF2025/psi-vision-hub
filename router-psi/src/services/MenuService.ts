@@ -1,5 +1,6 @@
 import { Area } from '../models/enums';
 import { MenuResponse } from '../models/types';
+import { Logger } from '../utils/logger';
 
 const MENU_PRINCIPAL = `Hola! Para ayudarte mejor, elegi el area con un numero:
 
