@@ -80,8 +80,11 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
         ...msg,
         conversation_id: msg.conversacion_id,
         content: msg.mensaje,
-        from_phone: msg.remitente,
-        is_from_contact: msg.remitente === conversation.telefono || msg.remitente === conversation.contactos?.telefono,
+        from_phone: msg.remitente_nombre || msg.remitente,
+        // Usar remitente_tipo si está disponible, sino comparar por teléfono
+        is_from_contact: msg.remitente_tipo === 'contact' || 
+                        msg.remitente === conversation.telefono || 
+                        msg.remitente === conversation.contactos?.telefono,
       }));
       
       setMessages(transformedMessages);

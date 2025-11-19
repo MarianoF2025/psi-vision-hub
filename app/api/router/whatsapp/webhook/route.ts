@@ -46,15 +46,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('Webhook recibido:', JSON.stringify(body, null, 2).substring(0, 500));
+    console.log('📥 Webhook recibido (formato completo):', JSON.stringify(body, null, 2).substring(0, 1000));
     const processor = new RouterProcessor();
 
     // Detectar formato: estándar WhatsApp Cloud API o directo desde n8n
     let messagesToProcess: any[] = [];
     let metadata: any = {};
 
-    // Formato 1: Estándar WhatsApp Cloud API (entry -> changes -> value)
+    // Formato 1: Estándar WhatsApp Cloud API webhook (entry -> changes -> value)
     if (body.entry && Array.isArray(body.entry)) {
+      console.log('🔍 Detectado formato 1: WhatsApp Cloud API webhook (entry.changes.value)');
       for (const entry of body.entry) {
         const changes = entry.changes || [];
         for (const change of changes) {
@@ -65,15 +66,28 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    // Formato 2: Directo desde n8n (messages o statuses en root)
+    // Formato 2: Directo desde n8n - formato estándar WhatsApp Cloud API (messages en root)
     else if (body.messages && Array.isArray(body.messages)) {
+      console.log('🔍 Detectado formato 2: Directo desde n8n (messages en root)');
       metadata = body.metadata || {};
       messagesToProcess = body.messages;
+      console.log(`📊 Encontrados ${messagesToProcess.length} mensajes para procesar`);
+      console.log(`📋 Metadata:`, JSON.stringify(metadata, null, 2));
     }
-    // Formato 3: Si viene un solo mensaje directamente
-    else if (body.from && body.message) {
+    // Formato 3: Si viene un solo mensaje directamente (formato simplificado)
+    else if (body.from && (body.message || body.text)) {
+      console.log('🔍 Detectado formato 3: Mensaje simplificado (from + message/text)');
       messagesToProcess = [body];
       metadata = body.metadata || {};
+    }
+    // Formato 4: Formato directo de WhatsApp Cloud API sin wrapper (el mensaje está en root)
+    else if (body.from && body.id && (body.text || body.type)) {
+      console.log('🔍 Detectado formato 4: Mensaje directo de WhatsApp Cloud API');
+      messagesToProcess = [body];
+      metadata = {
+        display_phone_number: body.to || body.metadata?.display_phone_number,
+        phone_number_id: body.metadata?.phone_number_id,
+      };
     }
 
     // Si no hay mensajes para procesar (solo statuses), retornar éxito
@@ -91,25 +105,44 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        console.log(`📨 Mensaje raw recibido:`, JSON.stringify(message, null, 2).substring(0, 500));
+        console.log(`📋 Metadata recibida:`, JSON.stringify(metadata, null, 2).substring(0, 300));
+        
         const normalized = normalizeWhatsAppMessage(message, metadata);
+        console.log(`🔄 Mensaje normalizado:`, {
+          from: normalized.from,
+          message: normalized.message?.substring(0, 100),
+          type: normalized.type,
+          messageId: normalized.messageId,
+        });
+        
         if (!normalized.from) {
-          console.warn('⚠️ Mensaje sin campo "from", ignorando:', message.id || message);
+          console.error('❌ ERROR: Mensaje sin campo "from" después de normalización');
+          console.error('   - Mensaje raw:', JSON.stringify(message, null, 2));
+          console.error('   - Metadata:', JSON.stringify(metadata, null, 2));
           continue;
+        }
+        
+        if (!normalized.message || normalized.message.trim().length === 0) {
+          console.warn('⚠️ Mensaje sin contenido de texto, puede ser media o tipo especial');
         }
         
         console.log(`🔄 Procesando mensaje de ${normalized.from}: ${normalized.message?.substring(0, 50)}...`);
         const result = await processor.processMessage(normalized);
         
         if (!result.success) {
-          console.error(`❌ Error procesando mensaje: ${result.message}`);
+          console.error(`❌❌❌ ERROR procesando mensaje: ${result.message}`);
           console.error(`   - Conversación: ${result.conversationId || 'N/A'}`);
+          console.error(`   - From: ${normalized.from}`);
+          console.error(`   - Message: ${normalized.message?.substring(0, 100)}`);
         } else {
-          console.log(`✅ Mensaje procesado exitosamente. Conversación: ${result.conversationId}`);
+          console.log(`✅✅✅ Mensaje procesado exitosamente. Conversación: ${result.conversationId}`);
         }
         
         processedCount++;
       } catch (error: any) {
-        console.error('❌ Error crítico procesando mensaje individual:', error);
+        console.error('❌❌❌ ERROR CRÍTICO procesando mensaje individual:', error);
+        console.error('   - Mensaje:', JSON.stringify(message, null, 2).substring(0, 500));
         console.error('   - Stack:', error.stack);
         // Continuar con el siguiente mensaje pero registrar el error
       }

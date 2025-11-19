@@ -70,6 +70,25 @@ export class RouterProcessor {
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
+  constructor() {
+    // Validar configuración de Supabase
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') {
+      console.error('❌ ERROR CRÍTICO: NEXT_PUBLIC_SUPABASE_URL no configurado');
+      throw new Error('NEXT_PUBLIC_SUPABASE_URL no está configurado');
+    }
+    
+    if (!supabaseKey) {
+      console.error('❌ ERROR CRÍTICO: SUPABASE_SERVICE_ROLE_KEY o NEXT_PUBLIC_SUPABASE_ANON_KEY no configurado');
+      throw new Error('Clave de Supabase no está configurada');
+    }
+    
+    console.log(`✅ RouterProcessor inicializado con Supabase URL: ${supabaseUrl.substring(0, 30)}...`);
+    console.log(`✅ Usando clave: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY'}`);
+  }
+
   async processMessage(message: WhatsAppMessage): Promise<RouterResponse> {
     try {
       console.log(`🚀 RouterProcessor.processMessage iniciado`);
@@ -131,6 +150,11 @@ export class RouterProcessor {
         await saveAttributionData(conversation.id, message.attribution);
       }
 
+      // Verificar si es la primera interacción ANTES de guardar el mensaje
+      // Esto evita que el mensaje del usuario interfiera con la detección
+      const hasSystemMessages = await this.hasSystemMessages(conversation.id);
+      
+      // Guardar mensaje del usuario en la base de datos
       await this.saveMessage(conversation.id, phone, originalText, metadata);
       const ingestionKey = this.getIngestionKey(conversation.area);
       await this.notifyIngestionWebhook(ingestionKey, {
@@ -149,12 +173,10 @@ export class RouterProcessor {
         return await this.showMainMenu(conversation.id, phone);
       }
 
-      // Verificar si es la primera interacción (no hay mensajes del sistema previos)
-      const hasSystemMessages = await this.hasSystemMessages(conversation.id);
-      
+      // Si es la primera interacción (no hay mensajes del sistema previos), mostrar menú automáticamente
       if (!hasSystemMessages) {
         // Primera interacción: mostrar menú principal automáticamente
-        console.log(`Primera interacción detectada, mostrando menú principal`);
+        console.log(`🎯 Primera interacción detectada (sin mensajes del sistema previos), mostrando menú principal automáticamente`);
         return await this.showMainMenu(conversation.id, phone);
       }
 
@@ -203,7 +225,26 @@ export class RouterProcessor {
 
       if (existing) {
         console.log(`Conversación existente encontrada: ${existing.id}`);
-        return existing;
+        // Actualizar conversación existente con nueva actividad
+        const { data: updated, error: updateError } = await this.supabase
+          .from('conversaciones')
+          .update({
+            ts_ultimo_mensaje: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            estado: existing.estado === 'nueva' ? 'activa' : existing.estado, // Activar si estaba nueva
+          })
+          .eq('id', existing.id)
+          .select()
+          .single();
+        
+        if (updateError) {
+          console.error('⚠️ Error actualizando conversación existente (no crítico):', updateError);
+          // Retornar la conversación existente aunque falle la actualización
+          return existing;
+        }
+        
+        console.log(`✅ Conversación existente actualizada: ${updated?.id}`);
+        return updated || existing;
       }
 
       // Buscar contacto existente
@@ -279,26 +320,35 @@ export class RouterProcessor {
     try {
       const menuText = getMainMenuText();
       console.log(`📋 Mostrando menú principal para conversación ${conversationId}`);
+      console.log(`📱 Enviando a teléfono: ${phone}`);
+      console.log(`📝 Texto del menú (primeros 100 chars): ${menuText.substring(0, 100)}...`);
       
       // Guardar mensaje del sistema ANTES de enviarlo
-      await this.saveMessage(conversationId, 'system', menuText);
+      console.log(`💾 Guardando mensaje del sistema en base de datos...`);
+      await this.saveMessage(conversationId, 'system', menuText, { type: 'text' });
       // Pequeño delay para asegurar que se guardó
       await new Promise(resolve => setTimeout(resolve, 100));
+      console.log(`✅ Mensaje del sistema guardado`);
       
       // Actualizar estado del menú
+      console.log(`🔄 Actualizando estado del menú a 'main'...`);
       await this.updateMenuState(conversationId, 'main');
+      console.log(`✅ Estado del menú actualizado`);
 
-      // Enviar mensaje
+      // Enviar mensaje por WhatsApp
+      console.log(`📤 Enviando mensaje por WhatsApp API...`);
       await this.sendWhatsAppMessage(phone, menuText);
+      console.log(`✅ Mensaje enviado por WhatsApp API`);
 
-      console.log(`✅ Menú principal mostrado exitosamente`);
+      console.log(`✅✅✅ Menú principal mostrado exitosamente ✅✅✅`);
       return {
         success: true,
         message: menuText,
         conversationId,
       };
     } catch (error: any) {
-      console.error('❌ Error mostrando menú principal:', error);
+      console.error('❌❌❌ Error mostrando menú principal:', error);
+      console.error('   - Stack:', error.stack);
       return {
         success: false,
         message: `Error al mostrar menú: ${error.message}`,
@@ -327,7 +377,7 @@ export class RouterProcessor {
     
     console.log(`Guardando mensaje del sistema con submenú`);
     // Guardar mensaje ANTES de enviarlo
-    await this.saveMessage(conversationId, 'system', submenuText);
+    await this.saveMessage(conversationId, 'system', submenuText, { type: 'text' });
     // Pequeño delay para asegurar que se guardó
     await new Promise(resolve => setTimeout(resolve, 100));
     await this.updateMenuState(conversationId, option.area!);
@@ -386,7 +436,7 @@ En breve se pondrán en contacto contigo. 👋`;
     
     console.log(`Enviando mensaje de derivación con ticket ${ticketNumero}`);
     // Guardar mensaje de derivación ANTES de enviarlo
-    await this.saveMessage(conversationId, 'system', derivationMessage);
+    await this.saveMessage(conversationId, 'system', derivationMessage, { type: 'text' });
     // Pequeño delay para asegurar que se guardó
     await new Promise(resolve => setTimeout(resolve, 100));
     await this.sendWhatsAppMessage(phone, derivationMessage);
@@ -666,7 +716,7 @@ En breve se pondrán en contacto contigo. 👋`;
     // Extraer opciones seleccionadas del historial (números como "1", "2", "22", etc.)
     const opciones: string[] = [];
     for (const msg of historial) {
-      if (msg.remitente_tipo === 'user' && msg.mensaje) {
+      if (msg.remitente_tipo === 'contact' && msg.mensaje) {
         const texto = msg.mensaje.trim();
         // Si es un número simple (1-9) o doble (11-99), es una opción
         if (/^[1-9]$|^[1-9][0-9]$/.test(texto)) {
@@ -704,7 +754,7 @@ En breve se pondrán en contacto contigo. 👋`;
       remitente_nombre = 'Router PSI';
     } else if (remitente.match(/^549\d+$/)) {
       // Es un número de teléfono (usuario)
-      remitente_tipo = 'user';
+      remitente_tipo = 'contact'; // Consistente con n8n
       remitente_nombre = remitente;
     } else {
       // Asumir que es un agente o email
@@ -712,7 +762,13 @@ En breve se pondrán en contacto contigo. 👋`;
       remitente_nombre = remitente;
     }
     
-    console.log(`💾 Guardando mensaje en conversación ${conversationId}, remitente_tipo: ${remitente_tipo}, remitente_nombre: ${remitente_nombre}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
+    // Mapear tipo desde metadata (WhatsApp Cloud API usa: 'text', 'image', 'audio', 'video', 'document', etc.)
+    // El constraint mensajes_tipo_check probablemente acepta estos valores en inglés
+    const tipoFromMetadata = metadata?.type || 'text';
+    // Asegurar que el tipo sea válido (si viene 'texto' del default, cambiarlo a 'text')
+    const tipo = tipoFromMetadata === 'texto' ? 'text' : tipoFromMetadata;
+    
+    console.log(`💾 Guardando mensaje en conversación ${conversationId}, remitente_tipo: ${remitente_tipo}, remitente_nombre: ${remitente_nombre}, tipo: ${tipo}, mensaje (primeros 50 chars): ${mensaje.substring(0, 50)}`);
     
     try {
       const { data, error } = await this.supabase
@@ -720,6 +776,7 @@ En breve se pondrán en contacto contigo. 👋`;
         .insert({
           conversacion_id: conversationId,
           mensaje,
+          tipo: tipo, // Agregar campo tipo con valor correcto para el constraint
           remitente_tipo,
           remitente_nombre,
           // Mantener remitente para compatibilidad si existe la columna
@@ -880,20 +937,26 @@ En breve se pondrán en contacto contigo. 👋`;
 
   private async hasSystemMessages(conversationId: string): Promise<boolean> {
     // Verificar si hay mensajes del sistema previos (antes del mensaje actual)
+    console.log(`🔍 Verificando si hay mensajes del sistema para conversación ${conversationId}`);
     const { data: systemMessages, error } = await this.supabase
       .from('mensajes')
-      .select('id')
+      .select('id, remitente_tipo, mensaje')
       .eq('conversacion_id', conversationId)
       .eq('remitente_tipo', 'system')
-      .limit(1);
+      .limit(5); // Obtener más para debugging
 
     if (error && error.code !== 'PGRST116') {
-      console.error('Error verificando mensajes del sistema:', error);
+      console.error('❌ Error verificando mensajes del sistema:', error);
       // En caso de error, asumir que no hay mensajes del sistema para mostrar el menú
       return false;
     }
 
-    return (systemMessages && systemMessages.length > 0) || false;
+    const hasMessages = (systemMessages && systemMessages.length > 0) || false;
+    console.log(`📊 Mensajes del sistema encontrados: ${systemMessages?.length || 0}`, 
+                systemMessages?.map(m => ({ id: m.id, preview: m.mensaje?.substring(0, 50) })));
+    console.log(`✅ hasSystemMessages retorna: ${hasMessages}`);
+    
+    return hasMessages;
   }
 
   private async getLastInteraction(conversationId: string): Promise<Date | null> {
