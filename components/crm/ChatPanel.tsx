@@ -88,37 +88,27 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
     }
   };
 
-  const scrollToBottom = () => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTo({
-        top: messagesContainerRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
-  };
-
-  // Scroll automático cuando cambian los mensajes
+  // Scroll automático - SIMPLE Y DIRECTO
   useEffect(() => {
-    if (messages.length > 0 && conversation) {
-      // Usar requestAnimationFrame para asegurar que el DOM se actualizó
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          scrollToBottom();
-        }, 100);
-      });
+    if (messagesContainerRef.current && messages.length > 0) {
+      // Scroll inmediato al final
+      const container = messagesContainerRef.current;
+      container.scrollTop = container.scrollHeight;
     }
-  }, [messages, conversation?.id]);
+  }, [messages.length, conversation?.id]);
 
-  // Scroll automático cuando se envía un mensaje
+  // Scroll automático después de enviar mensaje
   useEffect(() => {
-    if (messages.length > 0 && !sending) {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          scrollToBottom();
-        }, 200);
-      });
+    if (messagesContainerRef.current && !sending && messages.length > 0) {
+      const container = messagesContainerRef.current;
+      // Pequeño delay para asegurar que el mensaje se renderizó
+      setTimeout(() => {
+        if (container) {
+          container.scrollTop = container.scrollHeight;
+        }
+      }, 50);
     }
-  }, [messages.length, sending]);
+  }, [sending, messages.length]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,10 +214,6 @@ export default function ChatPanel({ conversation, user, onUpdateConversation }: 
       <div 
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto bg-gray-50 p-4 space-y-4"
-        style={{ 
-          scrollBehavior: 'smooth',
-          overscrollBehavior: 'contain'
-        }}
       >
         {messages.map((message) => {
           // Determinar si el mensaje es del contacto

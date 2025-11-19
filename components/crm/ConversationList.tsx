@@ -106,41 +106,21 @@ export default function ConversationList({
   const unassignedCount = conversations.filter((c) => !c.asignado_a).length;
   const allCount = conversations.length;
 
-  // Scroll automático al inicio cuando cambian las conversaciones o el inbox
+  // Scroll automático al inicio - SIMPLE Y DIRECTO
   useEffect(() => {
     if (listContainerRef.current && !loading && filteredConversations.length > 0) {
-      // Scroll suave al inicio (donde están las conversaciones más recientes)
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          if (listContainerRef.current) {
-            listContainerRef.current.scrollTo({
-              top: 0,
-              behavior: 'smooth',
-            });
-          }
-        }, 100);
-      });
+      // Scroll directo al inicio
+      listContainerRef.current.scrollTop = 0;
     }
-  }, [selectedInbox, filteredConversations.length, loading]);
+  }, [selectedInbox, loading]);
 
   // Scroll automático cuando se agregan nuevas conversaciones
   useEffect(() => {
     if (listContainerRef.current && conversations.length > 0) {
-      // Solo hacer scroll si el usuario está cerca del inicio (top)
       const container = listContainerRef.current;
-      const isNearTop = container.scrollTop < 100;
-      
-      if (isNearTop) {
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            if (listContainerRef.current) {
-              listContainerRef.current.scrollTo({
-                top: 0,
-                behavior: 'smooth',
-              });
-            }
-          }, 150);
-        });
+      // Solo hacer scroll si el usuario está cerca del inicio (top)
+      if (container.scrollTop < 100) {
+        container.scrollTop = 0;
       }
     }
   }, [conversations.length]);
@@ -226,10 +206,6 @@ export default function ConversationList({
       <div 
         ref={listContainerRef}
         className="flex-1 overflow-y-auto"
-        style={{ 
-          scrollBehavior: 'smooth',
-          overscrollBehavior: 'contain'
-        }}
       >
         {loading ? (
           <div className="flex items-center justify-center h-full">
