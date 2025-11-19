@@ -129,6 +129,9 @@ class DatabaseService {
       'ultimo_menu_enviado',
     ];
 
+    // Campos que son timestamps y deben ser strings ISO válidos
+    const timestampFields = ['ventana_24h_inicio', 'ventana_72h_inicio'];
+
     const filteredUpdates: Record<string, any> = {
       updated_at: new Date().toISOString(),
     };
@@ -136,9 +139,43 @@ class DatabaseService {
     // Solo incluir campos válidos del tipo Conversacion
     for (const key of validFields) {
       if (key in updates && updates[key] !== undefined) {
-        filteredUpdates[key] = updates[key];
+        const value = updates[key];
+        
+        // Validar que los campos timestamp sean strings ISO válidos
+        if (timestampFields.includes(key)) {
+          if (typeof value === 'string' && value !== '') {
+            // Verificar que sea una fecha válida
+            const date = new Date(value);
+            if (isNaN(date.getTime())) {
+              Logger.warn(`Campo timestamp inválido ignorado: ${key} = ${value}`, { id, updates });
+              continue; // Saltar este campo
+            }
+            filteredUpdates[key] = value;
+          } else if (value === null) {
+            filteredUpdates[key] = null;
+          } else {
+            Logger.warn(`Valor no válido para timestamp ${key}: ${value}`, { id, updates });
+            continue; // Saltar este campo
+          }
+        } else {
+          // Para campos no-timestamp, validar que no sean strings asignados a campos timestamp
+          // Esto previene asignar 'principal' a campos como ts_principal si existieran
+          filteredUpdates[key] = value;
+        }
       }
     }
+
+    // Log detallado antes del update para debugging
+    Logger.info('Actualizando conversación', { 
+      id, 
+      camposActualizados: Object.keys(filteredUpdates),
+      valores: Object.fromEntries(
+        Object.entries(filteredUpdates).map(([k, v]) => [
+          k, 
+          typeof v === 'string' && v.length > 50 ? v.substring(0, 50) + '...' : v
+        ])
+      )
+    });
 
     const { data, error } = await supabaseAdmin
       .from('conversaciones')
