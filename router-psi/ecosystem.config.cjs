@@ -1,22 +1,27 @@
 const path = require('path');
-const fs = require('fs');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
-// Cargar variables de entorno desde .env si existe
-let envVars = {};
-const envPath = path.join(__dirname, '.env');
-if (fs.existsSync(envPath)) {
-  const envContent = fs.readFileSync(envPath, 'utf8');
-  envContent.split('\n').forEach(line => {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const [key, ...valueParts] = trimmed.split('=');
-      if (key && valueParts.length > 0) {
-        const value = valueParts.join('=').replace(/^["']|["']$/g, '');
-        envVars[key.trim()] = value.trim();
-      }
-    }
-  });
-}
+// Cargar variables de entorno desde .env
+const envVars = {};
+// Copiar todas las variables de entorno que empiezan con las que necesitamos
+const envKeys = [
+  'NODE_ENV', 'PORT', 'LOG_LEVEL', 'ANTILOOP_MINUTES',
+  'WEBHOOK_VERIFY_TOKEN',
+  'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_STORAGE_BUCKET_AUDIOS', 'SUPABASE_STORAGE_BUCKET_DOCUMENTOS',
+  'WHATSAPP_TOKEN', 'CLOUD_API_BASE_URL',
+  'WSP4_PHONE_ID', 'VENTAS1_PHONE_ID', 'ADMIN_PHONE_ID', 'ALUMNOS_PHONE_ID', 'COMUNIDAD_PHONE_ID',
+  'WSP4_NUMBER', 'VENTAS1_NUMBER',
+  'N8N_WEBHOOK_ENVIOS_ROUTER_CRM', 'N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION',
+  'N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS', 'N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD',
+  'N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1'
+];
+
+envKeys.forEach(key => {
+  if (process.env[key]) {
+    envVars[key] = process.env[key];
+  }
+});
 
 module.exports = {
   apps: [

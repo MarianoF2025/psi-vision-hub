@@ -1,8 +1,10 @@
 import dotenv from 'dotenv';
+import path from 'path';
 import Joi from 'joi';
 import { Logger } from '../utils/logger';
 
-dotenv.config();
+// Cargar .env desde el directorio raíz de router-psi
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const envSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
