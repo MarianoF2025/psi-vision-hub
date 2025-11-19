@@ -1147,10 +1147,13 @@ En breve se pondrán en contacto contigo. 👋`;
   private async getLastInteraction(conversationId: string): Promise<Date | null> {
     console.log(`🔍 getLastInteraction INICIADO para conversación ${conversationId}`);
     try {
+      // CRÍTICO: Solo verificar mensajes del USUARIO (contact), no del sistema
+      // El anti-loop debe prevenir spam del usuario, no bloquear respuestas rápidas al menú
       const { data: lastMessage, error } = await this.supabase
         .from('mensajes')
-        .select('timestamp')
+        .select('timestamp, remitente_tipo')
         .eq('conversacion_id', conversationId)
+        .neq('remitente_tipo', 'system') // Excluir mensajes del sistema
         .order('timestamp', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -1162,7 +1165,8 @@ En breve se pondrán en contacto contigo. 👋`;
       }
 
       const result = lastMessage ? new Date(lastMessage.timestamp) : null;
-      console.log(`   - Última interacción: ${result ? result.toISOString() : 'N/A'}`);
+      console.log(`   - Última interacción del USUARIO: ${result ? result.toISOString() : 'N/A'}`);
+      console.log(`   - Tipo del último mensaje: ${lastMessage?.remitente_tipo || 'N/A'}`);
       console.log(`✅ getLastInteraction COMPLETADO: ${result ? result.toISOString() : 'null'}`);
       return result;
     } catch (error: any) {
