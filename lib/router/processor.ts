@@ -25,7 +25,9 @@ import {
   saveAttributionData,
 } from './meta';
 
-const ANTI_LOOP_MINUTES = 15;
+// Anti-loop: Solo bloquear mensajes si la última interacción fue hace menos de 30 segundos
+// Esto previene procesar el mismo mensaje múltiples veces sin bloquear interacciones normales
+const ANTI_LOOP_SECONDS = 30;
 
 const CLOUD_API_BASE_URL =
   process.env.CLOUD_API_BASE_URL || 'https://graph.facebook.com/v18.0';
@@ -1172,8 +1174,14 @@ En breve se pondrán en contacto contigo. 👋`;
 
   private isWithinAntiLoopWindow(lastInteraction: Date): boolean {
     const now = new Date();
-    const diffMinutes = (now.getTime() - lastInteraction.getTime()) / (1000 * 60);
-    return diffMinutes < ANTI_LOOP_MINUTES;
+    const diffSeconds = (now.getTime() - lastInteraction.getTime()) / 1000;
+    const isWithin = diffSeconds < ANTI_LOOP_SECONDS;
+    
+    console.log(`   - Diferencia: ${diffSeconds.toFixed(1)} segundos`);
+    console.log(`   - Ventana anti-loop: ${ANTI_LOOP_SECONDS} segundos`);
+    console.log(`   - Está dentro de la ventana?: ${isWithin}`);
+    
+    return isWithin;
   }
 
   private async sendWhatsAppMessage(to: string, message: string) {
