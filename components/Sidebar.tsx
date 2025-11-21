@@ -56,7 +56,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
   };
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-64 bg-psi-gray-dark text-white border-r border-gray-700">
+    <aside className="fixed left-0 top-0 h-full w-64 bg-[#1E293B] text-white border-r border-gray-700">
       <div className="flex flex-col h-full">
         {/* Logo PSI */}
         <div className="p-6 border-b border-gray-700">

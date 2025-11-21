@@ -110,3 +110,4 @@ echo "Para más detalles, consulta: ANALISIS-ARQUITECTURA-CRM.md"
 
 
 
+

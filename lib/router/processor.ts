@@ -58,8 +58,6 @@ const INGESTA_WEBHOOKS: Record<string, string | undefined> = {
   Alumnos: process.env.N8N_WEBHOOK_INGESTA_ROUTER_ALUMNOS,
   Comunidad: process.env.N8N_WEBHOOK_INGESTA_ROUTER_COMUNIDAD,
   Ventas1: process.env.N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_1,
-  Ventas2: process.env.N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_2,
-  Ventas3: process.env.N8N_WEBHOOK_INGESTA_ROUTER_VENTAS_3,
   'Directa Administracion':
     process.env.N8N_WEBHOOK_INGESTA_DIRECTA_ADMINISTRACION,
   'Directa Alumnos': process.env.N8N_WEBHOOK_INGESTA_DIRECTA_ALUMNOS,

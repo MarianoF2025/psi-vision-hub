@@ -62,11 +62,6 @@ const inboxes: InboxItem[] = [
     label: 'Ventas',
     icon: HiOutlineShoppingCart,
     count: 0,
-    subInboxes: [
-      { id: 'ventas-1', label: 'Ventas 1', count: 0 },
-      { id: 'ventas-2', label: 'Ventas 2', count: 0 },
-      { id: 'ventas-3', label: 'Ventas 3', count: 0 },
-    ],
   },
   { 
     id: 'alumnos',
