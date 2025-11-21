@@ -13,6 +13,9 @@ export interface Conversacion {
   contacto_id: string;
   telefono: string;
   area?: Area;
+  inbox_id?: number | null;
+  derivado_a?: string | null;
+  inbox_destino?: string | null;
   estado?: string;
   router_estado?: string;
   submenu_actual?: string | null;
@@ -26,6 +29,9 @@ export interface Conversacion {
   es_lead_meta?: boolean;
   metadata?: Record<string, any>;
   ultimo_menu_enviado?: string | null;
+  ticket_id?: string | null;
+  countdown_24h?: string | null;
+  ts_derivacion?: string | null;
 }
 
 export interface Mensaje {
@@ -46,6 +52,7 @@ export interface MenuResponse {
   submenu?: string;
   area?: Area;
   derivar?: boolean;
+  subetiqueta?: string;
 }
 
 export interface VentanaConfig {

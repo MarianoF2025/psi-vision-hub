@@ -31,6 +31,9 @@ export interface Message {
   timestamp: string;
   tipo?: MessageType;
   estado?: 'sent' | 'delivered' | 'read';
+  mensaje_respuesta_id?: string | null;
+  editado?: boolean;
+  eliminado?: boolean;
   metadata?: Record<string, any>;
 }
 

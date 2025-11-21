@@ -6,6 +6,7 @@ import InboxSidebar from './InboxSidebar';
 import ConversationList from './ConversationList';
 import ChatPanel from './ChatPanel';
 import ContactInfo from './ContactInfo';
+import FunctionPanel from './FunctionPanel';
 import { Conversation, InboxType } from '@/lib/types/crm';
 import { createClient } from '@/lib/supabase/client';
 
@@ -13,14 +14,18 @@ interface CRMInterfaceProps {
   user: User | null;
 }
 
-// Mapeo de áreas a inboxes
-const areaToInboxMap: Record<string, InboxType> = {
-  'Ventas': 'Ventas',
-  'Alumnos': 'Alumnos',
-  'Administración': 'Administración',
-  'Comunidad': 'Comunidad',
-  'PSI Principal': 'PSI Principal',
+// Mapeo de áreas a inboxes (UI) -> valores reales en Supabase
+// El Router PSI guarda áreas en minúsculas: 'administracion', 'alumnos', 'comunidad', 'ventas1'
+const inboxToAreaMap: Record<InboxType, string> = {
+  'PSI Principal': 'administracion', // Por defecto, PSI Principal mapea a administracion
+  'Ventas': 'ventas1', // El Router usa 'ventas1' no 'ventas'
+  'Alumnos': 'alumnos',
+  'Administración': 'administracion', // Sin tilde, minúscula
+  'Comunidad': 'comunidad',
 };
+
+// Tipo exportado desde InboxSidebar
+import type { CRMFunction } from './InboxSidebar';
 
 export default function CRMInterface({ user }: CRMInterfaceProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -30,12 +35,28 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
   const [loading, setLoading] = useState(true);
   const [inboxStats, setInboxStats] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
+  const [isContactInfoOpen, setIsContactInfoOpen] = useState(true);
+  const [selectedFunction, setSelectedFunction] = useState<CRMFunction>(null);
 
   const supabase = createClient();
 
   // Cargar conversaciones y estadísticas
   useEffect(() => {
     try {
+      // Validar que Supabase esté configurado
+      if (!supabase) {
+        setError('Error: Cliente de Supabase no inicializado. Verifica las variables de entorno.');
+        return;
+      }
+
+      // Debug: Verificar configuración (solo en desarrollo)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔍 Configuración Supabase:', {
+          url: process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Configurado' : '❌ Faltante',
+          key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Configurado' : '❌ Faltante',
+        });
+      }
+
       loadConversations();
       loadInboxStats();
       
@@ -56,9 +77,9 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         )
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
-            console.log('Suscrito a cambios en tiempo real');
+            console.log('✅ Suscrito a cambios en tiempo real');
           } else if (status === 'CHANNEL_ERROR') {
-            console.error('Error en suscripción a tiempo real');
+            console.error('❌ Error en suscripción a tiempo real');
             setError('Error de conexión en tiempo real');
           }
         });
@@ -67,10 +88,10 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         supabase.removeChannel(channel);
       };
     } catch (error: any) {
-      console.error('Error en useEffect:', error);
+      console.error('❌ Error en useEffect:', error);
       setError(`Error al inicializar: ${error?.message || 'Error desconocido'}`);
     }
-  }, [selectedInbox]);
+  }, [selectedInbox, supabase]);
 
   const loadConversations = async () => {
     try {
@@ -89,21 +110,14 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
           )
         `);
 
-      // Filtrar por área/inbox - Todas las bandejas activas
-      if (selectedInbox === 'PSI Principal') {
-        // PSI Principal: buscar por área exacta
-        query = query.eq('area', 'PSI Principal');
-      } else if (selectedInbox === 'Ventas') {
-        query = query.eq('area', 'Ventas');
-      } else if (selectedInbox === 'Alumnos') {
-        query = query.eq('area', 'Alumnos');
-      } else if (selectedInbox === 'Administración') {
-        query = query.eq('area', 'Administración');
-      } else if (selectedInbox === 'Comunidad') {
-        query = query.eq('area', 'Comunidad');
-      } else {
-        // Fallback: usar el valor directamente
-        query = query.eq('area', selectedInbox);
+      // Filtrar por área/inbox - Mapear el inbox de la UI al valor real en Supabase
+      // El Router PSI guarda áreas en minúsculas: 'administracion', 'alumnos', 'comunidad', 'ventas1'
+      const areaValue = inboxToAreaMap[selectedInbox] || selectedInbox.toLowerCase();
+      query = query.eq('area', areaValue);
+      
+      // Debug: Log del filtro aplicado
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`🔍 Filtro aplicado: inbox="${selectedInbox}" -> area="${areaValue}"`);
       }
 
       // Ordenar por último mensaje
@@ -112,9 +126,22 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
       const { data, error: queryError } = await query;
 
       if (queryError) {
-        console.error('Error loading conversations:', queryError);
-        console.error('Error details:', JSON.stringify(queryError, null, 2));
-        setError(`Error al cargar conversaciones: ${queryError.message}`);
+        console.error('❌ Error loading conversations:', queryError);
+        console.error('❌ Error details:', JSON.stringify(queryError, null, 2));
+        
+        // Mensaje de error más descriptivo
+        let errorMessage = `Error al cargar conversaciones: ${queryError.message}`;
+        
+        // Detectar errores comunes
+        if (queryError.code === 'PGRST301' || queryError.message.includes('JWT')) {
+          errorMessage = '❌ Error de autenticación con Supabase. Verifica NEXT_PUBLIC_SUPABASE_ANON_KEY';
+        } else if (queryError.message.includes('permission denied') || queryError.message.includes('RLS')) {
+          errorMessage = '❌ Error de permisos (RLS). Verifica las políticas de Row Level Security en Supabase';
+        } else if (queryError.message.includes('network') || queryError.message.includes('fetch')) {
+          errorMessage = '❌ Error de conexión con Supabase. Verifica NEXT_PUBLIC_SUPABASE_URL';
+        }
+        
+        setError(errorMessage);
         setConversations([]);
         return;
       }
@@ -146,30 +173,31 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
   const loadInboxStats = async () => {
     try {
       // Todas las bandejas activas
-      const areas: InboxType[] = ['PSI Principal', 'Ventas', 'Alumnos', 'Administración', 'Comunidad'];
+      const inboxes: InboxType[] = ['PSI Principal', 'Ventas', 'Alumnos', 'Administración', 'Comunidad'];
       const stats: Record<string, number> = {};
 
-      for (const area of areas) {
+      for (const inbox of inboxes) {
         let query = supabase
           .from('conversaciones')
           .select('id', { count: 'exact', head: true });
 
-        // Filtrar por área específica
-        query = query.eq('area', area);
+        // Mapear el inbox de la UI al valor real en Supabase
+        const areaValue = inboxToAreaMap[inbox] || inbox.toLowerCase();
+        query = query.eq('area', areaValue);
 
         const { count, error } = await query;
         if (!error) {
-          stats[area] = count || 0;
+          stats[inbox] = count || 0;
         } else {
-          console.warn(`Error cargando estadísticas para ${area}:`, error);
-          stats[area] = 0;
+          console.warn(`❌ Error cargando estadísticas para ${inbox} (área: ${areaValue}):`, error);
+          stats[inbox] = 0;
         }
       }
 
       setInboxStats(stats);
-      console.log('Estadísticas de bandejas cargadas:', stats);
+      console.log('✅ Estadísticas de bandejas cargadas:', stats);
     } catch (error) {
-      console.error('Error loading inbox stats:', error);
+      console.error('❌ Error loading inbox stats:', error);
     }
   };
 
@@ -180,9 +208,14 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         isCollapsed={isSidebarCollapsed}
         onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         selectedInbox={selectedInbox}
-        onSelectInbox={setSelectedInbox}
+        onSelectInbox={(inbox) => {
+          setSelectedInbox(inbox);
+          setSelectedFunction(null); // Cerrar función al cambiar de inbox
+        }}
         user={user}
         inboxStats={inboxStats}
+        selectedFunction={selectedFunction}
+        onSelectFunction={setSelectedFunction}
       />
 
       {/* Lista de Conversaciones - 300px con scroll exclusivo */}
@@ -195,13 +228,13 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         user={user}
       />
 
-      {/* Panel de Chat - flex-1 */}
+      {/* Panel de Chat o Función - flex-1 */}
       <div className="flex-1 flex flex-col relative h-screen" style={{ minHeight: 0 }}>
         {error && (
-          <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 m-4 rounded">
+          <div className="bg-primary-50 border-l-4 border-primary text-gray-800 p-4 m-4 rounded">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                <svg className="h-5 w-5 text-primary" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                 </svg>
               </div>
@@ -220,18 +253,43 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
             </div>
           </div>
         )}
+        {selectedFunction ? (
+          <FunctionPanel 
+            functionId={selectedFunction} 
+            user={user}
+            onClose={() => setSelectedFunction(null)}
+          />
+        ) : (
         <ChatPanel
           conversation={selectedConversation}
           user={user}
           onUpdateConversation={loadConversations}
+            onToggleContactInfo={() => setIsContactInfoOpen(!isContactInfoOpen)}
+            isContactInfoOpen={isContactInfoOpen}
         />
+        )}
       </div>
 
       {/* Panel de Información de Contacto - 250px */}
+      {isContactInfoOpen ? (
       <ContactInfo
         contact={selectedConversation?.contactos}
         conversation={selectedConversation}
-      />
+          onClose={() => setIsContactInfoOpen(false)}
+        />
+      ) : (
+        <div className="w-12 bg-white border-l border-gray-200 flex flex-col items-center pt-4">
+          <button
+            onClick={() => setIsContactInfoOpen(true)}
+            className="p-2 rounded-lg hover:bg-gray-100 active:bg-gray-200 text-gray-600 transition-all duration-150"
+            title="Mostrar información de contacto"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

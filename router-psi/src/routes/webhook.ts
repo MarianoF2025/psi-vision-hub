@@ -25,7 +25,7 @@ webhookRouter.post('/webhook/whatsapp/wsp4', async (req, res, next) => {
     }
 
     const message = value.messages[0];
-    const result = await messageProcessor.processIncoming(message, Area.ADMINISTRACION);
+    const result = await messageProcessor.processIncoming(message, Area.PSI_PRINCIPAL);
     res.json({ success: true, result });
   } catch (err) {
     next(err);

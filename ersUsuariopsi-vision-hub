@@ -1,0 +1,53 @@
+warning: in the working copy of 'router-psi/src/services/DatabaseService.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/router-psi/src/services/DatabaseService.ts b/router-psi/src/services/DatabaseService.ts[m
+[1mindex 11ec494..83749b2 100644[m
+[1m--- a/router-psi/src/services/DatabaseService.ts[m
+[1m+++ b/router-psi/src/services/DatabaseService.ts[m
+[36m@@ -178,10 +178,16 @@[m [mclass DatabaseService {[m
+       'es_lead_meta',[m
+       'metadata',[m
+       'ultimo_menu_enviado',[m
+[32m+[m[32m      'ticket_id',[m
+[32m+[m[32m      'countdown_24h',[m
+[32m+[m[32m      'ts_derivacion',[m
+[32m+[m[32m      'derivado_a',[m
+[32m+[m[32m      'inbox_destino',[m
+[32m+[m[32m      'inbox_id',[m
+     ];[m
+ [m
+     // Campos que son timestamps y deben ser strings ISO válidos[m
+[31m-    const timestampFields = ['ventana_24h_inicio', 'ventana_72h_inicio'];[m
+[32m+[m[32m    const timestampFields = ['ventana_24h_inicio', 'ventana_72h_inicio', 'countdown_24h', 'ts_derivacion'];[m
+ [m
+     const filteredUpdates: Record<string, any> = {[m
+       updated_at: new Date().toISOString(),[m
+[36m@@ -262,6 +268,29 @@[m [mclass DatabaseService {[m
+     const diffMinutes = (Date.now() - last.getTime()) / 60000;[m
+     return diffMinutes < windowMinutes;[m
+   }[m
+[32m+[m
+[32m+[m[32m  async registrarAuditLog(entry: {[m
+[32m+[m[32m    conversacion_id: string;[m
+[32m+[m[32m    accion: string;[m
+[32m+[m[32m    area_destino?: string;[m
+[32m+[m[32m    ticket_id?: string;[m
+[32m+[m[32m    metadata?: Record<string, any>;[m
+[32m+[m[32m  }) {[m
+[32m+[m[32m    const payload = {[m
+[32m+[m[32m      ...entry,[m
+[32m+[m[32m      metadata: entry.metadata || {},[m
+[32m+[m[32m      created_at: new Date().toISOString(),[m
+[32m+[m[32m    };[m
+[32m+[m
+[32m+[m[32m    const { error } = await supabaseAdmin.from('audit_log').insert(payload);[m
+[32m+[m
+[32m+[m[32m    if (error) {[m
+[32m+[m[32m      Logger.error('Error registrando audit log', { error, payload });[m
+[32m+[m[32m      throw error;[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    return payload;[m
+[32m+[m[32m  }[m
+ }[m
+ [m
+ export const databaseService = new DatabaseService();[m

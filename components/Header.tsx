@@ -46,7 +46,7 @@ export default function Header({ userName, userEmail }: HeaderProps) {
       {/* Logo PSI a la izquierda */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center">
             <span className="text-white font-bold text-sm">PSI</span>
           </div>
           <div>
@@ -62,7 +62,7 @@ export default function Header({ userName, userEmail }: HeaderProps) {
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-full text-sm font-medium transition-colors shadow-sm"
           >
             <Eye className="w-4 h-4" />
             <span>Vision Hub</span>
@@ -80,7 +80,7 @@ export default function Header({ userName, userEmail }: HeaderProps) {
         {!isAuthenticated ? (
           <Link
             href="/login"
-            className="flex items-center gap-2 bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
           >
             <LogIn className="w-4 h-4" />
             <span>Iniciar sesión</span>
@@ -99,8 +99,8 @@ export default function Header({ userName, userEmail }: HeaderProps) {
                   <p className="text-xs text-gray-500">{userEmail}</p>
                 )}
               </div>
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <User className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-full bg-red-600/10 flex items-center justify-center">
+                <User className="w-5 h-5 text-red-600" />
               </div>
               <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
             </button>

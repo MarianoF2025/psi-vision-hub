@@ -1,4 +1,5 @@
 export enum Area {
+  PSI_PRINCIPAL = 'psi_principal',
   ADMINISTRACION = 'administracion',
   ALUMNOS = 'alumnos',
   INSCRIPCIONES = 'inscripciones',

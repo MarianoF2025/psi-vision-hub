@@ -74,3 +74,4 @@ Después de configurar el nodo Set, ejecuta el workflow y verifica:
 - Verifica que **NO** hayas agregado un campo `field` en el nodo Set
 - Verifica que el nodo HTTP Request use `{{ $json }}` (del nodo Set, no del trigger)
 
+

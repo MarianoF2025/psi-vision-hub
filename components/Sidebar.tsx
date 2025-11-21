@@ -61,7 +61,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
         {/* Logo PSI */}
         <div className="p-6 border-b border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-red-600 flex items-center justify-center">
               <Eye className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -84,7 +84,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
                 href={item.href}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive
-                    ? 'bg-primary text-white shadow-lg'
+                    ? 'bg-red-600 text-white shadow-lg'
                     : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                 }`}
               >
@@ -102,7 +102,7 @@ export default function Sidebar({ userRole }: SidebarProps) {
               href={adminItem.href}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 pathname === adminItem.href
-                  ? 'bg-primary text-white'
+                  ? 'bg-red-600 text-white'
                   : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
               }`}
             >

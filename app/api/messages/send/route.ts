@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { conversacion_id, mensaje, remitente } = body;
+    const { conversacion_id, mensaje, remitente, mensaje_respuesta_id } = body;
 
     if (!conversacion_id || !mensaje) {
       return NextResponse.json(
@@ -38,14 +38,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Crear mensaje en la base de datos
+    const messageData: any = {
+      conversacion_id: conversacion_id,
+      mensaje: mensaje,
+      remitente: remitente || user.email || 'system',
+      timestamp: new Date().toISOString(),
+    };
+
+    // Si hay un mensaje al que responder, agregar referencia
+    if (mensaje_respuesta_id) {
+      messageData.mensaje_respuesta_id = mensaje_respuesta_id;
+    }
+
     const { data: message, error: messageError } = await supabase
       .from('mensajes')
-      .insert({
-        conversacion_id: conversacion_id,
-        mensaje: mensaje,
-        remitente: remitente || user.email || 'system',
-        timestamp: new Date().toISOString(),
-      })
+      .insert(messageData)
       .select()
       .single();
 

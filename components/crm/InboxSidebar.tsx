@@ -3,24 +3,29 @@
 import { useState, useEffect } from 'react';
 import { User } from '@/lib/types';
 import { InboxType } from '@/lib/types/crm';
+// Iconos modernos de react-icons
 import { 
-  ShoppingCart, 
-  GraduationCap, 
-  Building, 
-  Users, 
-  ChevronLeft, 
-  ChevronRight,
-  MessageSquare,
-  Router,
-  User as UserIcon,
-  Tag,
-  MessageCircle,
-  BarChart3,
-  Settings,
-  Moon,
-  LogOut
-} from 'lucide-react';
+  HiOutlineShoppingCart,
+  HiOutlineUsers,
+  HiOutlineChevronLeft,
+  HiOutlineChevronRight,
+  HiOutlineChat,
+  HiOutlineUser,
+  HiOutlineTag,
+  HiOutlineChatAlt2,
+  HiOutlineChartBar,
+  HiOutlineCog,
+  HiOutlineMoon,
+  HiOutlineLogout
+} from 'react-icons/hi';
+import { 
+  MdOutlineRouter,
+  MdOutlineSchool,
+  MdOutlineBusiness
+} from 'react-icons/md';
 import { createClient } from '@/lib/supabase/client';
+
+export type CRMFunction = 'contactos' | 'etiquetas' | 'respuestas' | 'estadisticas' | 'ajustes' | null;
 
 interface InboxSidebarProps {
   isCollapsed: boolean;
@@ -29,13 +34,15 @@ interface InboxSidebarProps {
   onSelectInbox: (inbox: InboxType) => void;
   user: User | null;
   inboxStats?: Record<string, number>;
+  selectedFunction?: CRMFunction;
+  onSelectFunction?: (func: CRMFunction) => void;
 }
 
 interface InboxItem {
   id: string;
   type: InboxType;
   label: string;
-  icon: typeof ShoppingCart;
+  icon: React.ComponentType<{ className?: string }>;
   count: number;
   subInboxes?: Array<{ id: string; label: string; count: number }>;
 }
@@ -46,14 +53,14 @@ const inboxes: InboxItem[] = [
     id: 'psi-principal',
     type: 'PSI Principal',
     label: 'PSI Principal',
-    icon: Router,
+    icon: MdOutlineRouter,
     count: 8,
   },
   {
     id: 'ventas',
     type: 'Ventas',
     label: 'Ventas',
-    icon: ShoppingCart,
+    icon: HiOutlineShoppingCart,
     count: 0,
     subInboxes: [
       { id: 'ventas-1', label: 'Ventas 1', count: 0 },
@@ -65,31 +72,31 @@ const inboxes: InboxItem[] = [
     id: 'alumnos',
     type: 'Alumnos',
     label: 'Alumnos',
-    icon: GraduationCap,
+    icon: MdOutlineSchool,
     count: 0,
   },
   { 
     id: 'administracion',
     type: 'Administración',
     label: 'Administración',
-    icon: Building,
+    icon: MdOutlineBusiness,
     count: 0,
   },
   { 
     id: 'comunidad',
     type: 'Comunidad',
     label: 'Comunidad',
-    icon: Users,
+    icon: HiOutlineUsers,
     count: 0,
   },
 ];
 
 const functions = [
-  { id: 'contactos', label: 'Contactos', icon: UserIcon },
-  { id: 'etiquetas', label: 'Etiquetas', icon: Tag },
-  { id: 'respuestas', label: 'Respuestas', icon: MessageCircle },
-  { id: 'estadisticas', label: 'Estadísticas', icon: BarChart3 },
-  { id: 'ajustes', label: 'Ajustes', icon: Settings },
+  { id: 'contactos', label: 'Contactos', icon: HiOutlineUser },
+  { id: 'etiquetas', label: 'Etiquetas', icon: HiOutlineTag },
+  { id: 'respuestas', label: 'Respuestas', icon: HiOutlineChatAlt2 },
+  { id: 'estadisticas', label: 'Estadísticas', icon: HiOutlineChartBar },
+  { id: 'ajustes', label: 'Ajustes', icon: HiOutlineCog },
 ];
 
 export default function InboxSidebar({
@@ -99,6 +106,8 @@ export default function InboxSidebar({
   onSelectInbox,
   user,
   inboxStats = {},
+  selectedFunction,
+  onSelectFunction,
 }: InboxSidebarProps) {
   const [expandedInboxes, setExpandedInboxes] = useState<Set<string>>(new Set());
   const [darkMode, setDarkMode] = useState(false);
@@ -143,7 +152,7 @@ export default function InboxSidebar({
         <div className="flex items-center justify-between mb-2">
           {!isCollapsed && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
                 <span className="text-white font-bold text-xs">PSI</span>
               </div>
               <div>
@@ -158,9 +167,9 @@ export default function InboxSidebar({
             title={isCollapsed ? 'Expandir' : 'Colapsar'}
           >
             {isCollapsed ? (
-              <ChevronRight className="w-4 h-4 text-gray-600" />
+              <HiOutlineChevronRight className="w-4 h-4 text-gray-600" />
             ) : (
-              <ChevronLeft className="w-4 h-4 text-gray-600" />
+              <HiOutlineChevronLeft className="w-4 h-4 text-gray-600" />
             )}
           </button>
         </div>
@@ -185,20 +194,20 @@ export default function InboxSidebar({
             <div key={inbox.id}>
               <button
                 onClick={() => handleInboxSelect(inbox)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 ${
                   isSelected
-                    ? 'bg-primary text-white shadow-md'
-                    : 'text-gray-700 hover:bg-gray-100'
+                    ? 'bg-primary-50 text-gray-800 border-l-4 border-primary'
+                    : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100'
                 } ${isCollapsed ? 'justify-center' : ''}`}
                 title={isCollapsed ? inbox.label : undefined}
               >
                 <div className="relative">
-                  <Icon className="w-5 h-5" />
-                  {!isCollapsed && count > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {count > 9 ? '9+' : count}
-                    </span>
-                  )}
+                  <Icon className={`w-5 h-5 ${isSelected ? 'text-primary' : 'text-gray-600'}`} />
+                    {!isCollapsed && count > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary text-white text-xs rounded-full flex items-center justify-center font-semibold">
+                        {count > 9 ? '9+' : count}
+                      </span>
+                    )}
                 </div>
                 {!isCollapsed && (
                   <div className="flex-1 text-left">
@@ -206,7 +215,7 @@ export default function InboxSidebar({
                   </div>
                 )}
                 {!isCollapsed && inbox.subInboxes && (
-                  <ChevronRight
+                  <HiOutlineChevronRight
                     className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                   />
                 )}
@@ -245,14 +254,24 @@ export default function InboxSidebar({
           <nav className="px-2 pb-2 space-y-1 flex-shrink-0">
             {functions.map((func) => {
               const Icon = func.icon;
+              const functionRoutes: Record<string, string> = {
+                'contactos': '/crm-com/contactos',
+                'etiquetas': '/crm-com/etiquetas',
+                'respuestas': '/crm-com/respuestas',
+                'estadisticas': '/crm-com/estadisticas',
+                'ajustes': '/crm-com/ajustes',
+              };
+              const href = functionRoutes[func.id] || '#';
+              
               return (
-                <button
+                <a
                   key={func.id}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+                  href={href}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 text-gray-700 hover:bg-gray-100 active:bg-gray-200"
                 >
                   <Icon className="w-5 h-5" />
                   <span className="text-sm font-medium">{func.label}</span>
-                </button>
+                </a>
               );
             })}
           </nav>
@@ -265,17 +284,17 @@ export default function InboxSidebar({
           {/* Modo Oscuro */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Moon className="w-4 h-4 text-gray-600" />
+              <HiOutlineMoon className="w-4 h-4 text-gray-600" />
               <span className="text-sm text-gray-700">Modo Oscuro</span>
             </div>
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`relative w-11 h-6 rounded-full transition-colors ${
+              className={`relative w-11 h-6 rounded-full transition-all duration-200 ${
                 darkMode ? 'bg-primary' : 'bg-gray-300'
               }`}
             >
               <span
-                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200 shadow-sm ${
                   darkMode ? 'translate-x-5' : ''
                 }`}
               />
@@ -292,7 +311,7 @@ export default function InboxSidebar({
                 onClick={handleLogout}
                 className="mt-3 text-xs text-primary hover:text-primary-dark transition-colors flex items-center gap-1"
               >
-                <LogOut className="w-3 h-3" />
+                <HiOutlineLogout className="w-3 h-3" />
                 <span>Cerrar sesión</span>
               </button>
             </div>

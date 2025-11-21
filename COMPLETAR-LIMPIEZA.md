@@ -84,3 +84,8 @@ pm2 logs psi-vision-hub --lines 50
 - ✅ CRM más simple y mantenible
 - ✅ Listo para crear Router nuevo
 
+
+
+
+
+

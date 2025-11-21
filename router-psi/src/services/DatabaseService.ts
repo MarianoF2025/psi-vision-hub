@@ -41,7 +41,7 @@ class DatabaseService {
   async buscarOCrearConversacion(
     telefono: string,
     numeroOrigen: string,
-    area: Area = Area.ADMINISTRACION
+    area: Area = Area.PSI_PRINCIPAL
   ): Promise<Conversacion> {
     const { data, error } = await supabaseAdmin
       .from('conversaciones')
@@ -63,11 +63,13 @@ class DatabaseService {
     // Mapear área a inbox_id
     // WSP4 (ADMINISTRACION) usa inbox_id 79828
     // VENTAS1 usa inbox_id 81935
-    const inboxIdMap: Partial<Record<Area, number>> = {
+    const inboxIdMap: Partial<Record<Area, number | null>> = {
+      [Area.PSI_PRINCIPAL]: null,
       [Area.ADMINISTRACION]: 79828, // WSP4 inbox_id
       [Area.VENTAS1]: 81935,
     };
     const inbox_id = inboxIdMap[area] || null;
+    const inbox_destino = area === Area.PSI_PRINCIPAL ? 'psi_principal' : area;
 
     const { data: convData, error: convError } = await supabaseAdmin
       .from('conversaciones')
@@ -79,8 +81,10 @@ class DatabaseService {
         numero_activo: numeroOrigen,
         ts_ultimo_mensaje: new Date().toISOString(),
         estado: 'nueva',
-        router_estado: 'menu_principal',
+        router_estado: 'PSI Principal',
         inbox_id: inbox_id,
+        inbox_destino,
+        derivado_a: area === Area.PSI_PRINCIPAL ? null : area,
       })
       .select()
       .single();
@@ -178,10 +182,16 @@ class DatabaseService {
       'es_lead_meta',
       'metadata',
       'ultimo_menu_enviado',
+      'ticket_id',
+      'countdown_24h',
+      'ts_derivacion',
+      'derivado_a',
+      'inbox_destino',
+      'inbox_id',
     ];
 
     // Campos que son timestamps y deben ser strings ISO válidos
-    const timestampFields = ['ventana_24h_inicio', 'ventana_72h_inicio'];
+    const timestampFields = ['ventana_24h_inicio', 'ventana_72h_inicio', 'countdown_24h', 'ts_derivacion'];
 
     const filteredUpdates: Record<string, any> = {
       updated_at: new Date().toISOString(),
@@ -261,6 +271,29 @@ class DatabaseService {
     const last = new Date(data[0].created_at);
     const diffMinutes = (Date.now() - last.getTime()) / 60000;
     return diffMinutes < windowMinutes;
+  }
+
+  async registrarAuditLog(entry: {
+    conversacion_id: string;
+    accion: string;
+    area_destino?: string;
+    ticket_id?: string;
+    metadata?: Record<string, any>;
+  }) {
+    const payload = {
+      ...entry,
+      metadata: entry.metadata || {},
+      created_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabaseAdmin.from('audit_log').insert(payload);
+
+    if (error) {
+      Logger.error('Error registrando audit log', { error, payload });
+      throw error;
+    }
+
+    return payload;
   }
 }
 

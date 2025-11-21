@@ -61,7 +61,7 @@ export default function AssignmentModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-primary/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900">Asignar Conversación</h3>
@@ -75,13 +75,13 @@ export default function AssignmentModal({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-900 mb-2">
               Área
             </label>
             <select
               value={selectedArea}
               onChange={(e) => setSelectedArea(e.target.value as InboxType)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary text-gray-900 bg-white"
             >
               <option value="">Seleccionar área</option>
               <option value="Ventas">Ventas</option>
@@ -92,7 +92,7 @@ export default function AssignmentModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-900 mb-2">
               Asignar a (opcional)
             </label>
             <input
@@ -100,14 +100,14 @@ export default function AssignmentModal({
               value={assignedTo}
               onChange={(e) => setAssignedTo(e.target.value)}
               placeholder="ID de usuario o email"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary text-gray-900 placeholder:text-gray-500"
             />
           </div>
 
           <div className="flex gap-3 pt-4">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-900 hover:bg-gray-50 transition-colors"
             >
               Cancelar
             </button>

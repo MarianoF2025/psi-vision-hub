@@ -16,3 +16,7 @@ COPY --from=builder /app/.env.example ./.env.example
 COPY --from=builder /app/logs ./logs
 CMD ["node", "dist/app.js"]
 
+
+
+
+

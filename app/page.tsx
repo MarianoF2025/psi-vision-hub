@@ -14,7 +14,7 @@ export default async function HomePage() {
       description: 'Vision Hub integra todos los tableros de marketing, ventas y alumnos en un solo espacio. Te muestra métricas en tiempo real y te avisa cuando algo necesita atención.',
       iconName: 'eye' as const,
       href: '/dashboard',
-      iconBgColor: 'bg-primary',
+      iconBgColor: 'bg-red-600',
       iconColor: 'text-white',
       features: [
         { text: 'Marketing: CPL, ROI y rendimiento por canal' },
@@ -41,6 +41,9 @@ export default async function HomePage() {
       ],
       highlightText: 'Simple, organizado y hecho para trabajar tranquilo.',
       highlightIconName: 'messageCircle' as const,
+      buttonBgColor: 'bg-[#2563EB]',
+      buttonHoverColor: 'hover:bg-[#1D4ED8]',
+      titleHoverColor: 'group-hover:text-[#2563EB]',
     },
     {
       title: 'IA Especialista TCC',
@@ -95,6 +98,9 @@ export default async function HomePage() {
                   features={module.features}
                   highlightText={module.highlightText}
                   highlightIconName={module.highlightIconName}
+                  buttonBgColor={(module as any).buttonBgColor}
+                  buttonHoverColor={(module as any).buttonHoverColor}
+                  titleHoverColor={(module as any).titleHoverColor}
                 />
               ))}
             </div>

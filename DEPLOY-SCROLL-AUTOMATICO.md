@@ -49,3 +49,8 @@ Si después del deploy el scroll no funciona:
    - Ver si hay errores en la consola
    - Verificar que los componentes se están renderizando
 
+
+
+
+
+

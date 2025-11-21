@@ -2,63 +2,74 @@ import { Area } from '../models/enums';
 import { MenuResponse } from '../models/types';
 import { Logger } from '../utils/logger';
 
-const MENU_PRINCIPAL = `Hola! Para ayudarte mejor, elegi el area con un numero:
+const MENU_PRINCIPAL = `¡Bienvenidos a Asociación PSI! 👋
 
-1) Administracion
-2) Alumnos
-3) Inscripciones
-4) Comunidad PSI y En Vivo
-5) Otra consulta
+Para ayudarte mejor, elegí el área con un número:
 
-(Escribi MENU para volver a este menu)`;
+🟨 1) Administración
+🟧 2) Alumnos
+🟪 3) Inscripciones
+🟦 4) Comunidad PSI y En Vivo
+⚪ 5) Otra consulta
 
-const SUBMENUS: Record<Area, { title: string; options: Record<string, string> }> = {
+Escribí el número (ej: 1)
+
+🔄 Escribí MENU para volver a este menú`;
+
+type SubmenuArea = Exclude<Area, Area.PSI_PRINCIPAL>;
+
+const SUBMENUS: Record<SubmenuArea, { title: string; emoji: string; options: Record<string, string> }> = {
   [Area.ADMINISTRACION]: {
-    title: 'Administracion',
+    title: 'Administración',
+    emoji: '🟨',
     options: {
-      '11': 'Pagos',
-      '12': 'Cuota',
-      '13': 'Facturas',
-      '14': 'Certificados',
-      '15': 'Otro',
+      '11': 'Pagos y medios de pago',
+      '12': 'Problemas con la cuota',
+      '13': 'Facturas / Comprobantes',
+      '14': 'Certificados / Constancias',
+      '15': 'Otra (hablar con persona)',
     },
   },
   [Area.ALUMNOS]: {
     title: 'Alumnos',
+    emoji: '🟧',
     options: {
-      '21': 'Campus',
-      '22': 'Clases',
-      '23': 'Recursos',
-      '24': 'Certificados',
-      '25': 'Dudas',
-      '26': 'Otro',
+      '21': 'Acceso al campus',
+      '22': 'Clases y cronograma',
+      '23': 'Recursos y descargas',
+      '24': 'Certificados académicos',
+      '25': 'Duda académica',
+      '26': 'Otra (hablar con persona)',
     },
   },
   [Area.INSCRIPCIONES]: {
     title: 'Inscripciones',
+    emoji: '🟪',
     options: {
-      '31': 'Programas vigentes',
-      '32': 'Proceso de inscripcion',
-      '33': 'Pagos',
-      '34': 'Modalidad',
-      '35': 'Promociones',
-      '36': 'Asesora',
+      '31': 'Cursos vigentes',
+      '32': 'Inscripción a un curso',
+      '33': 'Formas de pago',
+      '34': 'Modalidades',
+      '35': 'Promos / Becas',
+      '36': 'Hablar con asesora',
     },
   },
   [Area.COMUNIDAD]: {
-    title: 'Comunidad PSI',
+    title: 'Comunidad PSI y En Vivo',
+    emoji: '🟦',
     options: {
       '41': 'Acceso',
       '42': 'Calendario',
-      '43': 'Transmision',
+      '43': 'Transmisión',
       '44': 'Grabaciones',
       '45': 'Recursos',
-      '46': 'Tecnicos',
-      '47': 'Otro',
+      '46': 'Técnicos',
+      '47': 'Otra (hablar con persona)',
     },
   },
   [Area.VENTAS1]: {
-    title: 'Ventas 1',
+    title: 'Ventas',
+    emoji: '⚪',
     options: {
       '51': 'Meta Ads',
       '52': 'Derivado WSP4',
@@ -113,7 +124,7 @@ export class MenuService {
         Logger.info('[MenuService] Opción 5 seleccionada - Otra consulta');
         return {
           reply: 'Contanos mas sobre tu consulta y un asesor te respondera en breve.',
-          derivar: true,
+          submenu: 'principal',
         };
       default:
         Logger.info('[MenuService] No es opción principal, procesando como submenu', { seleccion });
@@ -121,19 +132,21 @@ export class MenuService {
     }
   }
 
-  private buildSubmenu(area: Area): MenuResponse {
+  private buildSubmenu(area: SubmenuArea): MenuResponse {
     const submenu = SUBMENUS[area];
     const lines = Object.entries(submenu.options)
-      .map(([code, desc]) => `${code} - ${desc}`)
+      .map(([code, desc]) => `${code}) ${desc}`)
       .join('\n');
 
     return {
-      reply: `Area ${submenu.title}:
+      reply: `${submenu.emoji} *${submenu.title}*
+
 ${lines}
 
-Escribi el codigo que mejor describa tu consulta o MENU para volver.`,
+Elegí el código (ej: ${Object.keys(submenu.options)[0]})
+
+🔄 Escribí VOLVER para menú principal`,
       submenu: area,
-      area,
     };
   }
 
@@ -142,11 +155,14 @@ Escribi el codigo que mejor describa tu consulta o MENU para volver.`,
     
     for (const [areaKey, submenu] of Object.entries(SUBMENUS)) {
       if (submenu.options[seleccion]) {
-        Logger.info('[MenuService] Submenu encontrado', { areaKey, seleccion, opcion: submenu.options[seleccion] });
+        const area = areaKey as Area;
+        const subetiqueta = submenu.options[seleccion];
+        Logger.info('[MenuService] Submenu definitivo encontrado', { area, seleccion, opcion: subetiqueta });
         return {
-          reply: `Perfecto, derivamos tu consulta de ${submenu.title} (${submenu.options[seleccion]}). Un asesor te respondera en breve.`,
-          area: areaKey as Area,
+          reply: `Perfecto! Te estoy derivando con el equipo de ${submenu.title}. En unos minutos te van a responder desde este mismo número. ✅`,
+          area,
           derivar: true,
+          subetiqueta,
         };
       }
     }
