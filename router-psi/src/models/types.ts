@@ -73,6 +73,11 @@ export interface WebhookMessage {
     button_reply?: { id: string; title: string };
     list_reply?: { id: string; title: string };
   };
+  reaction?: {
+    message_id: string;
+    emoji: string;
+    action?: string;
+  };
 }
 
 export interface WebhookPayload {

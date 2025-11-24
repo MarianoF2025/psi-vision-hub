@@ -21,6 +21,31 @@ class MessageProcessor {
 
     const esFlujoPrincipal = area === Area.PSI_PRINCIPAL;
 
+    if (message.type === 'reaction' && message.reaction) {
+      Logger.info('[MessageProcessor] Recibida reacción, registrando en Supabase', {
+        conversacionId: conversacion.id,
+        telefono,
+        emoji: message.reaction.emoji,
+        messageId: message.reaction.message_id,
+        action: message.reaction.action,
+      });
+
+      await databaseService.saveReactionFromWebhook({
+        conversacionId: conversacion.id,
+        contactoId: conversacion.contacto_id,
+        telefono,
+        whatsappMessageId: message.reaction.message_id,
+        emoji: message.reaction.emoji,
+        action: message.reaction.action,
+        timestamp: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      });
+
+      return {
+        reaction: true,
+        conversacionId: conversacion.id,
+      };
+    }
+
     if (esFlujoPrincipal && conversacion.area !== Area.PSI_PRINCIPAL) {
       Logger.info('[MessageProcessor] Normalizando conversación a PSI Principal', {
         conversacionId: conversacion.id,

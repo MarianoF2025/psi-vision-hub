@@ -28,10 +28,13 @@ export interface Message {
   conversacion_id: string;
   mensaje: string;
   remitente: string;
+  direccion?: 'entrante' | 'saliente' | 'inbound' | 'outbound';
   timestamp: string;
   tipo?: MessageType;
   estado?: 'sent' | 'delivered' | 'read';
   mensaje_respuesta_id?: string | null;
+  mensaje_original_id?: string | null;
+  reenviado?: boolean;
   editado?: boolean;
   eliminado?: boolean;
   metadata?: Record<string, any>;

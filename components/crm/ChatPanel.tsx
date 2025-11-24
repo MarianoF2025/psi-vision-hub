@@ -31,6 +31,7 @@ import {
   HiBookmark,
   HiOutlineShare,
   HiOutlineArrowRight,
+  HiOutlineSearch,
   HiOutlinePaperAirplane,
   HiPaperAirplane
 } from 'react-icons/hi';
@@ -85,6 +86,13 @@ export default function ChatPanel({
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [starredMessages, setStarredMessages] = useState<Set<string>>(new Set());
   const [pinnedMessages, setPinnedMessages] = useState<Set<string>>(new Set());
+  const [showForwardModal, setShowForwardModal] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+  const [forwardConversations, setForwardConversations] = useState<Conversation[]>([]);
+  const [forwardSelectedConversation, setForwardSelectedConversation] = useState<Conversation | null>(null);
+  const [forwardSearch, setForwardSearch] = useState('');
+  const [forwardLoading, setForwardLoading] = useState(false);
+  const [forwardSubmitting, setForwardSubmitting] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const reactionPickerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +119,43 @@ export default function ChatPanel({
       }
     } catch (error) {
       console.error('Error loading quick replies:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (showForwardModal) {
+      loadForwardConversations();
+    }
+  }, [showForwardModal]);
+
+  const loadForwardConversations = async () => {
+    try {
+      setForwardLoading(true);
+      const { data, error } = await supabase
+        .from('conversaciones')
+        .select(`
+          *,
+          contactos (
+            id,
+            nombre,
+            telefono
+          )
+        `)
+        .order('ts_ultimo_mensaje', { ascending: false, nullsFirst: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Error loading conversations for forward:', error);
+        setForwardConversations([]);
+        return;
+      }
+
+      setForwardConversations(data || []);
+    } catch (error) {
+      console.error('Error loading conversations for forward:', error);
+      setForwardConversations([]);
+    } finally {
+      setForwardLoading(false);
     }
   };
 
@@ -158,16 +203,33 @@ export default function ChatPanel({
       if (error) throw error;
       
       // Transformar mensajes para la UI
-      const transformedMessages: Message[] = (data || []).map((msg: any) => ({
-        ...msg,
-        conversation_id: msg.conversacion_id,
-        content: msg.mensaje,
-        from_phone: msg.remitente_nombre || msg.remitente,
-        // Usar remitente_tipo si está disponible, sino comparar por teléfono
-        is_from_contact: msg.remitente_tipo === 'contact' || 
-                        msg.remitente === conversation.telefono || 
-                        msg.remitente === conversation.contactos?.telefono,
-      }));
+      const transformedMessages: Message[] = (data || []).map((msg: any) => {
+        const directionRaw = typeof msg.direccion === 'string' ? msg.direccion.toLowerCase() : undefined;
+        const directionNormalized =
+          directionRaw === 'entrante' || directionRaw === 'inbound'
+            ? 'entrante'
+            : directionRaw === 'saliente' || directionRaw === 'outbound'
+            ? 'saliente'
+            : undefined;
+
+        const fallbackIsContact =
+          msg.remitente_tipo === 'contact' ||
+          msg.remitente === conversation.telefono ||
+          msg.remitente === conversation.contactos?.telefono;
+
+        const isFromContact = directionNormalized
+          ? directionNormalized === 'entrante'
+          : fallbackIsContact;
+
+        return {
+          ...msg,
+          direccion: directionNormalized || msg.direccion,
+          conversation_id: msg.conversacion_id,
+          content: msg.mensaje,
+          from_phone: msg.remitente_nombre || msg.remitente,
+          is_from_contact: isFromContact,
+        };
+      });
       
       setMessages(transformedMessages);
 
@@ -420,65 +482,31 @@ export default function ChatPanel({
     const currentReactions = messageReactions[messageId] || [];
     const hasReaction = currentReactions.includes(emoji);
     try {
+      const response = await fetch('/api/messages/react', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mensaje_id: messageId,
+          emoji,
+          action: hasReaction ? 'remove' : 'add',
+        }),
+      });
 
-      if (hasReaction) {
-        // Eliminar reacción
-        const { error } = await supabase
-          .from('mensaje_reacciones')
-          .delete()
-          .eq('mensaje_id', messageId)
-          .eq('emoji', emoji)
-          .eq('usuario_id', user?.id);
+      const data = await response.json().catch(() => ({}));
 
-        if (error) {
-          console.error('Error deleting reaction:', error);
-          throw error;
-        }
-        
-        const updatedReactions = currentReactions.filter(e => e !== emoji);
-        setMessageReactions(prev => ({
-          ...prev,
-          [messageId]: updatedReactions.length > 0 ? updatedReactions : []
-        }));
-      } else {
-        // Agregar reacción
-        const { error } = await supabase
-          .from('mensaje_reacciones')
-          .insert({
-            mensaje_id: messageId,
-            emoji: emoji,
-            usuario_id: user?.id,
-          });
-
-        if (error) {
-          console.error('Error adding reaction:', error);
-          // Si la tabla no existe, guardar en memoria local
-          if (error.message?.includes('does not exist')) {
-            console.warn('Tabla mensaje_reacciones no existe. Guardando en memoria local.');
-            setMessageReactions(prev => ({
-              ...prev,
-              [messageId]: [...currentReactions, emoji]
-            }));
-          } else {
-            throw error;
-          }
-        } else {
-          setMessageReactions(prev => ({
-            ...prev,
-            [messageId]: [...currentReactions, emoji]
-          }));
-        }
+      if (!response.ok) {
+        throw new Error(data?.error || 'No se pudo procesar la reacción');
       }
+
       setShowReactionPicker(null);
-      // Recargar reacciones para asegurar sincronización
-      setTimeout(async () => {
-        await loadMessages();
-      }, 100);
+      await loadMessages();
     } catch (error: any) {
-      console.error('Error adding reaction:', error);
-      if (!error.message?.includes('does not exist')) {
-        alert(`Error al ${hasReaction ? 'eliminar' : 'agregar'} reacción: ${error.message || 'Error desconocido'}`);
-      }
+      console.error('Error procesando reacción:', error);
+      alert(
+        `Error al ${hasReaction ? 'eliminar' : 'agregar'} reacción: ${
+          error?.message || 'Error desconocido'
+        }`
+      );
     }
   };
 
@@ -579,13 +607,67 @@ export default function ChatPanel({
     }
   };
 
-  const handleForwardMessage = async (messageId: string) => {
+  const handleForwardMessage = (messageId: string) => {
     const message = messages.find(m => m.id === messageId);
-    if (!message) return;
+    if (!message) {
+      setContextMenu(null);
+      return;
+    }
 
-    // Por ahora, mostrar un mensaje. En el futuro se puede abrir un modal para seleccionar conversación
-    alert('Funcionalidad de reenviar en desarrollo. Se abrirá un selector de conversaciones próximamente.');
+    setForwardMessage(message);
+    setForwardSelectedConversation(null);
+    setForwardSearch('');
+    setShowForwardModal(true);
     setContextMenu(null);
+  };
+
+  const filteredForwardConversations = forwardConversations.filter((conv) => {
+    if (!forwardSearch) return true;
+    const query = forwardSearch.toLowerCase();
+    const contactName = conv.contactos?.nombre || '';
+    const phone = conv.contactos?.telefono || conv.telefono || '';
+    return (
+      contactName.toLowerCase().includes(query) ||
+      phone.toLowerCase().includes(query)
+    );
+  });
+
+  const handleConfirmForward = async () => {
+    if (!forwardSelectedConversation || !forwardMessage) return;
+
+    try {
+      setForwardSubmitting(true);
+      const response = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversacion_id: forwardSelectedConversation.id,
+          mensaje: forwardMessage.mensaje,
+          mensaje_original_id: forwardMessage.id,
+          reenviado: true,
+          remitente: user?.email || 'system',
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.error) {
+        throw new Error(data?.error || 'No se pudo reenviar el mensaje');
+      }
+
+      if (forwardSelectedConversation.id === conversation?.id) {
+        loadMessages();
+      }
+
+      setShowForwardModal(false);
+      setForwardMessage(null);
+      setForwardSelectedConversation(null);
+      setForwardSearch('');
+    } catch (error: any) {
+      console.error('Error reenviando mensaje:', error);
+      alert(error?.message || 'No se pudo reenviar el mensaje');
+    } finally {
+      setForwardSubmitting(false);
+    }
   };
 
   const handleSelectMessage = (messageId: string) => {
@@ -848,7 +930,10 @@ export default function ChatPanel({
         {messages.slice().reverse().map((message, index) => {
           // Determinar si el mensaje es del contacto
           const contactPhone = conversation.contactos?.telefono || conversation.telefono;
-          const isFromContact = message.remitente === contactPhone;
+          const direction = typeof message.direccion === 'string' ? message.direccion.toLowerCase() : undefined;
+          const isFromContact = direction
+            ? direction === 'entrante' || direction === 'inbound'
+            : message.remitente === contactPhone;
           const messageDate = format(new Date(message.timestamp), 'HH:mm');
           const messageContent = message.mensaje || '';
           
@@ -936,6 +1021,14 @@ export default function ChatPanel({
                     </div>
                   ) : (
                     <>
+                      {/* Indicador de reenviado */}
+                      {message.reenviado && (
+                        <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1 flex items-center gap-1">
+                          <HiOutlineArrowRight className="w-3 h-3" />
+                          Reenviado
+                        </div>
+                      )}
+
                       {/* Mensaje al que se responde */}
                       {message.mensaje_respuesta_id && (() => {
                         const repliedMessage = messages.find(m => m.id === message.mensaje_respuesta_id);
@@ -1349,6 +1442,96 @@ export default function ChatPanel({
           )}
         </form>
       </div>
+
+      {showForwardModal && forwardMessage && (
+        <div className="fixed inset-0 z-50 bg-gray-900/40 flex items-center justify-center px-4 py-8">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 relative">
+            <button
+              onClick={() => {
+                setShowForwardModal(false);
+                setForwardSelectedConversation(null);
+                setForwardMessage(null);
+              }}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 text-gray-500"
+            >
+              <HiX className="w-5 h-5" />
+            </button>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Reenviar mensaje</h3>
+            <p className="text-sm text-gray-500 mb-4">Selecciona una conversación destino</p>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
+              <p className="text-xs text-gray-500 uppercase mb-1">Mensaje</p>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">
+                {forwardMessage.mensaje}
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                Buscar conversación
+              </label>
+              <div className="relative mt-1">
+                <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  value={forwardSearch}
+                  onChange={(e) => setForwardSearch(e.target.value)}
+                  placeholder="Nombre o número"
+                  className="w-full rounded-full border border-gray-200 pl-9 pr-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 max-h-72 overflow-y-auto space-y-2">
+              {forwardLoading ? (
+                <p className="text-xs text-gray-500">Cargando conversaciones...</p>
+              ) : filteredForwardConversations.length === 0 ? (
+                <p className="text-xs text-gray-500">No hay conversaciones que coincidan.</p>
+              ) : (
+                filteredForwardConversations.map((conv) => {
+                  const contactLabel = conv.contactos?.nombre || conv.telefono || 'Sin nombre';
+                  const phoneLabel = conv.contactos?.telefono || conv.telefono || '';
+                  const isSelected = forwardSelectedConversation?.id === conv.id;
+                  return (
+                    <button
+                      key={conv.id}
+                      onClick={() => setForwardSelectedConversation(conv)}
+                      className={`w-full text-left rounded-xl border px-3 py-2 flex flex-col transition-colors ${
+                        isSelected
+                          ? 'border-primary bg-primary-50 text-gray-900'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="text-sm font-medium truncate">{contactLabel}</span>
+                      <span className="text-xs text-gray-500 truncate">{phoneLabel}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="mt-5 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowForwardModal(false);
+                  setForwardSelectedConversation(null);
+                  setForwardMessage(null);
+                }}
+                className="text-sm font-medium text-gray-600 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmForward}
+                disabled={!forwardSelectedConversation || forwardSubmitting}
+                className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {forwardSubmitting ? 'Reenviando...' : 'Reenviar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

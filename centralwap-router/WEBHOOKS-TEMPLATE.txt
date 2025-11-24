@@ -1,0 +1,22 @@
+# ============================================
+# WEBHOOKS N8N PARA NOTIFICAR A INBOXS
+# ============================================
+# Copiar estas líneas al archivo .env en centralwap-router/
+
+# Webhook para inbox de Administración
+N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION=
+
+# Webhook para inbox de Alumnos
+N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS=
+
+# Webhook para inbox de Ventas/Inscripciones
+N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1=
+
+# Webhook para inbox de Comunidad
+N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD=
+
+# Webhook para CRM
+N8N_WEBHOOK_ENVIOS_ROUTER_CRM=
+
+
+

@@ -1,12 +1,22 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Conversation, InboxType } from '@/lib/types/crm';
+import { useState, useEffect, useRef, FormEvent } from 'react';
+import { Conversation, InboxType, Contact } from '@/lib/types/crm';
 import { User } from '@/lib/types';
 // Iconos modernos de react-icons
-import { HiOutlineSearch, HiOutlineFilter, HiOutlineDotsVertical, HiOutlineChat } from 'react-icons/hi';
+import {
+  HiOutlineSearch,
+  HiOutlineFilter,
+  HiOutlineDotsVertical,
+  HiOutlineChat,
+  HiOutlinePlusSm,
+  HiOutlineX,
+  HiOutlineUserGroup,
+  HiOutlineUserAdd,
+} from 'react-icons/hi';
 import { formatDistanceToNow } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
+import { getAreaFromInbox, getInboxFromArea } from '@/lib/crm/inboxMap';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -15,6 +25,8 @@ interface ConversationListProps {
   selectedInbox: InboxType;
   loading: boolean;
   user: User | null;
+  onChangeInbox?: (inbox: InboxType) => void;
+  onConversationCreated?: (conversation: Conversation) => void;
 }
 
 export default function ConversationList({
@@ -24,6 +36,8 @@ export default function ConversationList({
   selectedInbox,
   loading,
   user,
+  onChangeInbox,
+  onConversationCreated,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -31,7 +45,17 @@ export default function ConversationList({
   const [filterDays, setFilterDays] = useState<string>('all');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [lastMessages, setLastMessages] = useState<Record<string, string>>({});
+  const [showNewChatPanel, setShowNewChatPanel] = useState(false);
+  const [showNewConversationModal, setShowNewConversationModal] = useState(false);
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactName, setNewContactName] = useState('');
+  const [creationError, setCreationError] = useState<string | null>(null);
+  const [creatingConversation, setCreatingConversation] = useState(false);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsError, setContactsError] = useState<string | null>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
+  const newChatSearchRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
   // Cargar último mensaje de cada conversación
@@ -123,9 +147,210 @@ export default function ConversationList({
     }
   };
 
+  const openOrCreateConversationForContact = async (contact: Contact) => {
+    try {
+      const { data: existingConversation, error: existingConvError } = await supabase
+        .from('conversaciones')
+        .select(`
+          *,
+          contactos (
+            id,
+            telefono,
+            nombre
+          )
+        `)
+        .eq('contacto_id', contact.id)
+        .order('ts_ultimo_mensaje', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConvError && existingConvError.code !== 'PGRST116') {
+        throw existingConvError;
+      }
+
+      if (existingConversation) {
+        setShowNewChatPanel(false);
+        const targetInbox = getInboxFromArea(existingConversation.area);
+        if (targetInbox && targetInbox !== selectedInbox) {
+          onChangeInbox?.(targetInbox);
+        }
+        onSelectConversation(existingConversation as Conversation);
+        return;
+      }
+
+      const areaValue = getAreaFromInbox(selectedInbox);
+      const payload: Record<string, any> = {
+        contacto_id: contact.id,
+        telefono: contact.telefono,
+        area: areaValue,
+        estado: 'activa',
+        ts_ultimo_mensaje: new Date().toISOString(),
+      };
+
+      if (user?.id) {
+        payload.asignado_a = user.id;
+      }
+
+      const attemptInsert = async (insertPayload: Record<string, any>) =>
+        supabase
+          .from('conversaciones')
+          .insert(insertPayload)
+          .select(`
+            *,
+            contactos (
+              id,
+              telefono,
+              nombre
+            )
+          `)
+          .single();
+
+      let { data: insertedConversation, error: conversationError } = await attemptInsert(payload);
+
+      if (conversationError && conversationError.message?.includes('asignado_a')) {
+        const { asignado_a, ...fallbackPayload } = payload;
+        ({ data: insertedConversation, error: conversationError } = await attemptInsert(fallbackPayload));
+      }
+
+      if (conversationError || !insertedConversation) {
+        throw conversationError || new Error('No se pudo crear la conversación');
+      }
+
+      setShowNewChatPanel(false);
+      onSelectConversation(insertedConversation as Conversation);
+      onConversationCreated?.(insertedConversation as Conversation);
+    } catch (error: any) {
+      console.error('Error al abrir conversación:', error);
+      setCreationError(error?.message || 'No se pudo abrir la conversación');
+    }
+  };
+
   const mineCount = conversations.filter((c) => c.asignado_a === user?.id).length;
   const unassignedCount = conversations.filter((c) => !c.asignado_a).length;
   const allCount = conversations.length;
+
+  const handleCreateConversation = async (event: FormEvent) => {
+    event.preventDefault();
+    setCreationError(null);
+    const sanitizedPhone = newContactPhone.replace(/[^\d+]/g, '');
+
+    if (!sanitizedPhone || sanitizedPhone.length < 8) {
+      setCreationError('Ingresa un teléfono válido con al menos 8 dígitos.');
+      return;
+    }
+
+    setCreatingConversation(true);
+
+    try {
+      const { data: existingContact, error: contactError } = await supabase
+        .from('contactos')
+        .select('*')
+        .eq('telefono', sanitizedPhone)
+        .maybeSingle();
+
+      if (contactError && contactError.code !== 'PGRST116') {
+        throw contactError;
+      }
+
+      let finalContact = existingContact;
+
+      if (!finalContact) {
+        const { data: newContact, error: insertContactError } = await supabase
+          .from('contactos')
+          .insert({
+            telefono: sanitizedPhone,
+            nombre: newContactName.trim() || sanitizedPhone,
+          })
+          .select()
+          .single();
+
+        if (insertContactError) {
+          throw insertContactError;
+        }
+
+        finalContact = newContact;
+      }
+
+      if (!finalContact) {
+        throw new Error('No se pudo crear el contacto.');
+      }
+
+      const { data: existingConversation, error: existingConvError } = await supabase
+        .from('conversaciones')
+        .select(`
+          *,
+          contactos (
+            id,
+            telefono,
+            nombre
+          )
+        `)
+        .eq('contacto_id', finalContact.id)
+        .order('ts_ultimo_mensaje', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingConvError && existingConvError.code !== 'PGRST116') {
+        throw existingConvError;
+      }
+
+      if (existingConversation) {
+        setShowNewConversationModal(false);
+        setNewContactPhone('');
+        setNewContactName('');
+        setCreationError(null);
+
+        const targetInbox = getInboxFromArea(existingConversation.area);
+        if (targetInbox && targetInbox !== selectedInbox) {
+          onChangeInbox?.(targetInbox);
+        }
+
+        onSelectConversation(existingConversation as Conversation);
+        onConversationCreated?.(existingConversation as Conversation);
+        return;
+      }
+
+      await openOrCreateConversationForContact({
+        id: finalContact.id,
+        telefono: sanitizedPhone,
+        nombre: finalContact.nombre,
+      } as Contact);
+
+      setShowNewConversationModal(false);
+      setNewContactPhone('');
+      setNewContactName('');
+      setCreationError(null);
+      return;
+    } catch (error: any) {
+      console.error('Error creating conversation:', error);
+      setCreationError(error?.message || 'No se pudo crear la conversación.');
+    } finally {
+      setCreatingConversation(false);
+    }
+  };
+
+  const frequentConversations = conversations.slice(0, 5);
+  const filteredContacts = contacts.filter((contact) => {
+    if (!searchQuery) return true;
+    const normalized = searchQuery.toLowerCase();
+    return (
+      (contact.nombre || '').toLowerCase().includes(normalized) ||
+      (contact.telefono || '').toLowerCase().includes(normalized)
+    );
+  });
+
+  const normalizedPhoneSearch = searchQuery.replace(/[\s-]/g, '');
+  const canCreateFromSearch =
+    /^\+?\d{6,}$/.test(normalizedPhoneSearch) &&
+    !contacts.some((c) => c.telefono?.replace(/[\s-]/g, '') === normalizedPhoneSearch);
+
+  const openContactModalFromSearch = () => {
+    setShowNewChatPanel(false);
+    setShowNewConversationModal(true);
+    setNewContactPhone(searchQuery);
+    setNewContactName('');
+    setCreationError(null);
+  };
 
   // Scroll automático al inicio - SIMPLE Y DIRECTO
   useEffect(() => {
@@ -146,12 +371,59 @@ export default function ConversationList({
     }
   }, [conversations.length]);
 
+  // Cargar contactos al abrir panel estilo WhatsApp
+  useEffect(() => {
+    if (!showNewChatPanel) return;
+
+    const loadContacts = async () => {
+      try {
+        setContactsLoading(true);
+        setContactsError(null);
+
+        const { data, error } = await supabase
+          .from('contactos')
+          .select('id, nombre, telefono')
+          .order('nombre', { ascending: true, nullsFirst: false })
+          .limit(200);
+
+        if (error) {
+          setContactsError('No se pudieron cargar los contactos');
+          return;
+        }
+
+        setContacts(data || []);
+      } catch (error: any) {
+        console.error('Error cargando contactos:', error);
+        setContactsError(error?.message || 'Error inesperado al cargar contactos');
+      } finally {
+        setContactsLoading(false);
+      }
+    };
+
+    loadContacts();
+    const timeout = setTimeout(() => newChatSearchRef.current?.focus(), 150);
+    return () => clearTimeout(timeout);
+  }, [showNewChatPanel, supabase]);
+
   return (
-    <div className="w-[300px] bg-white border-r border-gray-200 flex flex-col h-screen">
+    <div className="w-[300px] bg-white border-r border-gray-200 flex flex-col h-screen relative">
       {/* Header */}
       <div className="p-4 border-b border-gray-200 space-y-3 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Conversaciones</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">Conversaciones</h2>
+            <button
+              onClick={() => {
+                setShowNewChatPanel(true);
+                setCreationError(null);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              title="Nuevo chat estilo WhatsApp"
+            >
+              <HiOutlinePlusSm className="w-4 h-4" />
+              Nueva
+            </button>
+          </div>
           <div className="flex items-center gap-2">
             <button className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
               <HiOutlineFilter className="w-4 h-4 text-gray-600" />
@@ -355,6 +627,230 @@ export default function ConversationList({
           </div>
         )}
       </div>
+
+      {showNewChatPanel && (
+        <div
+          className="absolute inset-0 z-20 flex items-start justify-center bg-gray-900/10 backdrop-blur-[1px] px-3 py-4"
+          onClick={() => setShowNewChatPanel(false)}
+        >
+          <div
+            className="w-full rounded-2xl bg-white shadow-2xl border border-gray-200 max-h-[calc(100%-2rem)] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">Nuevo chat</p>
+                <p className="text-xs text-gray-500">Buscar un nombre o número</p>
+              </div>
+              <button
+                className="p-2 rounded-full hover:bg-gray-100"
+                onClick={() => setShowNewChatPanel(false)}
+              >
+                <HiOutlineX className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b border-gray-100">
+              <div className="relative">
+                <HiOutlineSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  ref={newChatSearchRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar un nombre o número"
+                  className="w-full rounded-full border border-gray-200 pl-9 pr-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
+                />
+              </div>
+            </div>
+
+            <div className="px-4 py-2 space-y-2 border-b border-gray-100">
+              <button
+                className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => alert('Funcionalidad de grupos en desarrollo')}
+              >
+                <span className="w-9 h-9 rounded-full bg-primary-50 text-primary flex items-center justify-center">
+                  <HiOutlineUserGroup className="w-4 h-4" />
+                </span>
+                <span className="font-medium">Nuevo grupo</span>
+              </button>
+              <button
+                className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  setShowNewChatPanel(false);
+                  setShowNewConversationModal(true);
+                  setCreationError(null);
+                }}
+              >
+                <span className="w-9 h-9 rounded-full bg-primary-50 text-primary flex items-center justify-center">
+                  <HiOutlineUserAdd className="w-4 h-4" />
+                </span>
+                <span className="font-medium">Nuevo contacto</span>
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {canCreateFromSearch && (
+                <button
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-emerald-600 hover:bg-emerald-50"
+                  onClick={openContactModalFromSearch}
+                >
+                  <span className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-semibold">
+                    +
+                  </span>
+                  <div className="text-left">
+                    <p className="font-semibold">Mensaje a {searchQuery}</p>
+                    <p className="text-xs text-gray-500">Crear contacto nuevo y comenzar chat</p>
+                  </div>
+                </button>
+              )}
+
+              {frequentConversations.length > 0 && (
+                <div className="px-4 py-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Frecuentes</p>
+                  <div className="space-y-1">
+                    {frequentConversations.map((conv) => (
+                      <button
+                        key={conv.id}
+                        onClick={() => {
+                          setShowNewChatPanel(false);
+                          onSelectConversation(conv);
+                        }}
+                        className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-400 to-pink-500 flex items-center justify-center text-white text-sm font-medium">
+                          {(conv.contactos?.nombre || conv.telefono || 'S').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {conv.contactos?.nombre || conv.telefono || 'Sin nombre'}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {conv.telefono || conv.contactos?.telefono || ''}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="px-4 py-3">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Todos los contactos</p>
+                {contactsLoading ? (
+                  <p className="text-xs text-gray-500">Cargando contactos...</p>
+                ) : contactsError ? (
+                  <p className="text-xs text-red-500">{contactsError}</p>
+                ) : filteredContacts.length === 0 ? (
+                  <p className="text-xs text-gray-500">No hay contactos que coincidan</p>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredContacts.map((contact) => (
+                      <button
+                        key={contact.id}
+                        onClick={() => openOrCreateConversationForContact(contact)}
+                        className="w-full flex items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50"
+                      >
+                        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-semibold text-sm">
+                          {(contact.nombre || contact.telefono || 'S').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {contact.nombre || 'Sin nombre'}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">{contact.telefono}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewConversationModal && (
+        <div className="fixed inset-0 z-50 bg-gray-900/40 flex items-center justify-center px-4 py-6">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
+            <button
+              onClick={() => {
+                setShowNewConversationModal(false);
+                setCreationError(null);
+              }}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors"
+              title="Cerrar"
+            >
+              <HiOutlineX className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-emerald-500 flex items-center justify-center">
+                <HiOutlineChat className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <p className="text-base font-semibold text-gray-900">Nueva conversación</p>
+                <p className="text-sm text-gray-500">Se creará en {selectedInbox}</p>
+              </div>
+            </div>
+
+            <form className="space-y-4" onSubmit={handleCreateConversation}>
+              <div>
+                <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                  Número de WhatsApp
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={newContactPhone}
+                  onChange={(e) => setNewContactPhone(e.target.value)}
+                  placeholder="Ej. +5491122334455"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-600 uppercase tracking-wide">
+                  Nombre del contacto (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={newContactName}
+                  onChange={(e) => setNewContactName(e.target.value)}
+                  placeholder="Cómo quieres identificarlo"
+                  className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30"
+                />
+              </div>
+
+              {creationError && (
+                <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  {creationError}
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewConversationModal(false);
+                    setCreationError(null);
+                  }}
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingConversation}
+                  className="inline-flex items-center gap-2 rounded-full bg-emerald-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-600 disabled:opacity-70"
+                >
+                  {creatingConversation ? 'Creando...' : 'Crear y abrir'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,20 +9,11 @@ import ContactInfo from './ContactInfo';
 import FunctionPanel from './FunctionPanel';
 import { Conversation, InboxType } from '@/lib/types/crm';
 import { createClient } from '@/lib/supabase/client';
+import { getAreaFromInbox } from '@/lib/crm/inboxMap';
 
 interface CRMInterfaceProps {
   user: User | null;
 }
-
-// Mapeo de áreas a inboxes (UI) -> valores reales en Supabase
-// El Router PSI guarda áreas en minúsculas: 'administracion', 'alumnos', 'comunidad', 'ventas1'
-const inboxToAreaMap: Record<InboxType, string> = {
-  'PSI Principal': 'administracion', // Por defecto, PSI Principal mapea a administracion
-  'Ventas': 'ventas1', // El Router usa 'ventas1' no 'ventas'
-  'Alumnos': 'alumnos',
-  'Administración': 'administracion', // Sin tilde, minúscula
-  'Comunidad': 'comunidad',
-};
 
 // Tipo exportado desde InboxSidebar
 import type { CRMFunction } from './InboxSidebar';
@@ -112,7 +103,7 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
 
       // Filtrar por área/inbox - Mapear el inbox de la UI al valor real en Supabase
       // El Router PSI guarda áreas en minúsculas: 'administracion', 'alumnos', 'comunidad', 'ventas1'
-      const areaValue = inboxToAreaMap[selectedInbox] || selectedInbox.toLowerCase();
+      const areaValue = getAreaFromInbox(selectedInbox);
       query = query.eq('area', areaValue);
       
       // Debug: Log del filtro aplicado
@@ -182,7 +173,7 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
           .select('id', { count: 'exact', head: true });
 
         // Mapear el inbox de la UI al valor real en Supabase
-        const areaValue = inboxToAreaMap[inbox] || inbox.toLowerCase();
+        const areaValue = getAreaFromInbox(inbox);
         query = query.eq('area', areaValue);
 
         const { count, error } = await query;
@@ -201,6 +192,17 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
     }
   };
 
+  const handleConversationCreated = (conversation: Conversation) => {
+    setSelectedConversation(conversation);
+    loadConversations();
+    loadInboxStats();
+  };
+
+  const handleChangeInbox = (inbox: InboxType) => {
+    setSelectedInbox(inbox);
+    setSelectedFunction(null);
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar de Inboxes - 250px (colapsable) */}
@@ -208,10 +210,7 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         isCollapsed={isSidebarCollapsed}
         onToggle={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         selectedInbox={selectedInbox}
-        onSelectInbox={(inbox) => {
-          setSelectedInbox(inbox);
-          setSelectedFunction(null); // Cerrar función al cambiar de inbox
-        }}
+        onSelectInbox={handleChangeInbox}
         user={user}
         inboxStats={inboxStats}
         selectedFunction={selectedFunction}
@@ -226,6 +225,8 @@ export default function CRMInterface({ user }: CRMInterfaceProps) {
         selectedInbox={selectedInbox}
         loading={loading}
         user={user}
+        onChangeInbox={handleChangeInbox}
+        onConversationCreated={handleConversationCreated}
       />
 
       {/* Panel de Chat o Función - flex-1 */}

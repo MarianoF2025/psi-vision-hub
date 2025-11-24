@@ -165,6 +165,71 @@ class DatabaseService {
     return data;
   }
 
+  async saveReactionFromWebhook(params: {
+    conversacionId: string;
+    contactoId?: string | null;
+    telefono: string;
+    whatsappMessageId: string;
+    emoji: string;
+    action?: string;
+    timestamp?: string;
+  }) {
+    try {
+      const { data: targetMessage, error: targetError } = await supabaseAdmin
+        .from('mensajes')
+        .select('id')
+        .eq('whatsapp_message_id', params.whatsappMessageId)
+        .maybeSingle();
+
+      if (targetError) {
+        Logger.error('Error buscando mensaje para reacción', { error: targetError });
+        return;
+      }
+
+      if (!targetMessage) {
+        Logger.warn('No se encontró mensaje para asociar reacción entrante', {
+          whatsapp_message_id: params.whatsappMessageId,
+          conversacionId: params.conversacionId,
+        });
+        return;
+      }
+
+      const isRemoval = (params.action || '').toLowerCase() === 'remove' || (params.action || '').toLowerCase() === 'removed';
+
+      if (isRemoval) {
+        await supabaseAdmin
+          .from('mensaje_reacciones')
+          .delete()
+          .eq('mensaje_id', targetMessage.id)
+          .eq('autor_telefono', params.telefono)
+          .eq('emoji', params.emoji);
+        return;
+      }
+
+      await supabaseAdmin
+        .from('mensaje_reacciones')
+        .upsert(
+          {
+            mensaje_id: targetMessage.id,
+            emoji: params.emoji,
+            autor_tipo: 'contacto',
+            autor_telefono: params.telefono,
+            contacto_id: params.contactoId || null,
+            created_at: params.timestamp || new Date().toISOString(),
+          },
+          {
+            onConflict: 'mensaje_id,autor_telefono,emoji',
+          }
+        );
+    } catch (error) {
+      Logger.error('Error guardando reacción entrante', {
+        error,
+        conversacionId: params.conversacionId,
+        whatsapp_message_id: params.whatsappMessageId,
+      });
+    }
+  }
+
   async updateConversacion(id: string, updates: Partial<Conversacion>) {
     // Filtrar solo campos válidos de Conversacion para evitar errores de tipo
     const validFields: (keyof Conversacion)[] = [

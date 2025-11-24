@@ -50,3 +50,26 @@ CREATE POLICY "Users can delete their own reactions"
   ON mensaje_reacciones FOR DELETE
   USING (auth.uid() = usuario_id);
 
+-- Ajustes para permitir reacciones de contactos externos
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns 
+    WHERE table_name = 'mensaje_reacciones'
+      AND column_name = 'usuario_id'
+  ) THEN
+    ALTER TABLE mensaje_reacciones
+      ALTER COLUMN usuario_id DROP NOT NULL;
+  END IF;
+END $$;
+
+ALTER TABLE mensaje_reacciones
+  ADD COLUMN IF NOT EXISTS autor_tipo TEXT DEFAULT 'usuario',
+  ADD COLUMN IF NOT EXISTS autor_telefono TEXT,
+  ADD COLUMN IF NOT EXISTS contacto_id UUID REFERENCES contactos(id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mensaje_reacciones_contacto
+  ON mensaje_reacciones (mensaje_id, autor_telefono, emoji)
+  WHERE autor_telefono IS NOT NULL;
+
