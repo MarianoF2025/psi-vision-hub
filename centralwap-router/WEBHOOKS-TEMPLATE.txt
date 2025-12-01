@@ -19,4 +19,31 @@ N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD=
 N8N_WEBHOOK_ENVIOS_ROUTER_CRM=
 
 
+# ============================================
+# WEBHOOKS N8N PARA PROCESAR DERIVACIONES
+# ============================================
+# Webhooks que el Router llama para procesar derivaciones
+# n8n procesa la derivación, actualiza Supabase y notifica al CRM
+# CRÍTICO: Estas URLs deben apuntar a workflows n8n que procesen derivaciones
+
+# Webhook para procesar derivaciones a Administración
+N8N_WEBHOOK_INGESTA_ROUTER_ADMINISTRACION=
+
+# Webhook para procesar derivaciones a Alumnos
+N8N_WEBHOOK_INGESTA_ROUTER_ALUMNOS=
+
+# Webhook para procesar derivaciones a Ventas
+N8N_WEBHOOK_INGESTA_ROUTER_VENTAS=
+
+# Webhook para procesar derivaciones a Comunidad
+N8N_WEBHOOK_INGESTA_ROUTER_COMUNIDAD=
+
+# Webhook por defecto (WSP4) - usado cuando no hay webhook específico para el área
+N8N_WEBHOOK_INGESTA_ROUTER_WSP4=
+
+
+
+
+
+
 

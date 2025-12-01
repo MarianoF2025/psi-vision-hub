@@ -189,3 +189,8 @@ El servicio envía a cada webhook:
 **✅ Los inboxs de Ventas y Comunidad ahora SÍ reciben mensajes correctamente**
 
 
+
+
+
+
+

@@ -60,3 +60,78 @@ N8N_WEBHOOK_ENVIOS_ROUTER_CRM=https://webhookn8n.psivisionhub.com/webhook/crm
 ## Verificación
 
 Los logs al iniciar deberían mostrar si los webhooks están configurados (sin mostrar las URLs completas por seguridad).
+
+---
+
+## 🔄 Webhooks para Procesar Derivaciones (Nuevo)
+
+**IMPORTANTE:** El Router ahora usa webhooks n8n para procesar derivaciones en lugar de actualizar Supabase directamente. Esto asegura que los workflows n8n procesen las derivaciones y actualicen el CRM correctamente.
+
+### Variables requeridas
+
+```env
+# ============================================
+# WEBHOOKS N8N PARA PROCESAR DERIVACIONES
+# ============================================
+# Webhooks que el Router llama para procesar derivaciones
+# n8n procesa la derivación, actualiza Supabase y notifica al CRM
+
+# Webhook para procesar derivaciones a Administración
+N8N_WEBHOOK_INGESTA_ROUTER_ADMINISTRACION=TU_URL_AQUI
+
+# Webhook para procesar derivaciones a Alumnos
+N8N_WEBHOOK_INGESTA_ROUTER_ALUMNOS=TU_URL_AQUI
+
+# Webhook para procesar derivaciones a Ventas
+N8N_WEBHOOK_INGESTA_ROUTER_VENTAS=TU_URL_AQUI
+
+# Webhook para procesar derivaciones a Comunidad
+N8N_WEBHOOK_INGESTA_ROUTER_COMUNIDAD=TU_URL_AQUI
+
+# Webhook por defecto (WSP4) - usado cuando no hay webhook específico
+N8N_WEBHOOK_INGESTA_ROUTER_WSP4=TU_URL_AQUI
+```
+
+### Flujo de Derivaciones
+
+1. **Router detecta derivación** (ej: usuario selecciona opción 3 - Inscripciones)
+2. **Router crea ticket y derivación** en Supabase
+3. **Router llama webhook n8n** correspondiente al área destino
+4. **n8n procesa la derivación**:
+   - Actualiza la conversación en Supabase (campo `area`, `estado`, etc.)
+   - Notifica al inbox del CRM correspondiente
+   - Aplica etiquetas (`24hs` para Ventas)
+5. **CRM muestra la conversación** en el inbox correcto
+
+### Ejemplo de payload enviado a webhook
+
+```json
+{
+  "conversacion_id": "uuid-de-conversacion",
+  "telefono": "+5491134567890",
+  "area": "ventas",
+  "area_origen": "wsp4",
+  "area_destino": "ventas",
+  "ticket_id": "20240115-143022-ABC1",
+  "derivacion_id": "uuid-de-derivacion",
+  "subetiqueta": null,
+  "motivo": "menu_selection",
+  "etiqueta": "24hs",
+  "accion": "derivacion",
+  "numero_derivaciones": 1,
+  "timestamp": "2024-01-15T14:30:22.000Z",
+  "metadata": {
+    "source": "centralwap-router",
+    "request_id": "req_1234567890"
+  }
+}
+```
+
+### Nota Importante
+
+Estos webhooks son **diferentes** de los webhooks de ingesta documentados en `INGESTA-N8N-IMPLEMENTACION.md`. 
+
+- **Webhooks de ingesta** (`/webhook/router/:area/incoming`): N8N → Router (para recibir mensajes)
+- **Webhooks de derivaciones** (estos): Router → N8N (para procesar derivaciones)
+
+Ambos tipos de webhooks son necesarios para el funcionamiento completo del sistema.

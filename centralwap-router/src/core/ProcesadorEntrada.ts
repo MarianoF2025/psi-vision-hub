@@ -208,7 +208,7 @@ export class ProcesadorEntrada {
           {
             telefono: params.telefono,
             origen: params.origen,
-            area_actual: 'wsp4',
+            area: 'psi_principal', // Campo real en BD (mapeado a 'wsp4' en contexto lógico)
             estado: 'activo',
             es_lead_meta: params.es_lead_meta,
             ventana_24h_activa: true,
@@ -266,10 +266,11 @@ export class ProcesadorEntrada {
       }
 
       // Mapear resultado a ContextoConversacion
+      // Nota: En BD el campo es 'area', pero en el contexto lógico usamos 'area_actual'
       return {
         id: data.id,
         telefono: data.telefono,
-        area_actual: data.area_actual || 'wsp4',
+        area_actual: data.area || 'wsp4', // Mapear campo 'area' de BD a 'area_actual' en contexto
         estado: data.estado || 'activo',
         subetiqueta: data.subetiqueta,
         menu_actual: data.menu_actual,

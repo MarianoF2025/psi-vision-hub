@@ -64,6 +64,15 @@ export const config: CentralwapConfig = {
     comunidad: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD || '',
     crm: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_CRM || '',
   },
+
+  // Webhooks N8N para procesar derivaciones (Router → n8n → Supabase → CRM)
+  webhooks_ingesta_derivaciones: {
+    administracion: process.env.N8N_WEBHOOK_INGESTA_ROUTER_ADMINISTRACION || '',
+    alumnos: process.env.N8N_WEBHOOK_INGESTA_ROUTER_ALUMNOS || '',
+    ventas: process.env.N8N_WEBHOOK_INGESTA_ROUTER_VENTAS || '',
+    comunidad: process.env.N8N_WEBHOOK_INGESTA_ROUTER_COMUNIDAD || '',
+    wsp4: process.env.N8N_WEBHOOK_INGESTA_ROUTER_WSP4 || '',
+  },
 };
 
 // Validar variables críticas

@@ -198,3 +198,8 @@ curl -X POST http://localhost:3002/api/centralwap/message \
 ✅ **El sistema funciona end-to-end** desde mensaje hasta inbox
 
 
+
+
+
+
+

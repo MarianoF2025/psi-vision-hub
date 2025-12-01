@@ -163,3 +163,8 @@ if (contexto.proxy_activo && contexto.area_proxy) {
 El proxy es la **forma correcta** de manejar derivaciones, asegurando que los mensajes vayan directamente al área correcta sin interrupciones del sistema automatizado.
 
 
+
+
+
+
+

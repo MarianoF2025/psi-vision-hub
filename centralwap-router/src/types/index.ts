@@ -252,6 +252,15 @@ export interface CentralwapConfig {
     comunidad?: string;
     crm?: string;
   };
+
+  // Webhooks N8N para procesar derivaciones (Router → n8n → Supabase → CRM)
+  webhooks_ingesta_derivaciones?: {
+    administracion?: string;
+    alumnos?: string;
+    ventas?: string;
+    comunidad?: string;
+    wsp4?: string;
+  };
 }
 
 

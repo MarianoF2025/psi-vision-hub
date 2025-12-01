@@ -63,4 +63,24 @@ export function obtenerNombreArea(area: AreaInterna): string {
   return nombres[area] || area;
 }
 
+/**
+ * Mapear área interna a formato de campo 'area' en conversaciones
+ * Este formato es usado por Router PSI y CRM para filtrar conversaciones
+ * 
+ * Simplificado: usar 'ventas' en lugar de 'ventas1' para consistencia
+ */
+export function mapearAreaParaCampoArea(areaInterna: AreaInterna): string {
+  const mapeo: Record<AreaInterna, string> = {
+    wsp4: 'psi_principal',
+    admin: 'administracion',
+    alumnos: 'alumnos',
+    ventas: 'ventas',        // ✅ Simplificado: usar 'ventas' directamente
+    comunidad: 'comunidad',
+    revisar: 'administracion',
+  };
+  
+  return mapeo[areaInterna] || 'psi_principal';
+}
+
+
 

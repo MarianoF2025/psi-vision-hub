@@ -1,9 +1,10 @@
 import { supabase } from '../config/supabase';
+import { config } from '../config/environment';
 import { logger, logWithRequestId } from '../utils/logger';
 import { IWhatsAppService } from '../services/WhatsAppService';
 import { InboxNotifierService } from '../services/InboxNotifierService';
 import { generarTicketId } from '../utils/ticketIdGenerator';
-import { mapearAreaABD, obtenerNombreArea, mapearAreaDeBD } from '../utils/areaMapper';
+import { mapearAreaABD, obtenerNombreArea, mapearAreaDeBD, mapearAreaParaCampoArea } from '../utils/areaMapper';
 import {
   AccionProcesada,
   ContextoConversacion,
@@ -73,7 +74,20 @@ export class PersistorRespuesta {
       let conversacionActualizada = false;
 
       // 2. PROCESAR DERIVACIÓN SI ES NECESARIO
+      logWithRequestId(requestId, 'debug', 'Verificando si requiere derivación', {
+        crear_ticket: accion.datos_persistencia?.crear_ticket,
+        area_destino: accion.datos_persistencia?.area_destino,
+        tiene_datos_persistencia: !!accion.datos_persistencia,
+      });
+
       if (accion.datos_persistencia?.crear_ticket && accion.datos_persistencia.area_destino) {
+        logWithRequestId(requestId, 'info', 'Iniciando procesamiento de derivación', {
+          conversacionId: contexto.id,
+          areaOrigen: contexto.area_actual,
+          areaDestino: accion.datos_persistencia.area_destino,
+          motivo: accion.datos_persistencia.motivo || 'menu_selection',
+        });
+
         const resultadoTicket = await this.procesarDerivacion({
           conversacion_id: contexto.id,
           area_origen: contexto.area_actual,
@@ -86,8 +100,18 @@ export class PersistorRespuesta {
         });
 
         if (!resultadoTicket.success) {
+          logWithRequestId(requestId, 'error', 'Error procesando derivación', {
+            error: resultadoTicket.error,
+            conversacionId: contexto.id,
+          });
           throw new Error(`Error procesando derivación: ${resultadoTicket.error}`);
         }
+
+        logWithRequestId(requestId, 'info', 'Derivación procesada exitosamente', {
+          ticketId: resultadoTicket.ticket_id,
+          derivacionId: resultadoTicket.derivacion_id,
+          conversacionId: contexto.id,
+        });
 
         ticketCreado = resultadoTicket.ticket_id;
         conversacionActualizada = true;
@@ -248,14 +272,32 @@ export class PersistorRespuesta {
     try {
       const now = new Date();
 
+      this.appLogger.info('Iniciando procesarDerivacion', {
+        conversacionId: params.conversacion_id,
+        areaOrigen: params.area_origen,
+        areaDestino: params.area_destino,
+        motivo: params.motivo,
+        requestId: params.request_id,
+      });
+
       // Mapear áreas a formato de base de datos
       const areaOrigenBD = mapearAreaABD(params.area_origen as any);
       const areaDestinoBD = mapearAreaABD(params.area_destino as any);
+      // Mapear área destino a formato de campo 'area' en conversaciones (para CRM)
+      const areaParaCampoArea = mapearAreaParaCampoArea(params.area_destino as any);
 
-      // 1. Obtener número actual de derivaciones
+      this.appLogger.debug('Áreas mapeadas', {
+        areaOrigenOriginal: params.area_origen,
+        areaOrigenBD,
+        areaDestinoOriginal: params.area_destino,
+        areaDestinoBD,
+        areaParaCampoArea, // Nuevo: formato para campo 'area' en conversaciones
+      });
+
+      // 1. Obtener datos de la conversación (numero_derivaciones y telefono)
       const { data: conversacionData, error: fetchError } = await this.supabaseClient
         .from('conversaciones')
-        .select('numero_derivaciones')
+        .select('numero_derivaciones, telefono')
         .eq('id', params.conversacion_id)
         .single();
 
@@ -263,44 +305,102 @@ export class PersistorRespuesta {
         throw new Error(`Error obteniendo conversación: ${fetchError?.message || 'No encontrada'}`);
       }
 
+      if (!conversacionData.telefono) {
+        throw new Error('Conversación no tiene teléfono asociado');
+      }
+
       // 2. Generar ticket_id en formato YYYYMMDD-HHMMSS-XXXX
       const ticketIdFormateado = generarTicketId();
 
-      // 3. Crear registro en tabla DERIVACIONES
+      // 3. Crear registro en tabla DERIVACIONES (usando estructura real)
+      this.appLogger.debug('Insertando registro en tabla derivaciones', {
+        conversacionId: params.conversacion_id,
+        telefono: conversacionData.telefono,
+        areaOrigen: areaOrigenBD,
+        areaDestino: areaDestinoBD,
+        motivo: params.motivo || 'menu_selection',
+      });
+
       const { data: derivacionData, error: derivacionError } = await this.supabaseClient
         .from('derivaciones')
         .insert({
           conversacion_id: params.conversacion_id,
-          area_origen: areaOrigenBD,
-          area_destino: areaDestinoBD,
-          motivo: params.motivo || 'menu_selection',
+          telefono: conversacionData.telefono, // Campo requerido
+          area: areaDestinoBD, // Campo 'area' (área destino)
+          area_origen: areaOrigenBD, // Campo de origen
+          area_destino: areaDestinoBD, // Campo de destino
+          motivo: params.motivo || 'menu_selection', // Motivo de derivación
+          subetiqueta: params.subetiqueta, // Subetiqueta opcional
+          status: 'enviada', // Estado inicial
+          requiere_proxy: true, // Activar proxy para área destino
+          derivacion_exitosa: true, // Marcar como exitosa
           ts_derivacion: now.toISOString(),
           created_at: now.toISOString(),
+          updated_at: now.toISOString(),
         })
         .select('id')
         .single();
 
       if (derivacionError || !derivacionData) {
+        this.appLogger.error('Error insertando derivación', {
+          error: derivacionError?.message,
+          code: derivacionError?.code,
+          details: derivacionError?.details,
+          hint: derivacionError?.hint,
+          conversacionId: params.conversacion_id,
+        });
         throw new Error(`Error creando derivación: ${derivacionError?.message || 'No se pudo crear'}`);
       }
 
-      // 4. Crear registro en tabla TICKETS
+      this.appLogger.info('Derivación creada exitosamente', {
+        derivacionId: derivacionData.id,
+        conversacionId: params.conversacion_id,
+      });
+
+      // 4. Crear registro en tabla TICKETS (usando estructura real de la tabla)
+      this.appLogger.debug('Insertando registro en tabla tickets', {
+        ticketId: ticketIdFormateado,
+        conversacionId: params.conversacion_id,
+        telefono: conversacionData.telefono,
+        area: areaDestinoBD,
+        areaOrigen: areaOrigenBD,
+        areaDestino: areaDestinoBD,
+      });
+
       const { data: ticketData, error: ticketError } = await this.supabaseClient
         .from('tickets')
         .insert({
           ticket_id: ticketIdFormateado,
           conversacion_id: params.conversacion_id,
-          area_destino: areaDestinoBD,
-          estado: 'pendiente',
-          prioridad: 'normal',
-          ts_creacion: now.toISOString(),
+          telefono: conversacionData.telefono,
+          area: areaDestinoBD, // Campo 'area' en lugar de 'area_destino'
+          origen: 'Router Automático', // Origen del ticket
+          estado: 'abierto', // Estado inicial según estructura real
+          prioridad: 'Normal', // Prioridad según estructura real
+          area_origen: areaOrigenBD, // Campo de derivación
+          area_destino: areaDestinoBD, // Campo de derivación
+          motivo_derivacion: params.motivo || 'menu_selection', // Motivo de derivación
+          ts_abierto: now.toISOString(), // Timestamp de apertura
           created_at: now.toISOString(),
+          updated_at: now.toISOString(),
         })
         .select('id')
         .single();
 
       if (ticketError || !ticketData) {
+        this.appLogger.error('Error insertando ticket', {
+          error: ticketError?.message,
+          code: ticketError?.code,
+          details: ticketError?.details,
+          hint: ticketError?.hint,
+          ticketId: ticketIdFormateado,
+          conversacionId: params.conversacion_id,
+        });
+
         // Si falla el ticket, intentar eliminar la derivación creada (compensación)
+        this.appLogger.warn('Eliminando derivación creada debido a error en ticket', {
+          derivacionId: derivacionData.id,
+        });
         await this.supabaseClient
           .from('derivaciones')
           .delete()
@@ -309,11 +409,42 @@ export class PersistorRespuesta {
         throw new Error(`Error creando ticket: ${ticketError?.message || 'No se pudo crear'}`);
       }
 
-      // 5. Actualizar conversación con todos los campos necesarios
+      this.appLogger.info('Ticket creado exitosamente', {
+        ticketId: ticketIdFormateado,
+        ticketUuid: ticketData.id,
+        conversacionId: params.conversacion_id,
+      });
+
+      // 5. Actualizar derivación con ticket_id
+      const { error: updateDerivacionError } = await this.supabaseClient
+        .from('derivaciones')
+        .update({
+          ticket_id: ticketIdFormateado, // Vincular con ticket_id formateado
+          updated_at: now.toISOString(),
+        })
+        .eq('id', derivacionData.id);
+
+      if (updateDerivacionError) {
+        this.appLogger.warn('Error actualizando derivación con ticket_id (continuando)', {
+          derivacionId: derivacionData.id,
+          ticketId: ticketIdFormateado,
+          error: updateDerivacionError.message,
+        });
+        // No lanzar error, solo loguear (no crítico)
+      }
+
+      // 6. Actualizar conversación con todos los campos necesarios
+      this.appLogger.debug('Actualizando conversación con datos de derivación', {
+        conversacionId: params.conversacion_id,
+        areaActual: params.area_destino,
+        numeroDerivaciones: (conversacionData.numero_derivaciones || 0) + 1,
+        ticketId: ticketData.id,
+      });
+
       const { error: updateError } = await this.supabaseClient
         .from('conversaciones')
         .update({
-          area_actual: params.area_destino, // Mantener formato interno para consistencia
+          area: areaParaCampoArea, // ✅ CRÍTICO: Actualizar campo 'area' para que CRM encuentre la conversación
           estado: 'derivado',
           subetiqueta: params.subetiqueta,
           ts_ultima_derivacion: now.toISOString(),
@@ -325,12 +456,29 @@ export class PersistorRespuesta {
         .eq('id', params.conversacion_id);
 
       if (updateError) {
+        this.appLogger.error('Error actualizando conversación', {
+          error: updateError.message,
+          code: updateError.code,
+          details: updateError.details,
+          hint: updateError.hint,
+          conversacionId: params.conversacion_id,
+        });
+
         // Rollback: eliminar derivación y ticket creados
+        this.appLogger.warn('Realizando rollback: eliminando ticket y derivación', {
+          ticketId: ticketData.id,
+          derivacionId: derivacionData.id,
+        });
         await this.supabaseClient.from('tickets').delete().eq('id', ticketData.id);
         await this.supabaseClient.from('derivaciones').delete().eq('id', derivacionData.id);
         
         throw new Error(`Error actualizando conversación: ${updateError.message}`);
       }
+
+      this.appLogger.info('Conversación actualizada exitosamente', {
+        conversacionId: params.conversacion_id,
+        areaActual: params.area_destino,
+      });
 
       // 6. Registrar derivación en interacciones (log)
       await this.supabaseClient.from('interacciones').insert({
@@ -346,6 +494,25 @@ export class PersistorRespuesta {
           ticket_id: ticketIdFormateado,
         },
       });
+
+      // 7. ENVIAR DERIVACIÓN A WEBHOOK N8N
+      const resultadoWebhook = await this.enviarDerivacionAWebhook({
+        conversacion_id: params.conversacion_id,
+        telefono: conversacionData.telefono,
+        area_origen: params.area_origen,
+        area_destino: params.area_destino,
+        subetiqueta: params.subetiqueta,
+        ticket_id: ticketIdFormateado,
+        derivacion_id: derivacionData.id,
+        motivo: params.motivo,
+      });
+
+      if (!resultadoWebhook.success) {
+        this.appLogger.warn('Webhook n8n falló pero continuando (no crítico)', {
+          error: resultadoWebhook.error,
+          conversacionId: params.conversacion_id,
+        });
+      }
 
       this.appLogger.info('Derivación procesada exitosamente', {
         conversacionId: params.conversacion_id,
@@ -626,6 +793,108 @@ export class PersistorRespuesta {
         error: error instanceof Error ? error.message : 'Error desconocido',
       });
       // No lanzar error para no interrumpir el flujo
+    }
+  }
+
+  /**
+   * Obtener URL del webhook según el área
+   */
+  private getWebhookUrlByArea(area: string): string | null {
+    const areaLower = area.toLowerCase();
+    const webhooks = config.webhooks_ingesta_derivaciones;
+
+    if (!webhooks) {
+      return null;
+    }
+
+    const webhookMap: Record<string, string | undefined> = {
+      'administracion': webhooks.administracion || undefined,
+      'admin': webhooks.administracion || undefined,
+      'alumnos': webhooks.alumnos || undefined,
+      'ventas': webhooks.ventas || undefined,
+      'comunidad': webhooks.comunidad || undefined,
+      'wsp4': webhooks.wsp4 || undefined,
+      'psi_principal': webhooks.wsp4 || undefined,
+    };
+
+    const url = webhookMap[areaLower];
+    return (url && url.trim() !== '') ? url : null;
+  }
+
+  /**
+   * Enviar derivación a webhook n8n
+   */
+  private async enviarDerivacionAWebhook(params: {
+    conversacion_id: string;
+    telefono: string;
+    area_origen: string;
+    area_destino: string;
+    subetiqueta?: string;
+    ticket_id: string;
+    derivacion_id: string;
+    motivo: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    const webhookUrl = this.getWebhookUrlByArea(params.area_destino);
+
+    if (!webhookUrl) {
+      this.appLogger.warn('No hay webhook configurado para área', {
+        area: params.area_destino,
+      });
+      return { success: true }; // No es error crítico, continuar
+    }
+
+    try {
+      const payload = {
+        conversacion_id: params.conversacion_id,
+        telefono: params.telefono,
+        area_origen: params.area_origen,
+        area_destino: params.area_destino,
+        subetiqueta: params.subetiqueta,
+        ticket_id: params.ticket_id,
+        derivacion_id: params.derivacion_id,
+        motivo: params.motivo,
+        timestamp: new Date().toISOString(),
+        origen: 'router_wsp4',
+        etiqueta: params.area_destino === 'ventas' ? '24hs' : undefined,
+      };
+
+      this.appLogger.info('Enviando derivación a webhook n8n', {
+        url: webhookUrl,
+        area: params.area_destino,
+        conversacionId: params.conversacion_id,
+      });
+
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.appLogger.error('Error en webhook n8n', {
+          status: response.status,
+          error: errorText,
+          area: params.area_destino,
+        });
+        return { success: false, error: `HTTP ${response.status}: ${errorText}` };
+      }
+
+      this.appLogger.info('Derivación enviada exitosamente a n8n', {
+        area: params.area_destino,
+        conversacionId: params.conversacion_id,
+      });
+
+      return { success: true };
+    } catch (error) {
+      this.appLogger.error('Error enviando a webhook n8n', {
+        error: error instanceof Error ? error.message : 'Error desconocido',
+        area: params.area_destino,
+      });
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      };
     }
   }
 

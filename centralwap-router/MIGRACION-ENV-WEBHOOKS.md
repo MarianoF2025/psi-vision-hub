@@ -40,3 +40,8 @@ El servicio `InboxNotifierService` envía el siguiente payload a los webhooks:
 2. **Con proxy activo**: Cada mensaje entrante se notifica al inbox del área proxy
 
 
+
+
+
+
+
