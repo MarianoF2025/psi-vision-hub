@@ -172,6 +172,7 @@ export interface AccionProcesada {
       menu_actual: string;
       nivel_menu: number;
     };
+    desactivar_proxy?: boolean;
   };
 
   // Metadata para debugging

@@ -51,6 +51,7 @@ export class CentralwapRouter {
     success: boolean;
     request_id: string;
     processing_time_ms: number;
+    conversacion_id?: string;
     accion_ejecutada?: string;
     area_destino?: string;
     ticket_creado?: string;
@@ -101,6 +102,7 @@ export class CentralwapRouter {
         success: true,
         request_id: requestId,
         processing_time_ms: processingTime,
+        conversacion_id: contexto.id,
         accion_ejecutada: estado.accion,
         area_destino: estado.area_destino,
         ticket_creado: resultado.ticket_creado,

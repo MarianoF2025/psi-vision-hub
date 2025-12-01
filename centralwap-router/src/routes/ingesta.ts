@@ -115,7 +115,7 @@ router.post(
         area: areaInterna,
         areaUrl,
         telefono,
-        request_id: mensaje.metadata.request_id,
+        request_id: mensaje.metadata?.request_id,
       });
 
       // Procesar mensaje
@@ -221,7 +221,7 @@ router.post(
         area: areaInterna,
         areaUrl,
         telefono,
-        request_id: mensaje.metadata.request_id,
+        request_id: mensaje.metadata?.request_id,
       });
 
       // Procesar mensaje
@@ -326,7 +326,7 @@ router.post(
         area: areaInterna,
         areaUrl,
         telefono,
-        request_id: mensaje.metadata.request_id,
+        request_id: mensaje.metadata?.request_id,
       });
 
       // Procesar mensaje
