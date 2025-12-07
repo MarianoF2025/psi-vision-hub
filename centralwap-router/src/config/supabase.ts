@@ -1,28 +1,41 @@
+// ===========================================
+// SUPABASE CLIENT - Configuración
+// ===========================================
 import { createClient } from '@supabase/supabase-js';
-import { config } from './environment';
 
-// Cliente Supabase con permisos de service role (para operaciones administrativas)
-export const supabaseAdmin = createClient(config.supabase.url, config.supabase.service_key, {
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error('[Supabase] ERROR: Faltan variables de entorno SUPABASE_URL y/o SUPABASE_SERVICE_KEY');
+}
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
+    autoRefreshToken: false,
     persistSession: false,
   },
 });
 
-// Cliente Supabase anónimo (para operaciones públicas)
-export const supabaseAnon = createClient(config.supabase.url, config.supabase.anon_key, {
-  auth: {
-    persistSession: false,
-  },
-});
-
-// Exportar el cliente principal (admin por defecto)
-export const supabase = supabaseAdmin;
-
-
-
-
-
-
-
+// Verificar conexión al iniciar
+export async function verificarConexion(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from('conversaciones')
+      .select('id')
+      .limit(1);
+    
+    if (error) {
+      console.error('[Supabase] Error verificando conexión:', error.message);
+      return false;
+    }
+    
+    console.log('[Supabase] ✅ Conexión verificada');
+    return true;
+  } catch (err) {
+    console.error('[Supabase] Error de conexión:', err);
+    return false;
+  }
+}
 
 

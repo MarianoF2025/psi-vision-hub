@@ -1,112 +1,238 @@
-import express from 'express';
-import helmet from 'helmet';
+// ===========================================
+// PSI ROUTER - SERVIDOR PRINCIPAL
+// ===========================================
+import 'dotenv/config';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import compression from 'compression';
-import { config } from './config/environment';
-import { logger } from './utils/logger';
-import { errorHandler } from './middleware/errorHandler';
-import { apiRateLimiter, webhookRateLimiter } from './middleware/rateLimit';
-import messageRouter from './routes/message';
-import messagesRouter from './routes/messages';
-import webhookRouter from './routes/webhook';
-import ingestaRouter from './routes/ingesta';
-import healthRouter from './routes/health';
-import migrationRouter, { setMigrationController } from './routes/migration';
-import { incrementRequestCount, incrementErrorCount } from './routes/health';
-import { setupMigration } from './migration/setup';
+import helmet from 'helmet';
+import { routerController } from './core/RouterController';
+import { verificarConexion } from './config/supabase';
+import { WhatsAppIncoming } from './types/database';
+
+// Configuración
+const PORT = process.env.PORT || 3002;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Crear aplicación Express
 const app = express();
 
-// Middlewares de seguridad
+// Middlewares
 app.use(helmet());
 app.use(cors());
-app.use(compression());
-
-// Body parser
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Request logging
-app.use((req, res, next) => {
-  incrementRequestCount();
-  logger.info('HTTP Request', {
-    method: req.method,
-    path: req.path,
-    ip: req.ip,
-    userAgent: req.headers['user-agent'],
+// Logging middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
   });
+  
   next();
 });
 
-// Rate limiting
-app.use('/api/centralwap/message', apiRateLimiter);
-app.use('/api/centralwap/messages', apiRateLimiter);
-app.use('/api/centralwap/webhooks', webhookRateLimiter);
-app.use('/api/centralwap/ingesta', webhookRateLimiter);
-app.use('/webhook/router', webhookRateLimiter);
-app.use('/webhook/evolution', webhookRateLimiter);
+// ===========================================
+// RUTAS
+// ===========================================
 
-// Inicializar sistema de migración si está habilitado
-const migrationController = setupMigration();
-if (migrationController) {
-  setMigrationController(migrationController);
-  logger.info('✅ Sistema de migración habilitado - usar /api/migration/* endpoints');
-}
+// Health check
+app.get('/health', async (req: Request, res: Response) => {
+  try {
+    const health = await routerController.health();
+    res.json({
+      ...health,
+      version: '2.0.0',
+      environment: NODE_ENV,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
 
-// Rutas
-app.use('/api/centralwap/message', messageRouter);
-app.use('/api/centralwap/messages', messagesRouter);
-app.use('/api/centralwap/webhooks', webhookRouter);
-app.use('/api/centralwap/ingesta', ingestaRouter);
-app.use('/api/centralwap/health', healthRouter);
+// Webhook principal para mensajes de WhatsApp
+app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    
+    // Validar payload mínimo
+    if (!body.telefono && !body.phone && !body.from) {
+      res.status(400).json({
+        success: false,
+        error: 'Falta campo telefono/phone/from',
+      });
+      return;
+    }
+    
+    if (!body.mensaje && !body.message && !body.text && !body.body && !body.contenido) {
+      res.status(400).json({
+        success: false,
+        error: 'Falta campo mensaje/message/text/body/contenido',
+      });
+      return;
+    }
+    
+    // Normalizar payload (soportar múltiples formatos)
+    const incoming: WhatsAppIncoming = {
+      telefono: body.telefono || body.phone || body.from || body.remoteJid,
+      mensaje: body.mensaje || body.message || body.text || body.body || body.contenido || '',
+      nombre: body.nombre || body.name || body.pushName || body.nombre_contacto,
+      timestamp: body.timestamp || body.ts || new Date().toISOString(),
+      messageId: body.messageId || body.message_id || body.id,
+      mediaType: body.mediaType || body.media_type || body.type,
+      mediaUrl: body.mediaUrl || body.media_url,
+      linea: body.linea || body.inbox || 'wsp4',
+      utm_source: body.utm_source,
+      utm_campaign: body.utm_campaign,
+      es_lead_meta: body.es_lead_meta || body.isLeadMeta || false,
+    };
+    
+    // Procesar mensaje
+    const resultado = await routerController.procesarMensaje(incoming);
+    
+    res.json(resultado);
+    
+  } catch (error) {
+    console.error('[Webhook] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Error interno',
+    });
+  }
+});
 
-// Rutas de ingesta N8N - Mapeo directo de URLs de webhooks
-// Estas rutas coinciden con las URLs que N8N usará para enviar mensajes
-app.use('/webhook/router', ingestaRouter);
-app.use('/webhook/evolution', ingestaRouter);
+// Webhook alternativo (compatibilidad con Evolution API)
+app.post('/webhook/evolution', async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    
+    // Evolution API envía estructura diferente
+    const data = body.data || body;
+    const message = data.message || {};
+    
+    const incoming: WhatsAppIncoming = {
+      telefono: data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '',
+      mensaje: message.conversation || message.extendedTextMessage?.text || '',
+      nombre: data.pushName || '',
+      timestamp: new Date().toISOString(),
+      messageId: data.key?.id,
+      mediaType: message.imageMessage ? 'image' : message.audioMessage ? 'audio' : undefined,
+      mediaUrl: undefined, // Evolution maneja multimedia diferente
+      linea: 'wsp4',
+    };
+    
+    if (!incoming.telefono || !incoming.mensaje) {
+      res.json({ success: true, ignored: true });
+      return;
+    }
+    
+    const resultado = await routerController.procesarMensaje(incoming);
+    res.json(resultado);
+    
+  } catch (error) {
+    console.error('[Evolution Webhook] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Error interno',
+    });
+  }
+});
 
-// Rutas de migración (si está habilitada)
-if (migrationController) {
-  app.use('/api/migration', migrationRouter);
-  logger.info('✅ Endpoints de migración disponibles en /api/migration/*');
-}
-
-// Error handling
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  incrementErrorCount();
-  errorHandler(err, req, res, next);
+// Endpoint de prueba manual
+app.post('/test', async (req: Request, res: Response) => {
+  if (NODE_ENV === 'production') {
+    res.status(403).json({ error: 'No disponible en producción' });
+    return;
+  }
+  
+  try {
+    const { telefono, mensaje } = req.body;
+    
+    if (!telefono || !mensaje) {
+      res.status(400).json({ error: 'Requiere telefono y mensaje' });
+      return;
+    }
+    
+    const resultado = await routerController.procesarMensaje({
+      telefono,
+      mensaje,
+      linea: 'wsp4',
+    });
+    
+    res.json(resultado);
+    
+  } catch (error) {
+    console.error('[Test] Error:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Error interno',
+    });
+  }
 });
 
 // 404 handler
-app.use((req: express.Request, res: express.Response) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
-    success: false,
     error: 'Endpoint no encontrado',
     path: req.path,
   });
 });
 
-// Iniciar servidor
-const port = process.env.PORT || 3002;
-
-app.listen(port, () => {
-  logger.info(`🚀 Centralwap Router iniciado`, {
-    port,
-    nodeEnv: config.logging.level,
-    version: '1.0.0',
+// Error handler global
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('[Error Global]', err);
+  res.status(500).json({
+    error: 'Error interno del servidor',
+    message: NODE_ENV === 'development' ? err.message : undefined,
   });
 });
 
-// Manejo de señales de terminación
+// ===========================================
+// INICIAR SERVIDOR
+// ===========================================
+async function iniciar() {
+  console.log('='.repeat(50));
+  console.log('PSI ROUTER v2.0.0');
+  console.log('='.repeat(50));
+  
+  // Verificar conexión a Supabase
+  console.log('[Startup] Verificando conexión a Supabase...');
+  const conectado = await verificarConexion();
+  
+  if (!conectado) {
+    console.error('[Startup] ❌ No se pudo conectar a Supabase');
+    process.exit(1);
+  }
+  
+  // Iniciar servidor
+  app.listen(PORT, () => {
+    console.log(`[Startup] ✅ Servidor iniciado en puerto ${PORT}`);
+    console.log(`[Startup] Ambiente: ${NODE_ENV}`);
+    console.log(`[Startup] Health: http://localhost:${PORT}/health`);
+    console.log(`[Startup] Webhook: http://localhost:${PORT}/webhook/whatsapp/wsp4`);
+    console.log('='.repeat(50));
+  });
+}
+
+// Manejar señales de terminación
 process.on('SIGTERM', () => {
-  logger.info('SIGTERM recibido, cerrando servidor...');
+  console.log('[Shutdown] Recibido SIGTERM, cerrando...');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  logger.info('SIGINT recibido, cerrando servidor...');
+  console.log('[Shutdown] Recibido SIGINT, cerrando...');
   process.exit(0);
 });
 
-export default app;
+// Iniciar
+iniciar().catch(err => {
+  console.error('[Startup] Error fatal:', err);
+  process.exit(1);
+});
+
+
