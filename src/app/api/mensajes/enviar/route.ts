@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const WEBHOOKS: Record<string, string> = {
   wsp4: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_CRM || '',
@@ -11,24 +17,49 @@ const WEBHOOKS: Record<string, string> = {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { telefono, mensaje, conversacion_id, linea_origen, inbox_fijo, desconectado_wsp4, respuesta_a } = body;
+    const {
+      telefono,
+      mensaje,
+      conversacion_id,
+      linea_origen,
+      inbox_fijo,
+      desconectado_wsp4,
+      respuesta_a,
+      media_url,
+      media_type,
+      duracion
+    } = body;
 
     if (!telefono || !mensaje) {
       return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 });
     }
 
-    // Determinar webhook: si está desconectado usa inbox_fijo, sino linea_origen
+    // Si hay respuesta_a, obtener el whatsapp_message_id del mensaje original
+    let whatsapp_context_id: string | null = null;
+    if (respuesta_a) {
+      const { data: mensajeOriginal } = await supabase
+        .from('mensajes')
+        .select('whatsapp_message_id')
+        .eq('id', respuesta_a)
+        .single();
+
+      if (mensajeOriginal?.whatsapp_message_id) {
+        whatsapp_context_id = mensajeOriginal.whatsapp_message_id;
+      }
+    }
+
+    // Determinar webhook
     let webhookKey = linea_origen || 'wsp4';
     if (desconectado_wsp4 && inbox_fijo) {
       webhookKey = inbox_fijo;
     }
-
     const webhookUrl = WEBHOOKS[webhookKey];
+
     if (!webhookUrl) {
       return NextResponse.json({ error: `Webhook no configurado para: ${webhookKey}` }, { status: 500 });
     }
 
-    // Enviar al webhook de n8n
+    // Solo enviar a n8n - n8n guarda el mensaje
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -37,6 +68,10 @@ export async function POST(request: NextRequest) {
         mensaje,
         conversacion_id,
         respuesta_a,
+        whatsapp_context_id,
+        media_url,
+        media_type,
+        duracion,
         origen: 'crm',
         timestamp: new Date().toISOString(),
       }),
@@ -49,7 +84,12 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json().catch(() => ({ success: true }));
-    return NextResponse.json({ success: true, data: result });
+
+    return NextResponse.json({
+      success: true,
+      data: result,
+      mensaje_id: result.message_id
+    });
 
   } catch (error) {
     console.error('Error en API enviar:', error);

@@ -1,6 +1,7 @@
 // ===========================================
 // CONVERSACION SERVICE - Esquema Real Supabase
 // CORREGIDO: Incluye lógica de 24h para derivaciones
+// FIX: Reactiva conversaciones expiradas en lugar de crear nuevas
 // ===========================================
 import { supabase } from '../config/supabase';
 import {
@@ -19,7 +20,7 @@ export class ConversacionService {
    */
   async buscarActivaPorTelefono(telefono: string): Promise<Conversacion | null> {
     const ahora = new Date().toISOString();
-    
+
     // Primero buscar conversaciones activas/en_menu/esperando
     const { data: activa, error: errorActiva } = await supabase
       .from('conversaciones')
@@ -59,6 +60,27 @@ export class ConversacionService {
     }
 
     return null;
+  }
+
+  /**
+   * Buscar cualquier conversación previa por teléfono (para reactivar)
+   * Busca conversaciones derivadas expiradas o cerradas
+   */
+  async buscarPreviaPorTelefono(telefono: string): Promise<Conversacion | null> {
+    const { data, error } = await supabase
+      .from('conversaciones')
+      .select('*')
+      .eq('telefono', telefono)
+      .in('estado', ['derivada', 'cerrada', 'nueva'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('[ConversacionService] Error buscando conversación previa:', error);
+    }
+
+    return data || null;
   }
 
   /**
@@ -176,14 +198,36 @@ export class ConversacionService {
   }
 
   /**
+   * Reactivar una conversación existente (cuando expira ventana 24h)
+   */
+  async reactivar(id: string): Promise<Conversacion> {
+    const ahora = new Date().toISOString();
+    const fin24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    console.log(`[ConversacionService] Reactivando conversación ${id}`);
+
+    return this.actualizar(id, {
+      estado: 'activa',
+      router_estado: 'menu_principal',
+      menu_actual: 'principal',
+      router_opcion_actual: null,
+      ventana_24h_activa: true,
+      ventana_24h_inicio: ahora,
+      ventana_24h_fin: fin24h,
+      leida: false,
+    });
+  }
+
+  /**
    * Obtener o crear conversación (upsert manual)
+   * CORREGIDO: Reactiva conversaciones expiradas en lugar de crear nuevas
    */
   async obtenerOCrear(datos: ConversacionInsert): Promise<{ conversacion: Conversacion; esNueva: boolean }> {
     // 1. Buscar conversación activa existente (incluye derivadas dentro de 24h)
     const existente = await this.buscarActivaPorTelefono(datos.telefono);
 
     if (existente) {
-      // 2a. Si existe, actualizar timestamp y devolver
+      // 2a. Si existe activa, actualizar timestamp y devolver
       const actualizada = await this.actualizar(existente.id, {
         ultimo_mensaje_at: new Date().toISOString(),
         leida: false,
@@ -191,7 +235,18 @@ export class ConversacionService {
       return { conversacion: actualizada, esNueva: false };
     }
 
-    // 2b. Si no existe, crear nueva
+    // 2b. Buscar conversación previa (expirada o cerrada) para REACTIVAR
+    const previa = await this.buscarPreviaPorTelefono(datos.telefono);
+
+    if (previa) {
+      // Reactivar conversación existente en lugar de crear nueva
+      console.log(`[ConversacionService] Reactivando conversación expirada ${previa.id} para ${datos.telefono}`);
+      const reactivada = await this.reactivar(previa.id);
+      return { conversacion: reactivada, esNueva: false };
+    }
+
+    // 3. Solo si NO existe ninguna conversación previa, crear nueva
+    console.log(`[ConversacionService] Creando nueva conversación para ${datos.telefono}`);
     const nueva = await this.crear(datos);
     return { conversacion: nueva, esNueva: true };
   }

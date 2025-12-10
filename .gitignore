@@ -57,3 +57,30 @@ docker-compose.override.yml
 # Scripts temporales (opcional - puedes comentar si quieres incluirlos)
 # *.sh
 
+
+# Node modules
+node_modules/
+*/node_modules/
+
+# Backups
+*.backup
+*.backup.*
+*.bak
+*.save
+*.corrupto
+*.pre-*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Scripts temporales
+*.sh
+!deploy.sh
+
+# Archivos comprimidos
+*.zip
+
+# Archivos de texto temporal
+script_base64.txt

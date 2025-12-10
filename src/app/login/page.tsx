@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import Link from 'next/link';
 
 export default function LoginPage() {
-  const router = useRouter();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -19,21 +19,10 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (authError) {
-      setError(authError.message === 'Invalid login credentials' 
-        ? 'Email o contraseña incorrectos' 
-        : authError.message);
-      setLoading(false);
-      return;
-    }
-
-    if (data.user) {
-      router.push('/crm');
+    const { error } = await signIn(email, password);
+    
+    if (error) {
+      setError(error);
     }
     setLoading(false);
   };
@@ -118,6 +107,15 @@ export default function LoginPage() {
               'Ingresar'
             )}
           </button>
+
+          <div className="mt-4 text-center">
+            <Link 
+              href="/recuperar" 
+              className="text-indigo-400 hover:text-indigo-300 text-sm transition-colors"
+            >
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
 
           <p className="text-center text-slate-500 text-sm mt-4">
             ¿Problemas para acceder? Contacta al administrador

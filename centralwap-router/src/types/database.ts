@@ -1,6 +1,6 @@
 // ===========================================
 // TIPOS BASADOS EN ESQUEMA REAL DE SUPABASE
-// Generado: 2025-01-XX
+// Versión 2.2.0 - Agregado contextMessageId para citas
 // ===========================================
 
 // CONTACTOS
@@ -16,9 +16,9 @@ export interface Contacto {
   updated_at: string;
   utm_source: string | null;
   utm_campaign: string | null;
-  etiquetas: any[]; // jsonb
+  etiquetas: any[];
   documento: string | null;
-  cursos: any[]; // jsonb
+  cursos: any[];
 }
 
 export interface ContactoInsert {
@@ -40,21 +40,21 @@ export interface Conversacion {
   id: string;
   contacto_id: string | null;
   agente_id: string | null;
-  estado: string; // 'activa', 'cerrada', 'derivada', etc.
-  prioridad: string; // 'baja', 'media', 'alta', 'urgente'
-  canal: string; // 'whatsapp'
+  estado: string;
+  prioridad: string;
+  canal: string;
   ultimo_mensaje: string | null;
   ultimo_mensaje_at: string | null;
   created_at: string;
   updated_at: string;
   telefono: string | null;
-  area: string | null; // 'wsp4', 'ventas', 'alumnos', 'admin', 'comunidad'
-  etiqueta: string | null; // singular
+  area: string | null;
+  etiqueta: string | null;
   origen: string | null;
   ventana_72h_activa: boolean;
   ventana_72h_inicio: string | null;
   ventana_72h_fin: string | null;
-  router_estado: string | null; // 'menu_principal', 'submenu_admin', etc.
+  router_estado: string | null;
   ventana_24h_activa: boolean;
   ventana_24h_inicio: string | null;
   ventana_24h_fin: string | null;
@@ -65,9 +65,9 @@ export interface Conversacion {
   area_proxy: string | null;
   leida: boolean | null;
   linea_origen: string | null;
-  etiquetas: string[]; // ARRAY
+  etiquetas: string[];
   router_opcion_actual: string | null;
-  router_historial: string[]; // ARRAY
+  router_historial: string[];
   ventana_atencion: string | null;
 }
 
@@ -124,18 +124,20 @@ export interface Mensaje {
   id: string;
   conversacion_id: string;
   remitente_id: string | null;
-  tipo: string; // 'texto', 'audio', 'imagen', 'documento', 'video', 'sticker'
+  tipo: string;
   metadata: Record<string, any>;
   leido: boolean;
   enviado: boolean;
   created_at: string;
-  remitente_tipo: string | null; // 'user', 'agent', 'system'
+  remitente_tipo: string | null;
   media_url: string | null;
   media_type: string | null;
   duracion: number | null;
-  direccion: string | null; // 'entrante', 'saliente'
+  direccion: string | null;
   mensaje: string | null;
   whatsapp_message_id: string | null;
+  whatsapp_context_id: string | null;
+  mensaje_citado_id: string | null;
   reenviado: boolean;
   mensaje_original_id: string | null;
   via_proxy: boolean;
@@ -155,6 +157,8 @@ export interface MensajeInsert {
   media_type?: string | null;
   duracion?: number | null;
   whatsapp_message_id?: string | null;
+  whatsapp_context_id?: string | null;
+  mensaje_citado_id?: string | null;
   metadata?: Record<string, any>;
   menu_mostrado?: string | null;
   opcion_seleccionada?: string | null;
@@ -168,11 +172,11 @@ export interface Derivacion {
   conversacion_id: string | null;
   telefono: string;
   requiere_proxy: boolean | null;
-  status: string; // 'enviada', 'recibida', 'procesada'
+  status: string;
   created_at: string;
   area_origen: string | null;
   area_destino: string | null;
-  motivo: string | null; // 'menu_selection', 'timeout', 'manual'
+  motivo: string | null;
   menu_option_selected: string | null;
 }
 
@@ -194,8 +198,8 @@ export interface Ticket {
   telefono: string;
   ticket_id: string;
   area: string;
-  estado: string; // 'abierto', 'asignado', 'resuelto', 'cerrado'
-  prioridad: string; // 'baja', 'normal', 'alta', 'urgente'
+  estado: string;
+  prioridad: string;
   metadata: Record<string, any> | null;
   created_at: string;
   updated_at: string;
@@ -252,8 +256,9 @@ export interface WhatsAppIncoming {
   messageId?: string;
   mediaType?: string;
   mediaUrl?: string;
-  linea?: string; // 'wsp4', 'ventas1', etc.
-  // UTM params (si vienen de Meta Ads)
+  mediaId?: string;
+  contextMessageId?: string;  // ID del mensaje citado (context.id de WhatsApp)
+  linea?: string;
   utm_source?: string;
   utm_campaign?: string;
   es_lead_meta?: boolean;
@@ -263,8 +268,8 @@ export interface WhatsAppIncoming {
 export interface RouterResponse {
   success: boolean;
   action: 'menu' | 'submenu' | 'derivacion' | 'mensaje' | 'error';
-  mensajeRespuesta?: string; // Opcional - ya no se retorna para evitar duplicación en n8n
-  yaEnviado?: boolean; // Flag indicando que el mensaje ya fue enviado vía webhook
+  mensajeRespuesta?: string;
+  yaEnviado?: boolean;
   derivacion?: {
     area: string;
     subetiqueta?: string;
@@ -276,7 +281,7 @@ export interface RouterResponse {
 }
 
 // Estados del Router
-export type RouterEstado = 
+export type RouterEstado =
   | 'menu_principal'
   | 'submenu_admin'
   | 'submenu_alumnos'
@@ -287,5 +292,3 @@ export type RouterEstado =
 
 // Áreas de derivación
 export type Area = 'wsp4' | 'admin' | 'alumnos' | 'ventas' | 'comunidad' | 'revisar';
-
-

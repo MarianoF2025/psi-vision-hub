@@ -1,11 +1,12 @@
 // ===========================================
 // MENSAJE SERVICE - Esquema Real Supabase
+// Versión 2.1.0 - Agregado whatsapp_context_id para citas
 // ===========================================
 import { supabase } from '../config/supabase';
 import { Mensaje, MensajeInsert } from '../types/database';
 
 export class MensajeService {
-  
+
   /**
    * Guardar mensaje entrante
    */
@@ -13,11 +14,27 @@ export class MensajeService {
     conversacion_id: string;
     mensaje: string;
     whatsapp_message_id?: string;
+    whatsapp_context_id?: string;
     media_url?: string;
     media_type?: string;
     menu_mostrado?: string;
     opcion_seleccionada?: string;
   }): Promise<Mensaje> {
+    // Si hay context_id, buscar el mensaje original para obtener su UUID
+    let mensaje_citado_id: string | null = null;
+    if (datos.whatsapp_context_id) {
+      const { data: mensajeOriginal } = await supabase
+        .from('mensajes')
+        .select('id')
+        .eq('whatsapp_message_id', datos.whatsapp_context_id)
+        .single();
+      
+      if (mensajeOriginal) {
+        mensaje_citado_id = mensajeOriginal.id;
+        console.log(`[MensajeService] Mensaje cita encontrado: ${mensaje_citado_id}`);
+      }
+    }
+
     const mensajeData: MensajeInsert = {
       conversacion_id: datos.conversacion_id,
       mensaje: datos.mensaje,
@@ -25,6 +42,8 @@ export class MensajeService {
       direccion: 'entrante',
       remitente_tipo: 'user',
       whatsapp_message_id: datos.whatsapp_message_id || null,
+      whatsapp_context_id: datos.whatsapp_context_id || null,
+      mensaje_citado_id: mensaje_citado_id,
       media_url: datos.media_url || null,
       media_type: datos.media_type || null,
       menu_mostrado: datos.menu_mostrado || null,
@@ -43,7 +62,7 @@ export class MensajeService {
       throw error;
     }
 
-    console.log(`[MensajeService] Mensaje entrante guardado: ${data.id}`);
+    console.log(`[MensajeService] Mensaje entrante guardado: ${data.id}${mensaje_citado_id ? ' (cita a ' + mensaje_citado_id + ')' : ''}`);
     return data;
   }
 
@@ -93,7 +112,7 @@ export class MensajeService {
    * Obtener mensajes de una conversación
    */
   async obtenerPorConversacion(
-    conversacion_id: string, 
+    conversacion_id: string,
     limite: number = 50
   ): Promise<Mensaje[]> {
     const { data, error } = await supabase
@@ -136,7 +155,7 @@ export class MensajeService {
    */
   async existePorWhatsAppId(whatsapp_message_id: string): Promise<boolean> {
     if (!whatsapp_message_id) return false;
-    
+
     const { data, error } = await supabase
       .from('mensajes')
       .select('id')
@@ -224,5 +243,3 @@ export class MensajeService {
 }
 
 export const mensajeService = new MensajeService();
-
-

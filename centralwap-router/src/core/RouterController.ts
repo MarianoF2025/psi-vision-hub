@@ -1,6 +1,6 @@
 // ===========================================
 // ROUTER CONTROLLER - Controlador Principal
-// Versión 3.3.1 - FIX: No procesar menú si está derivado
+// Versión 3.4.0 - Soporte para mensajes citados (context)
 // ===========================================
 import { contactoService } from '../services/ContactoService';
 import { conversacionService } from '../services/ConversacionService';
@@ -75,20 +75,23 @@ export class RouterController {
       if (conversacion.router_estado === 'derivado' && conversacion.estado === 'derivada') {
         // Solo permitir MENU para volver al menú principal
         const quiereMenu = incoming.mensaje?.trim().toUpperCase() === 'MENU';
-        
+
         if (!quiereMenu) {
           console.log(`[Router] Conversación derivada - guardando mensaje para agente: ${conversacion.id}`);
-          
-          // Solo guardar mensaje entrante (sin responder)
+
+          // Solo guardar mensaje entrante (sin responder) - INCLUYE CONTEXT
           await mensajeService.guardarEntrante({
             conversacion_id: conversacion.id,
             mensaje: incoming.mensaje,
             whatsapp_message_id: incoming.messageId,
+            whatsapp_context_id: incoming.contextMessageId,
+            media_url: incoming.mediaUrl,
+            media_type: incoming.mediaType,
           });
-          
+
           // Actualizar último mensaje en conversación
           await conversacionService.actualizarUltimoMensaje(conversacion.id, incoming.mensaje);
-          
+
           // NO enviar respuesta - el agente verá el mensaje en el CRM
           return {
             success: true,
@@ -98,7 +101,7 @@ export class RouterController {
             contactoId: contacto.id,
           };
         }
-        
+
         // Si quiere MENU, reactivar conversación para mostrar menú
         console.log(`[Router] Usuario solicita MENU - reactivando conversación`);
         await conversacionService.actualizar(conversacion.id, {
@@ -108,11 +111,12 @@ export class RouterController {
         });
       }
 
-      // 6. Guardar mensaje entrante
+      // 6. Guardar mensaje entrante - INCLUYE CONTEXT
       await mensajeService.guardarEntrante({
         conversacion_id: conversacion.id,
         mensaje: incoming.mensaje,
         whatsapp_message_id: incoming.messageId,
+        whatsapp_context_id: incoming.contextMessageId,
         media_url: incoming.mediaUrl,
         media_type: incoming.mediaType,
       });
@@ -123,14 +127,6 @@ export class RouterController {
       // 7. Si es conversación nueva, mostrar menú inicial
       if (conversacionNueva) {
         const menuInicial = menuProcessor.generarMenuInicial();
-
-// v3.3.2 DISABLED:         // Guardar mensaje del menú
-// v3.3.2 DISABLED:         await mensajeService.guardarSaliente({
-// v3.3.2 DISABLED:           conversacion_id: conversacion.id,
-// v3.3.2 DISABLED:           mensaje: menuInicial.textoRespuesta!,
-// v3.3.2 DISABLED:           remitente_tipo: 'system',
-// v3.3.2 DISABLED:           menu_mostrado: 'principal',
-// v3.3.2 DISABLED:         });
 
         // Llamar webhook para enviar menú
         await this.enviarMensajeWebhook({
@@ -172,14 +168,6 @@ export class RouterController {
             resultado.opcionSeleccionada
           );
 
-// v3.3.2 DISABLED:           // Guardar mensaje del menú
-// v3.3.2 DISABLED:           await mensajeService.guardarSaliente({
-// v3.3.2 DISABLED:             conversacion_id: conversacion.id,
-// v3.3.2 DISABLED:             mensaje: resultado.textoRespuesta!,
-// v3.3.2 DISABLED:             remitente_tipo: 'system',
-// v3.3.2 DISABLED:             menu_mostrado: resultado.menuId,
-// v3.3.2 DISABLED:           });
-
           // Llamar webhook para enviar menú/submenú
           await this.enviarMensajeWebhook({
             telefono: telefonoNormalizado,
@@ -212,13 +200,6 @@ export class RouterController {
 
         case 'invalido':
         default:
-          // Guardar respuesta de error
-// v3.3.2 DISABLED:           await mensajeService.guardarSaliente({
-// v3.3.2 DISABLED:             conversacion_id: conversacion.id,
-// v3.3.2 DISABLED:             mensaje: resultado.textoRespuesta!,
-// v3.3.2 DISABLED:             remitente_tipo: 'system',
-// v3.3.2 DISABLED:           });
-
           // Llamar webhook para enviar mensaje de error
           await this.enviarMensajeWebhook({
             telefono: telefonoNormalizado,
@@ -306,14 +287,7 @@ export class RouterController {
       motivo: `Opción ${opcionSeleccionada} - ${derivacion.subetiqueta}`,
     });
 
-// v3.3.2 DISABLED:     // 5. Guardar mensaje de cierre en Supabase
-// v3.3.2 DISABLED:     await mensajeService.guardarSaliente({
-// v3.3.2 DISABLED:       conversacion_id: conversacionId,
-// v3.3.2 DISABLED:       mensaje: derivacion.mensaje_cierre,
-// v3.3.2 DISABLED:       remitente_tipo: 'system',
-// v3.3.2 DISABLED:     });
-
-    // 6. NUEVO v3.3.1: Enviar confirmación directo via WSP4 (simplificado)
+    // 5. Enviar confirmación directo via WSP4
     const nombresArea: Record<string, string> = {
       'admin': 'Administración',
       'administracion': 'Administración',
@@ -344,7 +318,6 @@ Si necesitás cambiar de área, escribí MENU.`;
     } else {
       console.log(`[Router] ✅ Confirmación enviada: ${derivacion.area}`);
     }
-
 
     return {
       success: true,
@@ -408,7 +381,7 @@ Si necesitás cambiar de área, escribí MENU.`;
       menus: Object.keys(MENUS),
       webhookConfigurado: webhookService.estaConfigurado(),
       webhooksDerivacionConfigurados: webhookService.tieneWebhooksDerivacion(),
-      version: '3.3.1',
+      version: '3.4.0',
     };
   }
 }
