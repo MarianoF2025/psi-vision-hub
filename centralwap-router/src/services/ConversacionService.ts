@@ -1,7 +1,6 @@
 // ===========================================
 // CONVERSACION SERVICE - Esquema Real Supabase
-// CORREGIDO: Incluye lógica de 24h para derivaciones
-// FIX: Reactiva conversaciones expiradas en lugar de crear nuevas
+// Versión 2.5.0 - Agregado buscarPorTelefonoYLinea y renovarVentana24h
 // ===========================================
 import { supabase } from '../config/supabase';
 import {
@@ -41,7 +40,7 @@ export class ConversacionService {
       .select('*')
       .eq('telefono', telefono)
       .eq('estado', 'derivada')
-      .gt('ventana_24h_fin', ahora)  // Ventana 24h aún activa
+      .gt('ventana_24h_fin', ahora)
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
@@ -51,7 +50,6 @@ export class ConversacionService {
       return derivada;
     }
 
-    // No hay conversación activa ni derivada válida
     if (errorActiva?.code !== 'PGRST116' && errorActiva) {
       console.error('[ConversacionService] Error buscando conversación activa:', errorActiva);
     }
@@ -64,7 +62,6 @@ export class ConversacionService {
 
   /**
    * Buscar cualquier conversación previa por teléfono (para reactivar)
-   * Busca conversaciones derivadas expiradas o cerradas
    */
   async buscarPreviaPorTelefono(telefono: string): Promise<Conversacion | null> {
     const { data, error } = await supabase
@@ -81,6 +78,35 @@ export class ConversacionService {
     }
 
     return data || null;
+  }
+
+  /**
+   * Buscar conversación por teléfono y línea específica
+   * Usado para líneas secundarias (Admin/Alumnos/Comunidad/Ventas)
+   */
+  async buscarPorTelefonoYLinea(
+    telefono: string, 
+    linea: string
+  ): Promise<Conversacion | null> {
+    try {
+      const { data, error } = await supabase
+        .from('conversaciones')
+        .select('*')
+        .eq('telefono', telefono)
+        .eq('linea_origen', linea)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('[ConversacionService] Error buscando por teléfono y línea:', error);
+      }
+
+      return data || null;
+    } catch (error) {
+      console.error('[ConversacionService] Error en buscarPorTelefonoYLinea:', error);
+      return null;
+    }
   }
 
   /**
@@ -121,6 +147,7 @@ export class ConversacionService {
       router_opcion_actual: null,
       router_historial: [],
       linea_origen: datos.linea_origen || 'wsp4',
+      iniciado_por: datos.iniciado_por || 'usuario',
       es_lead_meta: datos.es_lead_meta || false,
       ventana_24h_activa: true,
       ventana_24h_inicio: ahora,
@@ -162,7 +189,6 @@ export class ConversacionService {
       updated_at: new Date().toISOString(),
     };
 
-    // Mapear solo campos que vienen en datos
     if (datos.estado !== undefined) updateData.estado = datos.estado;
     if (datos.area !== undefined) updateData.area = datos.area;
     if (datos.etiqueta !== undefined) updateData.etiqueta = datos.etiqueta;
@@ -181,6 +207,7 @@ export class ConversacionService {
     if (datos.leida !== undefined) updateData.leida = datos.leida;
     if (datos.etiquetas !== undefined) updateData.etiquetas = datos.etiquetas;
     if (datos.metadata !== undefined) updateData.metadata = datos.metadata;
+    if (datos.iniciado_por !== undefined) updateData.iniciado_por = datos.iniciado_por;
 
     const { data, error } = await supabase
       .from('conversaciones')
@@ -220,14 +247,12 @@ export class ConversacionService {
 
   /**
    * Obtener o crear conversación (upsert manual)
-   * CORREGIDO: Reactiva conversaciones expiradas en lugar de crear nuevas
    */
   async obtenerOCrear(datos: ConversacionInsert): Promise<{ conversacion: Conversacion; esNueva: boolean }> {
-    // 1. Buscar conversación activa existente (incluye derivadas dentro de 24h)
+    // 1. Buscar conversación activa existente
     const existente = await this.buscarActivaPorTelefono(datos.telefono);
 
     if (existente) {
-      // 2a. Si existe activa, actualizar timestamp y devolver
       const actualizada = await this.actualizar(existente.id, {
         ultimo_mensaje_at: new Date().toISOString(),
         leida: false,
@@ -235,17 +260,16 @@ export class ConversacionService {
       return { conversacion: actualizada, esNueva: false };
     }
 
-    // 2b. Buscar conversación previa (expirada o cerrada) para REACTIVAR
+    // 2. Buscar conversación previa para reactivar
     const previa = await this.buscarPreviaPorTelefono(datos.telefono);
 
     if (previa) {
-      // Reactivar conversación existente en lugar de crear nueva
       console.log(`[ConversacionService] Reactivando conversación expirada ${previa.id} para ${datos.telefono}`);
       const reactivada = await this.reactivar(previa.id);
       return { conversacion: reactivada, esNueva: false };
     }
 
-    // 3. Solo si NO existe ninguna conversación previa, crear nueva
+    // 3. Crear nueva
     console.log(`[ConversacionService] Creando nueva conversación para ${datos.telefono}`);
     const nueva = await this.crear(datos);
     return { conversacion: nueva, esNueva: true };
@@ -260,11 +284,9 @@ export class ConversacionService {
     menuActual: string,
     opcionSeleccionada?: string
   ): Promise<Conversacion> {
-    // Obtener historial actual
     const conv = await this.buscarPorId(id);
     const historialActual = conv?.router_historial || [];
 
-    // Agregar opción al historial si existe
     if (opcionSeleccionada) {
       historialActual.push(`${menuActual}:${opcionSeleccionada}`);
     }
@@ -279,7 +301,6 @@ export class ConversacionService {
 
   /**
    * Derivar conversación a otra área
-   * IMPORTANTE: Resetea la ventana de 24h desde el momento de derivación
    */
   async derivar(
     id: string,
@@ -289,7 +310,6 @@ export class ConversacionService {
     const ahora = new Date().toISOString();
     const fin24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    // Agregar subetiqueta al array de etiquetas si viene
     const conv = await this.buscarPorId(id);
     const etiquetasActuales = conv?.etiquetas || [];
 
@@ -306,7 +326,6 @@ export class ConversacionService {
       etiquetas: etiquetasActuales,
       router_estado: 'derivado',
       ultimo_mensaje_at: ahora,
-      // Resetear ventana 24h desde ahora
       ventana_24h_activa: true,
       ventana_24h_inicio: ahora,
       ventana_24h_fin: fin24h,
@@ -331,7 +350,7 @@ export class ConversacionService {
    */
   async actualizarUltimoMensaje(id: string, mensaje: string): Promise<Conversacion> {
     return this.actualizar(id, {
-      ultimo_mensaje: mensaje.substring(0, 500), // Limitar a 500 chars
+      ultimo_mensaje: mensaje.substring(0, 500),
       ultimo_mensaje_at: new Date().toISOString(),
       leida: false,
     });
@@ -361,6 +380,31 @@ export class ConversacionService {
     if (!conv.ventana_72h_fin) return false;
 
     return new Date(conv.ventana_72h_fin) > new Date();
+  }
+
+  /**
+   * Renovar ventana de 24 horas
+   * Se llama cuando el usuario responde a un agente en línea secundaria
+   */
+  async renovarVentana24h(conversacionId: string): Promise<void> {
+    try {
+      const ahora = new Date();
+      const fin24h = new Date(ahora.getTime() + 24 * 60 * 60 * 1000);
+
+      await supabase
+        .from('conversaciones')
+        .update({
+          ventana_24h_activa: true,
+          ventana_24h_inicio: ahora.toISOString(),
+          ventana_24h_fin: fin24h.toISOString(),
+          updated_at: ahora.toISOString(),
+        })
+        .eq('id', conversacionId);
+
+      console.log(`[ConversacionService] Ventana 24h renovada para ${conversacionId}`);
+    } catch (error) {
+      console.error('[ConversacionService] Error renovando ventana 24h:', error);
+    }
   }
 
   /**

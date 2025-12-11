@@ -1,6 +1,6 @@
 // ===========================================
 // WEBHOOK SERVICE - Llamadas a n8n
-// Versión 3.3 - Con webhooks específicos por área
+// Versión 3.4 - Con webhooks envío por línea secundaria
 // ===========================================
 import { environment } from '../config/environment';
 import { Area } from '../types/database';
@@ -40,15 +40,16 @@ export class WebhookService {
   private webhookUrl: string | null;
   private webhooksDerivacion: Record<string, string | null>;
   private webhookEnvioWSP4: string | null;
+  private webhooksEnvio: Record<string, string | null>;
 
   constructor() {
     // Legacy webhook
     this.webhookUrl = environment.WEBHOOK_ENVIO_MENSAJE;
 
-    // Webhooks v3.3 por área
+    // Webhooks v3.3 por área (derivación)
     this.webhooksDerivacion = {
       administracion: environment.N8N_WEBHOOK_DERIVACION_ADMIN,
-      admin: environment.N8N_WEBHOOK_DERIVACION_ADMIN, // alias
+      admin: environment.N8N_WEBHOOK_DERIVACION_ADMIN,
       alumnos: environment.N8N_WEBHOOK_DERIVACION_ALUMNOS,
       ventas: environment.N8N_WEBHOOK_DERIVACION_VENTAS,
       comunidad: environment.N8N_WEBHOOK_DERIVACION_COMUNIDAD,
@@ -56,43 +57,48 @@ export class WebhookService {
 
     this.webhookEnvioWSP4 = environment.N8N_WEBHOOK_ENVIO_WSP4;
 
-    // Log de configuración
-    console.log('[WebhookService] ✅ Inicializado v3.3');
-    console.log(`[WebhookService] - Legacy webhook: ${this.webhookUrl ? 'configurado' : 'no configurado'}`);
-    console.log(`[WebhookService] - Derivación Admin: ${this.webhooksDerivacion.administracion ? 'configurado' : 'no configurado'}`);
-    console.log(`[WebhookService] - Derivación Alumnos: ${this.webhooksDerivacion.alumnos ? 'configurado' : 'no configurado'}`);
-    console.log(`[WebhookService] - Derivación Ventas: ${this.webhooksDerivacion.ventas ? 'configurado' : 'no configurado'}`);
-    console.log(`[WebhookService] - Derivación Comunidad: ${this.webhooksDerivacion.comunidad ? 'configurado' : 'no configurado'}`);
-    console.log(`[WebhookService] - Envío WSP4: ${this.webhookEnvioWSP4 ? 'configurado' : 'no configurado'}`);
+    // Webhooks v3.4 envío por línea
+    this.webhooksEnvio = {
+      administracion: environment.N8N_WEBHOOK_ENVIO_ADMIN,
+      admin: environment.N8N_WEBHOOK_ENVIO_ADMIN,
+      alumnos: environment.N8N_WEBHOOK_ENVIO_ALUMNOS,
+      comunidad: environment.N8N_WEBHOOK_ENVIO_COMUNIDAD,
+      ventas: environment.N8N_WEBHOOK_ENVIO_VENTAS,
+      wsp4: environment.N8N_WEBHOOK_ENVIO_WSP4,
+    };
+
+    console.log('[WebhookService] ✅ Inicializado v3.4');
+    console.log(`[WebhookService] - Derivación Admin: ${this.webhooksDerivacion.administracion ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Derivación Alumnos: ${this.webhooksDerivacion.alumnos ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Derivación Ventas: ${this.webhooksDerivacion.ventas ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Derivación Comunidad: ${this.webhooksDerivacion.comunidad ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Envío WSP4: ${this.webhookEnvioWSP4 ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Envío Admin: ${this.webhooksEnvio.administracion ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Envío Alumnos: ${this.webhooksEnvio.alumnos ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Envío Comunidad: ${this.webhooksEnvio.comunidad ? 'OK' : 'NO'}`);
+    console.log(`[WebhookService] - Envío Ventas: ${this.webhooksEnvio.ventas ? 'OK' : 'NO'}`);
   }
 
   /**
-   * NUEVO v3.3: Llamar webhook de derivación específico por área
-   * Router → n8n (derivacion/{area})
+   * Llamar webhook de derivación específico por área
    */
   async llamarWebhookDerivacion(payload: WebhookDerivacionPayload): Promise<WebhookResponse> {
     const webhookUrl = this.webhooksDerivacion[payload.area];
 
     if (!webhookUrl) {
-      console.error(`[WebhookService] ❌ No hay webhook configurado para área: ${payload.area}`);
-      return {
-        success: false,
-        error: `Webhook no configurado para área: ${payload.area}`,
-      };
+      console.error(`[WebhookService] No hay webhook derivación para: ${payload.area}`);
+      return { success: false, error: `Webhook no configurado para área: ${payload.area}` };
     }
 
     try {
-      console.log(`[WebhookService] 📤 Llamando webhook derivación: ${payload.area}`, {
+      console.log(`[WebhookService] Llamando webhook derivación: ${payload.area}`, {
         telefono: payload.telefono,
         conversacion_id: payload.conversacion_id,
-        subetiqueta: payload.subetiqueta,
       });
 
       const response = await fetch(webhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           telefono: payload.telefono,
           conversacion_id: payload.conversacion_id,
@@ -102,80 +108,105 @@ export class WebhookService {
           opcion_menu: payload.opcion_menu || null,
           timestamp: payload.timestamp,
         }),
-        signal: AbortSignal.timeout(15000), // 15 segundos para derivaciones
+        signal: AbortSignal.timeout(15000),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[WebhookService] ❌ Error webhook derivación (${response.status}):`, errorText);
-        return {
-          success: false,
-          error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`,
-        };
+        console.error(`[WebhookService] Error derivación (${response.status}):`, errorText);
+        return { success: false, error: `HTTP ${response.status}` };
       }
 
       let responseData: any = {};
-      try {
-        responseData = await response.json();
-      } catch {
-        // Respuesta no es JSON
-      }
+      try { responseData = await response.json(); } catch {}
 
       console.log(`[WebhookService] ✅ Derivación exitosa: ${payload.area}`);
-
-      return {
-        success: true,
-        ticket_id: responseData.ticket_id || undefined,
-      };
+      return { success: true, ticket_id: responseData.ticket_id };
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.error('[WebhookService] ⏱️ Timeout webhook derivación (15s)');
-      } else {
-        console.error('[WebhookService] ❌ Error webhook derivación:', errorMessage);
-      }
-
-      return {
-        success: false,
-        error: errorMessage,
-      };
+      const msg = error instanceof Error ? error.message : 'Error desconocido';
+      console.error('[WebhookService] Error derivación:', msg);
+      return { success: false, error: msg };
     }
   }
 
   /**
-   * Enviar mensaje a través del webhook genérico (legacy)
+   * Enviar mensaje via webhook específico de línea
+   * Usado para mensaje educativo en líneas secundarias
    */
-  async enviarMensaje(payload: WebhookEnvioPayload): Promise<WebhookResponse> {
-    if (!this.webhookUrl) {
-      console.warn('[WebhookService] Webhook legacy no configurado, omitiendo envío');
-      return {
-        success: false,
-        error: 'Webhook no configurado',
-      };
-    }
+  async enviarMensajeViaWebhook(params: {
+    linea: string;
+    telefono: string;
+    mensaje: string;
+    conversacion_id: string;
+    tipo?: string;
+    remitente?: string;
+  }): Promise<WebhookResponse> {
+    const webhookUrl = this.webhooksEnvio[params.linea];
 
-    if (!payload.mensaje || payload.mensaje.trim() === '') {
-      console.log('[WebhookService] Mensaje vacío, omitiendo envío');
-      return {
-        success: true,
-        error: 'Mensaje vacío',
-      };
+    if (!webhookUrl) {
+      console.error(`[WebhookService] No hay webhook envío para: ${params.linea}`);
+      return { success: false, error: `Webhook no configurado para línea: ${params.linea}` };
     }
 
     try {
-      console.log(`[WebhookService] Enviando mensaje (legacy): ${payload.tipo}`, {
-        telefono: payload.telefono,
-        conversacion_id: payload.conversacion_id,
-        area: payload.area,
+      console.log(`[WebhookService] Enviando mensaje via ${params.linea}`, {
+        telefono: params.telefono,
+        conversacion_id: params.conversacion_id,
       });
 
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telefono: params.telefono,
+          mensaje: params.mensaje,
+          conversacion_id: params.conversacion_id,
+          tipo: params.tipo || 'text',
+          remitente: params.remitente || 'sistema',
+          from_router: true,
+          yaGuardado: false,
+          timestamp: new Date().toISOString(),
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[WebhookService] Error envío (${response.status}):`, errorText);
+        return { success: false, error: `HTTP ${response.status}` };
+      }
+
+      let responseData: any = {};
+      try { responseData = await response.json(); } catch {}
+
+      console.log(`[WebhookService] ✅ Mensaje enviado via ${params.linea}`);
+      return { success: true, messageId: responseData.messageId };
+
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Error';
+      console.error('[WebhookService] Error envío:', msg);
+      return { success: false, error: msg };
+    }
+  }
+
+  /**
+   * Enviar mensaje legacy (genérico)
+   */
+  async enviarMensaje(payload: WebhookEnvioPayload): Promise<WebhookResponse> {
+    if (!this.webhookUrl) {
+      console.warn('[WebhookService] Webhook legacy no configurado');
+      return { success: false, error: 'Webhook no configurado' };
+    }
+
+    if (!payload.mensaje || payload.mensaje.trim() === '') {
+      return { success: true, error: 'Mensaje vacío' };
+    }
+
+    try {
       const response = await fetch(this.webhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           telefono: payload.telefono,
           mensaje: payload.mensaje,
@@ -191,57 +222,25 @@ export class WebhookService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[WebhookService] Error webhook (${response.status}):`, errorText);
-        return {
-          success: false,
-          error: `HTTP ${response.status}: ${errorText.substring(0, 100)}`,
-        };
+        console.error(`[WebhookService] Error legacy (${response.status}):`, errorText);
+        return { success: false, error: `HTTP ${response.status}` };
       }
 
       let responseData: any = {};
-      try {
-        responseData = await response.json();
-      } catch {
-        // Respuesta no es JSON
-      }
+      try { responseData = await response.json(); } catch {}
 
-      console.log(`[WebhookService] ✅ Mensaje enviado: ${payload.tipo}`);
-
-      return {
-        success: true,
-        messageId: responseData.messageId || responseData.id || undefined,
-      };
+      console.log(`[WebhookService] ✅ Mensaje enviado (legacy)`);
+      return { success: true, messageId: responseData.messageId || responseData.id };
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      console.error('[WebhookService] ❌ Error envío:', errorMessage);
-      return {
-        success: false,
-        error: errorMessage,
-      };
+      const msg = error instanceof Error ? error.message : 'Error';
+      console.error('[WebhookService] Error legacy:', msg);
+      return { success: false, error: msg };
     }
   }
 
   /**
-   * Verificar si el webhook está configurado
-   */
-  estaConfigurado(): boolean {
-    return this.webhookUrl !== null && this.webhookUrl.trim() !== '';
-  }
-
-  /**
-   * Verificar si los webhooks v3.3 están configurados
-   */
-  tieneWebhooksDerivacion(): boolean {
-    return Object.values(this.webhooksDerivacion).some(url => url !== null);
-  }
-
-  /**
-   * Obtener la URL del webhook (sin exponer completamente)
-   */
-  
-/**
-   * NUEVO v3.3.1: Enviar mensaje directo via WSP4
+   * Enviar mensaje via WSP4
    */
   async enviarMensajeWSP4(payload: {
     telefono: string;
@@ -256,11 +255,6 @@ export class WebhookService {
     }
 
     try {
-      console.log('[WebhookService] Enviando mensaje via WSP4', {
-        telefono: payload.telefono,
-        conversacion_id: payload.conversacion_id,
-      });
-
       const response = await fetch(this.webhookEnvioWSP4, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -282,17 +276,32 @@ export class WebhookService {
         return { success: false, error: 'HTTP ' + response.status };
       }
 
-      console.log('[WebhookService] Mensaje enviado via WSP4');
+      console.log('[WebhookService] ✅ Mensaje enviado via WSP4');
       return { success: true };
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error';
-      console.error('[WebhookService] Error WSP4:', errorMessage);
-      return { success: false, error: errorMessage };
+      const msg = error instanceof Error ? error.message : 'Error';
+      console.error('[WebhookService] Error WSP4:', msg);
+      return { success: false, error: msg };
     }
   }
 
-   getWebhookUrl(): string | null {
+  /**
+   * Obtener webhook de envío por línea
+   */
+  getWebhookEnvioByLinea(linea: string): string | null {
+    return this.webhooksEnvio[linea] || null;
+  }
+
+  estaConfigurado(): boolean {
+    return this.webhookUrl !== null && this.webhookUrl.trim() !== '';
+  }
+
+  tieneWebhooksDerivacion(): boolean {
+    return Object.values(this.webhooksDerivacion).some(url => url !== null);
+  }
+
+  getWebhookUrl(): string | null {
     if (!this.webhookUrl) return null;
     try {
       const url = new URL(this.webhookUrl);

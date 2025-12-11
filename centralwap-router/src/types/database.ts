@@ -1,6 +1,6 @@
 // ===========================================
 // TIPOS BASADOS EN ESQUEMA REAL DE SUPABASE
-// Versión 2.2.0 - Agregado contextMessageId para citas
+// Versión 2.3.0 - Agregado iniciado_por para líneas secundarias
 // ===========================================
 
 // CONTACTOS
@@ -65,6 +65,7 @@ export interface Conversacion {
   area_proxy: string | null;
   leida: boolean | null;
   linea_origen: string | null;
+  iniciado_por: string | null;
   etiquetas: string[];
   router_opcion_actual: string | null;
   router_historial: string[];
@@ -94,6 +95,7 @@ export interface ConversacionInsert {
   etiquetas?: string[];
   router_opcion_actual?: string | null;
   router_historial?: string[];
+  iniciado_por?: 'usuario' | 'agente' | 'sistema';
 }
 
 export interface ConversacionUpdate {
@@ -117,6 +119,7 @@ export interface ConversacionUpdate {
   leida?: boolean | null;
   etiquetas?: string[];
   metadata?: Record<string, any> | null;
+  iniciado_por?: 'usuario' | 'agente' | 'sistema';
 }
 
 // MENSAJES
@@ -291,4 +294,4 @@ export type RouterEstado =
   | 'esperando_respuesta';
 
 // Áreas de derivación
-export type Area = 'wsp4' | 'admin' | 'alumnos' | 'ventas' | 'comunidad' | 'revisar';
+export type Area = 'wsp4' | 'admin' | 'administracion' | 'alumnos' | 'ventas' | 'comunidad' | 'revisar';
