@@ -79,14 +79,14 @@ export function LinkPreview({ url, isOutgoing = false }: LinkPreviewProps) {
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "mt-2 block rounded-lg overflow-hidden border transition-colors",
+        "mt-2 block rounded-lg overflow-hidden border transition-colors max-w-[280px]",
         isOutgoing 
           ? "border-indigo-400/30 bg-indigo-400/10 hover:bg-indigo-400/20" 
           : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700"
       )}
     >
       {preview.image && (
-        <div className="w-full h-32 overflow-hidden bg-slate-200 dark:bg-slate-700">
+        <div className="w-full h-24 overflow-hidden bg-slate-200 dark:bg-slate-700">
           <img 
             src={preview.image} 
             alt={preview.title}
@@ -98,7 +98,7 @@ export function LinkPreview({ url, isOutgoing = false }: LinkPreviewProps) {
         </div>
       )}
       
-      <div className="p-3">
+      <div className="p-2">
         <div className="flex items-center gap-1.5 mb-1">
           <img 
             src={preview.favicon} 

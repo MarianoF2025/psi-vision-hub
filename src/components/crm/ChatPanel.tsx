@@ -654,14 +654,32 @@ export default function ChatPanel() {
                     {msg.destacado && <span className="bg-yellow-400 text-yellow-900 rounded-full p-0.5"><Star size={10} /></span>}
                   </div>
                   {renderMultimedia(msg)}
-                  {msg.mensaje && (
-                    <>
-                      <p className="whitespace-pre-wrap break-words">{msg.mensaje}</p>
-                      {extractUrls(msg.mensaje).slice(0, 1).map((linkUrl) => (
-                        <LinkPreview key={linkUrl} url={linkUrl} isOutgoing={isOut} />
-                      ))}
-                    </>
-                  )}
+                  {msg.mensaje && (() => {
+                    const urls = extractUrls(msg.mensaje);
+                    let displayText = msg.mensaje;
+                    
+                    if (urls.length > 0) {
+                      let textWithoutUrls = msg.mensaje;
+                      urls.forEach(u => { textWithoutUrls = textWithoutUrls.replace(u, '').trim(); });
+                      
+                      if (!textWithoutUrls) {
+                        displayText = '';
+                      } else if (textWithoutUrls.length > 100) {
+                        displayText = textWithoutUrls.substring(0, 97) + '...';
+                      } else {
+                        displayText = textWithoutUrls;
+                      }
+                    }
+                    
+                    return (
+                      <>
+                        {displayText && <p className="whitespace-pre-wrap break-words">{displayText}</p>}
+                        {urls.slice(0, 1).map((linkUrl) => (
+                          <LinkPreview key={linkUrl} url={linkUrl} isOutgoing={isOut} />
+                        ))}
+                      </>
+                    );
+                  })()}
                   <div className={cn('flex items-center justify-end gap-1 -mb-0.5', isOut ? 'text-indigo-200' : 'text-slate-400')}>
                     <span className="text-[10px]">{formatMessageTime(msg.timestamp || msg.created_at || new Date().toISOString())}</span>
                     {getTicks(msg)}

@@ -1,33 +1,92 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { supabase } from '@/lib/supabase';
 import { INBOXES, type Conversacion } from '@/types/crm';
 import { cn, timeAgo, getInitials, getWindowTimeLeft } from '@/lib/utils';
-import { Search, Plus, Clock } from 'lucide-react';
+import { Search, Plus, Clock, X, MessageSquarePlus, Phone, Users, GraduationCap, Building2, Calendar, ChevronDown } from 'lucide-react';
+
+interface Contacto {
+  id: string;
+  nombre: string | null;
+  telefono: string;
+  email: string | null;
+}
+
+const LINEAS_SALIDA = [
+  { id: 'administracion', nombre: 'Admin', icon: Building2, color: 'bg-purple-500' },
+  { id: 'alumnos', nombre: 'Alumnos', icon: GraduationCap, color: 'bg-green-500' },
+  { id: 'comunidad', nombre: 'Comunidad', icon: Users, color: 'bg-orange-500' },
+];
+
+const FILTROS_FECHA = [
+  { id: 'todas', label: 'Todas las fechas', dias: null },
+  { id: 'hoy', label: 'Hoy', dias: 0 },
+  { id: 'ultimos_7', label: 'Últimos 7 días', dias: -7 },
+  { id: 'ultimos_30', label: 'Últimos 30 días', dias: -30 },
+  { id: 'mas_7', label: 'Hace +7 días', dias: 7 },
+  { id: 'mas_20', label: 'Hace +20 días', dias: 20 },
+  { id: 'mas_30', label: 'Hace +30 días', dias: 30 },
+];
 
 export default function ConversacionesPanel() {
-  const { 
-    inboxActual, conversacionActual, setConversacionActual, 
+  const {
+    inboxActual, conversacionActual, setConversacionActual,
     filtroConversaciones, setFiltroConversaciones,
     busquedaConversaciones, setBusquedaConversaciones,
     setContador, usuario
   } = useCRMStore();
-  
+
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mostrarNuevoChat, setMostrarNuevoChat] = useState(false);
+  const [busquedaContacto, setBusquedaContacto] = useState('');
+  const [contactos, setContactos] = useState<Contacto[]>([]);
+  const [buscandoContactos, setBuscandoContactos] = useState(false);
+  const [creandoChat, setCreandoChat] = useState(false);
+  const [numeroNuevo, setNumeroNuevo] = useState('');
+  const [lineaSeleccionada, setLineaSeleccionada] = useState('administracion');
+  const [filtroFecha, setFiltroFecha] = useState('todas');
+  const [mostrarFiltroFecha, setMostrarFiltroFecha] = useState(false);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+  const filtroFechaRef = useRef<HTMLDivElement>(null);
   const inboxConfig = INBOXES.find(i => i.id === inboxActual);
+
+  const calcularFechaFiltro = (filtroId: string): { desde?: string; hasta?: string } => {
+    const ahora = new Date();
+    const filtro = FILTROS_FECHA.find(f => f.id === filtroId);
+    if (!filtro || filtro.dias === null) return {};
+
+    if (filtro.dias === 0) {
+      const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+      return { desde: inicioHoy.toISOString() };
+    } else if (filtro.dias < 0) {
+      const desde = new Date(ahora);
+      desde.setDate(desde.getDate() + filtro.dias);
+      return { desde: desde.toISOString() };
+    } else {
+      const hasta = new Date(ahora);
+      hasta.setDate(hasta.getDate() - filtro.dias);
+      return { hasta: hasta.toISOString() };
+    }
+  };
 
   useEffect(() => {
     const cargarConversaciones = async (inicial = false) => {
-      if (inicial) setLoading(true); 
-      
+      if (inicial) setLoading(true);
       let query = supabase.from('conversaciones').select('*').order('ts_ultimo_mensaje', { ascending: false });
+      
       if (inboxActual !== 'wsp4') query = query.eq('area', inboxActual);
       if (filtroConversaciones === 'sin_asignar') query = query.is('agente_asignado_id', null);
       else if (filtroConversaciones === 'mias' && usuario?.id) query = query.eq('agente_asignado_id', usuario.id);
       if (busquedaConversaciones.trim()) query = query.or(`nombre.ilike.%${busquedaConversaciones}%,telefono.ilike.%${busquedaConversaciones}%`);
+      
+      const fechaFiltro = calcularFechaFiltro(filtroFecha);
+      if (fechaFiltro.desde) query = query.gte('ts_ultimo_mensaje', fechaFiltro.desde);
+      if (fechaFiltro.hasta) query = query.lte('ts_ultimo_mensaje', fechaFiltro.hasta);
+      
       const { data } = await query;
       if (data) {
         setConversaciones(data);
@@ -37,56 +96,186 @@ export default function ConversacionesPanel() {
     };
     cargarConversaciones(true);
     const channel = supabase.channel(`conversaciones-${inboxActual}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversaciones' }, (p) => { console.log('Realtime conversaciones:', p); cargarConversaciones(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversaciones' }, () => cargarConversaciones())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [inboxActual, filtroConversaciones, busquedaConversaciones, usuario?.id, setContador]);
+  }, [inboxActual, filtroConversaciones, busquedaConversaciones, usuario?.id, setContador, filtroFecha]);
+
+  useEffect(() => {
+    const buscar = async () => {
+      if (!busquedaContacto.trim() || busquedaContacto.length < 2) { setContactos([]); return; }
+      setBuscandoContactos(true);
+      const { data } = await supabase.from('contactos').select('id, nombre, telefono, email')
+        .or(`nombre.ilike.%${busquedaContacto}%,telefono.ilike.%${busquedaContacto}%`).limit(10);
+      setContactos(data || []);
+      setBuscandoContactos(false);
+    };
+    const timeout = setTimeout(buscar, 300);
+    return () => clearTimeout(timeout);
+  }, [busquedaContacto]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(e.target as Node)) setMostrarNuevoChat(false);
+      if (filtroFechaRef.current && !filtroFechaRef.current.contains(e.target as Node)) setMostrarFiltroFecha(false);
+    };
+    if (mostrarNuevoChat || mostrarFiltroFecha) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [mostrarNuevoChat, mostrarFiltroFecha]);
+
+  const normalizarTelefono = (tel: string): string => {
+    let numero = tel.replace(/\D/g, '');
+    if (numero.startsWith('0')) numero = numero.substring(1);
+    if (numero.length === 10 && !numero.startsWith('54')) numero = '54' + numero;
+    if (!numero.startsWith('+')) numero = '+' + numero;
+    return numero;
+  };
+
+  const formatPhone = (phone: string) => {
+    if (!phone) return '';
+    const cleaned = phone.replace(/\D/g, '');
+    if (cleaned.length > 10) return `+${cleaned.slice(0, 2)} ${cleaned.slice(2, 4)} ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+    return phone;
+  };
+
+  const iniciarChatConContacto = async (contacto: Contacto) => {
+    setCreandoChat(true);
+    const { data: convExistente } = await supabase.from('conversaciones').select('*')
+      .eq('contacto_id', contacto.id).eq('area', lineaSeleccionada).single();
+    if (convExistente) {
+      setConversacionActual(convExistente);
+      setMostrarNuevoChat(false);
+      setBusquedaContacto('');
+      setCreandoChat(false);
+      return;
+    }
+    const { data: nuevaConv } = await supabase.from('conversaciones').insert({
+      contacto_id: contacto.id, telefono: contacto.telefono, nombre: contacto.nombre,
+      estado: 'nueva', prioridad: 'media', canal: 'whatsapp',
+      area: lineaSeleccionada, linea_origen: lineaSeleccionada, inbox_fijo: lineaSeleccionada, origen: 'crm'
+    }).select().single();
+    if (nuevaConv) setConversacionActual(nuevaConv);
+    setMostrarNuevoChat(false);
+    setBusquedaContacto('');
+    setCreandoChat(false);
+  };
+
+  const iniciarChatConNumero = async () => {
+    if (!numeroNuevo.trim()) return;
+    setCreandoChat(true);
+    const telefonoNormalizado = normalizarTelefono(numeroNuevo);
+    const { data: contactoExistente } = await supabase.from('contactos').select('*').eq('telefono', telefonoNormalizado).single();
+    let contactoId: string;
+    if (contactoExistente) {
+      contactoId = contactoExistente.id;
+      const { data: convExistente } = await supabase.from('conversaciones').select('*')
+        .eq('contacto_id', contactoId).eq('area', lineaSeleccionada).single();
+      if (convExistente) {
+        setConversacionActual(convExistente);
+        setMostrarNuevoChat(false);
+        setNumeroNuevo('');
+        setCreandoChat(false);
+        return;
+      }
+    } else {
+      const { data: nuevoContacto, error } = await supabase.from('contactos')
+        .insert({ telefono: telefonoNormalizado, origen: 'crm', activo: true }).select().single();
+      if (error || !nuevoContacto) { alert('Error al crear el contacto'); setCreandoChat(false); return; }
+      contactoId = nuevoContacto.id;
+    }
+    const { data: nuevaConv } = await supabase.from('conversaciones').insert({
+      contacto_id: contactoId, telefono: telefonoNormalizado,
+      estado: 'nueva', prioridad: 'media', canal: 'whatsapp',
+      area: lineaSeleccionada, linea_origen: lineaSeleccionada, inbox_fijo: lineaSeleccionada, origen: 'crm'
+    }).select().single();
+    if (nuevaConv) setConversacionActual(nuevaConv);
+    setMostrarNuevoChat(false);
+    setNumeroNuevo('');
+    setCreandoChat(false);
+  };
+
+  const filtroFechaActual = FILTROS_FECHA.find(f => f.id === filtroFecha);
 
   return (
     <div className="w-72 h-full flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-shrink-0">
-      {/* Header fijo */}
       <div className="flex-shrink-0 p-3 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center justify-between mb-2">
           <h2 className="font-semibold text-sm text-slate-800 dark:text-white">{inboxConfig?.nombre || 'Conversaciones'}</h2>
-          <div className="flex gap-0.5">
+          <div className="flex gap-1">
             <button className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><Search size={14} /></button>
-            <button className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><Plus size={14} /></button>
+            <button onClick={() => setMostrarNuevoChat(true)} className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white" title="Nuevo chat"><Plus size={14} /></button>
           </div>
         </div>
         <div className="relative mb-2">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text" placeholder="Buscar..." value={busquedaConversaciones}
-            onChange={(e) => setBusquedaConversaciones(e.target.value)}
-            className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white placeholder-slate-400"
-          />
+          <input type="text" placeholder="Buscar..." value={busquedaConversaciones} onChange={(e) => setBusquedaConversaciones(e.target.value)}
+            className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white placeholder-slate-400" />
         </div>
-        <div className="flex gap-1">
+        
+        <div className="flex gap-1 mb-2">
           {(['todas', 'sin_asignar', 'mias'] as const).map((filtro) => (
             <button key={filtro} onClick={() => setFiltroConversaciones(filtro)}
               className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors',
-                filtroConversaciones === filtro ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
-              )}>
+                filtroConversaciones === filtro ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800')}>
               {filtro === 'todas' ? 'Todas' : filtro === 'sin_asignar' ? 'Sin asignar' : 'Mías'}
             </button>
           ))}
         </div>
+
+        <div className="relative" ref={filtroFechaRef}>
+          <button
+            onClick={() => setMostrarFiltroFecha(!mostrarFiltroFecha)}
+            className={cn(
+              'w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded-md border transition-colors',
+              filtroFecha !== 'todas' 
+                ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' 
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+            )}
+          >
+            <div className="flex items-center gap-1.5">
+              <Calendar size={12} />
+              <span>{filtroFechaActual?.label || 'Filtrar por fecha'}</span>
+            </div>
+            <ChevronDown size={12} className={cn('transition-transform', mostrarFiltroFecha && 'rotate-180')} />
+          </button>
+          
+          {mostrarFiltroFecha && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 py-1">
+              {FILTROS_FECHA.map((filtro) => (
+                <button
+                  key={filtro.id}
+                  onClick={() => { setFiltroFecha(filtro.id); setMostrarFiltroFecha(false); }}
+                  className={cn(
+                    'w-full text-left px-3 py-1.5 text-[11px] transition-colors',
+                    filtroFecha === filtro.id
+                      ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  )}
+                >
+                  {filtro.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {!loading && (
+          <div className="mt-2 text-[10px] text-slate-400 text-center">
+            {conversaciones.length} conversacion{conversaciones.length !== 1 ? 'es' : ''}
+          </div>
+        )}
       </div>
 
-      {/* Lista scrolleable */}
       <div className="flex-1 overflow-y-auto min-h-0">
-        {loading ? (
-          <div className="p-3 text-center text-slate-400 text-xs">Cargando...</div>
-        ) : conversaciones.length === 0 ? (
-          <div className="p-3 text-center text-slate-400 text-xs">No hay conversaciones</div>
+        {loading ? (<div className="p-3 text-center text-slate-400 text-xs">Cargando...</div>
+        ) : conversaciones.length === 0 ? (<div className="p-3 text-center text-slate-400 text-xs">No hay conversaciones</div>
         ) : conversaciones.map((conv) => {
           const isSelected = conversacionActual?.id === conv.id;
           const windowInfo = getWindowTimeLeft(conv.ventana_24h_fin, conv.ventana_72h_fin);
           return (
             <div key={conv.id} onClick={() => setConversacionActual(conv)}
               className={cn('p-2 border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-colors',
-                isSelected ? 'bg-indigo-50 dark:bg-indigo-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-              )}>
+                isSelected ? 'bg-indigo-50 dark:bg-indigo-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50')}>
               <div className="flex gap-2">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-[10px] font-medium flex-shrink-0">
                   {getInitials(conv.nombre || conv.telefono)}
@@ -121,6 +310,108 @@ export default function ConversacionesPanel() {
           );
         })}
       </div>
+
+      {mostrarNuevoChat && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div ref={modalRef} className="bg-white dark:bg-slate-900 rounded-2xl w-[400px] max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquarePlus size={20} className="text-indigo-500" />
+                <h3 className="font-semibold text-slate-800 dark:text-white">Nuevo Chat</h3>
+              </div>
+              <button onClick={() => { setMostrarNuevoChat(false); setBusquedaContacto(''); setNumeroNuevo(''); }}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
+                <X size={18} className="text-slate-400" />
+              </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-y-auto">
+              <div className="mb-4">
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2 block">Enviar desde</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {LINEAS_SALIDA.map((linea) => {
+                    const Icon = linea.icon;
+                    const isSelected = lineaSeleccionada === linea.id;
+                    return (
+                      <button key={linea.id} onClick={() => setLineaSeleccionada(linea.id)}
+                        className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all',
+                          isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300')}>
+                        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white', linea.color)}>
+                          <Icon size={18} />
+                        </div>
+                        <span className={cn('text-[11px] font-medium', isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400')}>
+                          {linea.nombre}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-green-600 mt-2 text-center">✓ Evolution API (sin costo)</p>
+              </div>
+
+              <div className="flex items-center gap-3 my-3">
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                <span className="text-[10px] text-slate-400">Destinatario</span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+              </div>
+
+              <div className="mb-3">
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-1 block">Buscar contacto</label>
+                <div className="relative">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input type="text" value={busquedaContacto} onChange={(e) => setBusquedaContacto(e.target.value)}
+                    placeholder="Nombre o teléfono..." className="w-full pl-9 pr-3 py-2 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg text-sm" />
+                </div>
+              </div>
+
+              {busquedaContacto.length >= 2 && (
+                <div className="mb-3">
+                  {buscandoContactos ? (<p className="text-xs text-slate-400 text-center py-2">Buscando...</p>
+                  ) : contactos.length === 0 ? (<p className="text-xs text-slate-400 text-center py-2">No se encontraron</p>
+                  ) : (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {contactos.map((c) => (
+                        <button key={c.id} onClick={() => iniciarChatConContacto(c)} disabled={creandoChat}
+                          className="w-full flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors text-left">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-xs font-medium">
+                            {getInitials(c.nombre || c.telefono)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 dark:text-white truncate">{c.nombre || 'Sin nombre'}</p>
+                            <p className="text-xs text-slate-500">{formatPhone(c.telefono)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 my-3">
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+                <span className="text-[10px] text-slate-400">o numero nuevo</span>
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
+              </div>
+
+              <div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input type="tel" value={numeroNuevo} onChange={(e) => setNumeroNuevo(e.target.value)}
+                      placeholder="Ej: 1155667788" className="w-full pl-9 pr-3 py-2 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg text-sm"
+                      onKeyDown={(e) => e.key === 'Enter' && iniciarChatConNumero()} />
+                  </div>
+                  <button onClick={iniciarChatConNumero} disabled={!numeroNuevo.trim() || creandoChat}
+                    className="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {creandoChat ? '...' : 'Iniciar'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Con o sin codigo de pais (+54)</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
