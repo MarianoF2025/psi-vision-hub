@@ -218,19 +218,19 @@ function normalizarEvolutionPayload(body: any, linea: string): {
     } else if (message.imageMessage) {
       mediaType = 'image';
       mensaje = message.imageMessage.caption || '[Imagen]';
-      mediaUrl = body.mediaUrl;
+      mediaUrl = body.media_url || body.mediaUrl;
     } else if (message.audioMessage) {
       mediaType = 'audio';
       mensaje = '[Audio]';
-      mediaUrl = body.mediaUrl;
+      mediaUrl = body.media_url || body.mediaUrl;
     } else if (message.videoMessage) {
       mediaType = 'video';
       mensaje = message.videoMessage.caption || '[Video]';
-      mediaUrl = body.mediaUrl;
+      mediaUrl = body.media_url || body.mediaUrl;
     } else if (message.documentMessage) {
       mediaType = 'document';
       mensaje = message.documentMessage.fileName || '[Documento]';
-      mediaUrl = body.mediaUrl;
+      mediaUrl = body.media_url || body.mediaUrl;
     } else if (message.stickerMessage) {
       mediaType = 'sticker';
       mensaje = '[Sticker]';
@@ -471,22 +471,27 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
         mediaType = 'image';
         mediaId = msg.image.id;
         mensajeTexto = msg.image.caption || '[Imagen]';
+        mediaUrl = body.media_url || body.mediaUrl;
       } else if (tipo === 'audio' && msg.audio) {
         mediaType = 'audio';
         mediaId = msg.audio.id;
         mensajeTexto = '[Audio]';
+        mediaUrl = body.media_url || body.mediaUrl;
       } else if (tipo === 'video' && msg.video) {
         mediaType = 'video';
         mediaId = msg.video.id;
         mensajeTexto = msg.video.caption || '[Video]';
+        mediaUrl = body.media_url || body.mediaUrl; 
       } else if (tipo === 'document' && msg.document) {
         mediaType = 'document';
         mediaId = msg.document.id;
         mensajeTexto = msg.document.filename || '[Documento]';
+        mediaUrl = body.media_url || body.mediaUrl; 
       } else if (tipo === 'sticker' && msg.sticker) {
         mediaType = 'sticker';
         mediaId = msg.sticker.id;
         mensajeTexto = '[Sticker]';
+        mediaUrl = body.media_url || body.mediaUrl;
       } else if (tipo === 'reaction' && msg.reaction) {
         mediaType = 'reaction';
         reactionEmoji = msg.reaction.emoji || '';
