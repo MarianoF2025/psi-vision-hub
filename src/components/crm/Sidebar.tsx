@@ -6,7 +6,7 @@ import { useCRMStore } from '@/stores/crm-store';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { Sun, Moon, Settings, Home, DollarSign, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
@@ -21,6 +21,7 @@ const PAGINAS_EXTRA = [
   { id: 'etiquetas', nombre: 'Etiquetas', href: '/crm/etiquetas', icono: Tag },
   { id: 'respuestas', nombre: 'Respuestas', href: '/crm/respuestas', icono: MessageSquare },
   { id: 'estadisticas', nombre: 'Estadísticas', href: '/crm/estadisticas', icono: BarChart3 },
+  { id: 'automatizaciones', nombre: 'Automatizaciones', href: '/crm/automatizaciones', icono: Zap },
 ];
 
 export default function Sidebar() {

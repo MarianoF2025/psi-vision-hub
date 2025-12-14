@@ -264,24 +264,19 @@ function normalizarCloudAPIPayload(body: any): {
   try {
     const messages = body.messages || [];
     const contacts = body.contacts || [];
-
     if (!messages[0]) return null;
-
     const msg = messages[0];
     const telefono = '+' + msg.from;
     const nombre = contacts[0]?.profile?.name || '';
     const messageId = msg.id || '';
     const tipo = msg.type;
-
     let mensaje = '';
     let mediaType: string | undefined;
     let mediaUrl: string | undefined;
     let contextMessageId: string | undefined;
-
     if (msg.context?.id) {
       contextMessageId = msg.context.id;
     }
-
     if (tipo === 'text' && msg.text) {
       mensaje = msg.text.body || '';
     } else if (tipo === 'image' && msg.image) {
@@ -300,7 +295,10 @@ function normalizarCloudAPIPayload(body: any): {
       mediaType = 'sticker';
       mensaje = '[Sticker]';
     }
-
+    // Si viene media_url directamente (desde psi-automations), usarlo
+    if (body.media_url) {
+      mediaUrl = body.media_url;
+    }
     return { telefono, mensaje, nombre, messageId, mediaType, mediaUrl, contextMessageId };
   } catch (error) {
     console.error('[Ventas] Error normalizando payload:', error);
@@ -333,7 +331,7 @@ async function procesarMensajeLineaSecundaria(
     );
 
     // 2. Determinar si debemos enviar mensaje educativo
-    let enviarEducativo = true;
+    let enviarEducativo = (linea !== 'ventas');
 
     if (conversacionExistente) {
       const iniciadoPorAgente = conversacionExistente.iniciado_por === 'agente';
@@ -564,16 +562,31 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
 // ===========================================
 app.post('/webhook/whatsapp/ventas', async (req: Request, res: Response) => {
   try {
-    const payload = normalizarCloudAPIPayload(req.body);
-
+    const body = req.body;
+    const messages = body.messages || [];
+    const msg = messages[0];
+    
+    // Detectar si es reacción
+    if (msg && msg.type === 'reaction' && msg.reaction) {
+      const telefono = '+' + msg.from;
+      const emoji = msg.reaction.emoji || '';
+      const reactionMessageId = msg.reaction.message_id;
+      
+      if (reactionMessageId) {
+        const resultado = await procesarReaccionEntrante(telefono, emoji, reactionMessageId);
+        res.json(resultado);
+        return;
+      }
+    }
+    
+    // Procesar mensaje normal
+    const payload = normalizarCloudAPIPayload(body);
     if (!payload || !payload.telefono || !payload.mensaje) {
       res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-
     const resultado = await procesarMensajeLineaSecundaria('ventas', payload);
     res.json(resultado);
-
   } catch (error) {
     console.error('[Ventas] Error:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });

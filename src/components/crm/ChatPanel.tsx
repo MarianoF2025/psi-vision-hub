@@ -270,10 +270,31 @@ export default function ChatPanel() {
   const abrirMenuContextual = (e: React.MouseEvent, msg: MensajeCompleto) => {
     e.preventDefault();
     e.stopPropagation();
-    setMenuPosition({ x: e.clientX, y: e.clientY });
+    
+    const menuWidth = 208; // w-52 = 13rem = 208px
+    const menuHeight = 380; // altura aproximada del menú
+    
+    let x = e.clientX;
+    let y = e.clientY;
+    
+    // Si el menú se saldría por la derecha, posicionar a la izquierda del click
+    if (x + menuWidth > window.innerWidth) {
+      x = e.clientX - menuWidth;
+    }
+    
+    // Si el menú se saldría por abajo, posicionar arriba
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 10;
+    }
+    
+    // Asegurar que no quede negativo
+    if (x < 10) x = 10;
+    if (y < 10) y = 10;
+    
+    setMenuPosition({ x, y });
     setMenuMensaje(msg);
     setMenuVisible(true);
-  };
+  };  
 
   const cerrarMenu = () => {
     setMenuVisible(false);
