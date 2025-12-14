@@ -160,7 +160,8 @@ class StatsController {
             let inscripciones = 0;
             let derivaciones = 0;
             let infoRequests = 0;
-            const opcionesConCTR = await Promise.all((opciones || []).map(async (opcion) => {
+            // Primero obtener las interacciones de cada opción
+            const opcionesConVeces = await Promise.all((opciones || []).map(async (opcion) => {
                 const { count: vecesElegida } = await supabase_1.supabase
                     .from('menu_interacciones')
                     .select('*', { count: 'exact', head: true })
@@ -174,13 +175,17 @@ class StatsController {
                     infoRequests += veces;
                 return {
                     ...opcion,
-                    veces_elegida: veces,
-                    ctr: leadsTotal && leadsTotal > 0
-                        ? Math.round((veces / leadsTotal) * 100 * 10) / 10
-                        : 0
+                    veces_elegida: veces
                 };
             }));
             const totalInteracciones = inscripciones + derivaciones + infoRequests;
+            // Ahora calcular CTR con el total de interacciones como base
+            const opcionesConCTR = opcionesConVeces.map(opcion => ({
+                ...opcion,
+                ctr: totalInteracciones > 0
+                    ? Math.round((opcion.veces_elegida / totalInteracciones) * 100 * 10) / 10
+                    : 0
+            }));
             // Stats por anuncio
             const { data: anuncios } = await supabase_1.supabase
                 .from('config_cursos_ctwa')

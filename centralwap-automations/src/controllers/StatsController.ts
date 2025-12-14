@@ -167,28 +167,32 @@ export class StatsController {
       let inscripciones = 0;
       let derivaciones = 0;
       let infoRequests = 0;
-
-      const opcionesConCTR = await Promise.all((opciones || []).map(async (opcion) => {
+      
+      // Primero obtener las interacciones de cada opción
+      const opcionesConVeces = await Promise.all((opciones || []).map(async (opcion) => {
         const { count: vecesElegida } = await supabase
           .from('menu_interacciones')
           .select('*', { count: 'exact', head: true })
           .eq('opcion_id', opcion.id);
-
         const veces = vecesElegida || 0;
         if (opcion.tipo === 'inscribir') inscripciones += veces;
         else if (opcion.tipo === 'derivar') derivaciones += veces;
         else if (opcion.tipo === 'info') infoRequests += veces;
-
         return {
           ...opcion,
-          veces_elegida: veces,
-          ctr: leadsTotal && leadsTotal > 0 
-            ? Math.round((veces / leadsTotal) * 100 * 10) / 10 
-            : 0
+          veces_elegida: veces
         };
       }));
-
+      
       const totalInteracciones = inscripciones + derivaciones + infoRequests;
+      
+      // Ahora calcular CTR con el total de interacciones como base
+      const opcionesConCTR = opcionesConVeces.map(opcion => ({
+        ...opcion,
+        ctr: totalInteracciones > 0
+          ? Math.round((opcion.veces_elegida / totalInteracciones) * 100 * 10) / 10
+          : 0
+      }));
 
       // Stats por anuncio
       const { data: anuncios } = await supabase
