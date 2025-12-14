@@ -18,14 +18,16 @@ export class MenuController {
 
   private async fijarConversacionEnVentas(telefono: string, motivo: string): Promise<void> {
     const telNormalizado = this.normalizarTelefono(telefono);
-
+    let conversacionId: string | null = null;
+    
     const { data: conv } = await supabase
       .from('conversaciones')
       .select('id')
       .eq('telefono', telNormalizado)
       .single();
-
+    
     if (conv) {
+      conversacionId = conv.id;
       await supabase
         .from('conversaciones')
         .update({
@@ -44,7 +46,7 @@ export class MenuController {
       const { data: newConv, error } = await supabase
         .from('conversaciones')
         .insert({
-          telefono: telNormalizado,
+  
           linea_origen: 'ventas',
           area: 'ventas',
           canal: 'whatsapp',
@@ -57,15 +59,36 @@ export class MenuController {
         })
         .select()
         .single();
-
       if (newConv) {
+        conversacionId = newConv.id;
         console.log(`✅ Conversación creada y fijada en Ventas: ${telNormalizado} - ${motivo}`);
       } else {
         console.error(`❌ Error creando conversación: ${error?.message}`);
       }
     }
-  }
+    
+    // Insertar mensaje de sistema para que el agente vea el contexto
+    if (conversacionId) {
+      await supabase.from('mensajes').insert({
+        conversacion_id: conversacionId,
 
+        mensaje: `🤖 ${motivo}`,
+        tipo: 'text',
+        direccion: 'entrante',
+        remitente_tipo: 'sistema',
+        remitente_nombre: 'Sistema CTWA',
+      });
+      
+      // Actualizar último mensaje de la conversación
+      await supabase
+        .from('conversaciones')
+        .update({ 
+          ultimo_mensaje: `🤖 ${motivo}`,
+          ts_ultimo_mensaje: new Date().toISOString()
+        })
+        .eq('id', conversacionId);
+    }
+  }
   async enviarMenu(req: Request, res: Response): Promise<void> {
     try {
       const body: EnviarMenuRequest = req.body;
@@ -439,7 +462,7 @@ export class MenuController {
       }
 
       await supabase.from('menu_sesiones').upsert({
-        telefono: telNormalizado,
+
         estado: 'activo',
         interacciones: 0,
         ultima_actividad: new Date().toISOString()
