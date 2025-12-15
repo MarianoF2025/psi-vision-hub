@@ -342,13 +342,28 @@ async function procesarMensajeLineaSecundaria(
       if (iniciadoPorAgente && ventanaActiva) {
         enviarEducativo = false;
         console.log(`[${linea}] Conversación iniciada por agente, ventana activa. NO enviar educativo.`);
-
         // Renovar ventana 24h
         await conversacionService.renovarVentana24h(conversacionExistente.id);
       }
     }
 
-    // 3. Obtener o crear conversación
+    // 3. Si va a enviar educativo, NO crear conversación - solo enviar y salir
+    if (enviarEducativo) {
+      console.log(`[${linea}] Enviando mensaje educativo a ${payload.telefono} (sin crear conversación)`);
+      
+      await webhookService.enviarMensajeViaWebhook({
+        linea: linea,
+        telefono: payload.telefono,
+        mensaje: MENSAJE_EDUCATIVO,
+        conversacion_id: '',
+        tipo: 'text',
+        remitente: 'sistema',
+      });
+
+      return { success: true, action: 'mensaje_educativo', enviado_educativo: true };
+    }
+
+    // 4. Solo si NO envía educativo: Obtener o crear conversación
     const { conversacion } = await conversacionService.obtenerOCrear({
       telefono: payload.telefono,
       linea_origen: linea,
@@ -357,7 +372,7 @@ async function procesarMensajeLineaSecundaria(
       iniciado_por: 'usuario',
     });
 
-    // 4. Guardar mensaje entrante
+    // 5. Guardar mensaje entrante
     const mensajeData: MensajeInsert = {
       conversacion_id: conversacion.id,
       mensaje: payload.mensaje,
@@ -372,35 +387,8 @@ async function procesarMensajeLineaSecundaria(
 
     await supabase.from('mensajes').insert(mensajeData);
 
-    // 5. Actualizar último mensaje
+    // 6. Actualizar último mensaje
     await conversacionService.actualizarUltimoMensaje(conversacion.id, payload.mensaje);
-
-    // 6. Enviar mensaje educativo si corresponde
-    if (enviarEducativo) {
-      console.log(`[${linea}] Enviando mensaje educativo a ${payload.telefono}`);
-
-      const resultadoEnvio = await webhookService.enviarMensajeViaWebhook({
-        linea: linea,
-        telefono: payload.telefono,
-        mensaje: MENSAJE_EDUCATIVO,
-        conversacion_id: conversacion.id,
-        tipo: 'text',
-        remitente: 'sistema',
-      });
-
-      if (resultadoEnvio.success) {
-        // Guardar mensaje saliente (educativo)
-        await supabase.from('mensajes').insert({
-          conversacion_id: conversacion.id,
-          mensaje: MENSAJE_EDUCATIVO,
-          tipo: 'text',
-          direccion: 'saliente',
-          remitente_tipo: 'sistema',
-        });
-      }
-
-      return { success: true, action: 'mensaje_educativo', enviado_educativo: true };
-    }
 
     return { success: true, action: 'mensaje_guardado', enviado_educativo: false };
 
@@ -598,64 +586,94 @@ app.post('/webhook/whatsapp/ventas', async (req: Request, res: Response) => {
 // ===========================================
 app.post('/webhook/evolution/administracion', async (req: Request, res: Response) => {
   try {
-    const payload = normalizarEvolutionPayload(req.body, 'administracion');
-
+    // Detectar si viene normalizado (desde n8n) o crudo (desde Evolution directo)
+    let payload;
+    if (req.body.telefono && req.body.mensaje !== undefined) {
+      // Ya viene normalizado desde n8n
+      payload = {
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
+      };
+    } else {
+      // Viene crudo desde Evolution API
+      payload = normalizarEvolutionPayload(req.body, 'administracion');
+    }
     if (!payload || !payload.telefono || !payload.mensaje) {
       res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-
     const resultado = await procesarMensajeLineaSecundaria('administracion', payload);
     res.json(resultado);
-
   } catch (error) {
     console.error('[Administracion] Error:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
-
 // ===========================================
 // WEBHOOK ALUMNOS (EVOLUTION API)
 // ===========================================
 app.post('/webhook/evolution/alumnos', async (req: Request, res: Response) => {
   try {
-    const payload = normalizarEvolutionPayload(req.body, 'alumnos');
-
+    let payload;
+    if (req.body.telefono && req.body.mensaje !== undefined) {
+      payload = {
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
+      };
+    } else {
+      payload = normalizarEvolutionPayload(req.body, 'alumnos');
+    }
     if (!payload || !payload.telefono || !payload.mensaje) {
       res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-
     const resultado = await procesarMensajeLineaSecundaria('alumnos', payload);
     res.json(resultado);
-
   } catch (error) {
     console.error('[Alumnos] Error:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
-
 // ===========================================
 // WEBHOOK COMUNIDAD (EVOLUTION API)
 // ===========================================
 app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => {
   try {
-    const payload = normalizarEvolutionPayload(req.body, 'comunidad');
-
+    let payload;
+    if (req.body.telefono && req.body.mensaje !== undefined) {
+      payload = {
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
+      };
+    } else {
+      payload = normalizarEvolutionPayload(req.body, 'comunidad');
+    }
     if (!payload || !payload.telefono || !payload.mensaje) {
       res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-
     const resultado = await procesarMensajeLineaSecundaria('comunidad', payload);
     res.json(resultado);
-
   } catch (error) {
     console.error('[Comunidad] Error:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
-
 // ===========================================
 // WEBHOOK EVOLUTION GENÉRICO (LEGACY)
 // ===========================================
