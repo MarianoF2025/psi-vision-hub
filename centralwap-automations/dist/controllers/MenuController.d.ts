@@ -1,6 +1,18 @@
 import { Request, Response } from 'express';
 export declare class MenuController {
     private normalizarTelefono;
+    /**
+     * Calcula las fechas de fin de ventana
+     */
+    private calcularVentanas;
+    /**
+     * Busca un contacto por teléfono o lo crea si no existe
+     */
+    private obtenerOCrearContacto;
+    /**
+     * Fija una conversación en Ventas, creándola si no existe
+     * CORREGIDO: Incluye telefono, contacto_id, nombre y VENTANAS
+     */
     private fijarConversacionEnVentas;
     enviarMenu(req: Request, res: Response): Promise<void>;
     procesarSeleccion(req: Request, res: Response): Promise<void>;

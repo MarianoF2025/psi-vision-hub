@@ -26,20 +26,22 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
-
+  const { data: { user } } = await supabase.auth.getUser();
   const pathname = request.nextUrl.pathname;
-  const isAuthPage = pathname === '/login' || pathname === '/recuperar' || pathname === '/reset-password';
-  const isProtectedPage = pathname.startsWith('/crm');
 
-  // Si no hay sesión y está intentando acceder a rutas protegidas
-  if (!session && isProtectedPage) {
+  console.log('🔐 Middleware:', pathname, 'User:', user?.email || 'null');
+
+  const isProtectedPage = pathname.startsWith('/crm');
+  const isAuthPage = pathname === '/login' || pathname === '/recuperar';
+
+  if (!user && isProtectedPage) {
+    console.log('🚫 No user, redirecting to login');
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  // Si hay sesión y está en páginas de auth (excepto reset-password)
-  if (session && (pathname === '/login' || pathname === '/recuperar')) {
-    return NextResponse.redirect(new URL('/crm', request.url));
+  if (user && isAuthPage) {
+    console.log('✅ User logged in, redirecting to home');
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   return response;

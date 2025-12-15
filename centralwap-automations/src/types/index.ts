@@ -260,12 +260,14 @@ export interface EnviarMenuRequest {
   ctwa_clid?: string;
   conversacion_id?: string;
   mensaje_inicial?: string;
+  nombre_contacto?: string;
 }
 
 export interface ProcesarSeleccionRequest {
   telefono: string;
   opcion_id: string;
   conversacion_id?: string;
+  nombre_contacto?: string;
 }
 
 export interface ReordenarOpcionesRequest {

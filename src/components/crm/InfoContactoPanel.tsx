@@ -357,14 +357,22 @@ export default function InfoContactoPanel() {
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Estado Conversación</p>
               <div className="flex flex-wrap gap-1">
-                {ESTADOS_CONV.map((e) => (
-                  <button key={e} onClick={() => actualizarConversacion('estado', e)}
-                    className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors',
-                      conversacionActual.estado === e 
-                        ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' 
-                        : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300'
-                    )}>{e}</button>
-                ))}
+                {ESTADOS_CONV.map((e) => {
+                  const colores: Record<string, { active: string; inactive: string }> = {
+                    nueva: { active: 'border-blue-500 bg-blue-100 dark:bg-blue-500/20 text-blue-600', inactive: 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300' },
+                    activa: { active: 'border-emerald-500 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600', inactive: 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-emerald-300' },
+                    esperando: { active: 'border-amber-500 bg-amber-100 dark:bg-amber-500/20 text-amber-600', inactive: 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-amber-300' },
+                    resuelta: { active: 'border-purple-500 bg-purple-100 dark:bg-purple-500/20 text-purple-600', inactive: 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-purple-300' },
+                    cerrada: { active: 'border-slate-500 bg-slate-200 dark:bg-slate-500/20 text-slate-600', inactive: 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400' },
+                  };
+                  const color = colores[e] || colores.nueva;
+                  return (
+                    <button key={e} onClick={() => actualizarConversacion('estado', e)}
+                      className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors',
+                        conversacionActual.estado === e ? color.active : color.inactive
+                      )}>{e}</button>
+                  );
+                })}
               </div>
             </div>
 

@@ -16,9 +16,85 @@ class MenuController {
         }
         return tel;
     }
-    async fijarConversacionEnVentas(telefono, motivo) {
+    /**
+     * Calcula las fechas de fin de ventana
+     */
+    calcularVentanas(esCTWA) {
+        const ahora = new Date();
+        if (esCTWA) {
+            // CTWA: Ventana de 72 horas gratis de Meta
+            const fin72h = new Date(ahora.getTime() + 72 * 60 * 60 * 1000);
+            return {
+                ventana_24h_activa: false,
+                ventana_24h_inicio: null,
+                ventana_24h_fin: null,
+                ventana_72h_activa: true,
+                ventana_72h_inicio: ahora.toISOString(),
+                ventana_72h_fin: fin72h.toISOString()
+            };
+        }
+        else {
+            // Entrada directa: Ventana estándar de 24 horas
+            const fin24h = new Date(ahora.getTime() + 24 * 60 * 60 * 1000);
+            return {
+                ventana_24h_activa: true,
+                ventana_24h_inicio: ahora.toISOString(),
+                ventana_24h_fin: fin24h.toISOString(),
+                ventana_72h_activa: false,
+                ventana_72h_inicio: null,
+                ventana_72h_fin: null
+            };
+        }
+    }
+    /**
+     * Busca un contacto por teléfono o lo crea si no existe
+     */
+    async obtenerOCrearContacto(telefono, nombre) {
+        const telNormalizado = this.normalizarTelefono(telefono);
+        const { data: contactoExistente } = await supabase_1.supabase
+            .from('contactos')
+            .select('id, nombre')
+            .eq('telefono', telNormalizado)
+            .single();
+        if (contactoExistente) {
+            if (!contactoExistente.nombre && nombre) {
+                await supabase_1.supabase
+                    .from('contactos')
+                    .update({ nombre, updated_at: new Date().toISOString() })
+                    .eq('id', contactoExistente.id);
+                return { id: contactoExistente.id, nombre };
+            }
+            return { id: contactoExistente.id, nombre: contactoExistente.nombre };
+        }
+        const { data: nuevoContacto, error } = await supabase_1.supabase
+            .from('contactos')
+            .insert({
+            telefono: telNormalizado,
+            nombre: nombre || null,
+            origen: 'whatsapp',
+            tipo: 'lead',
+            activo: true
+        })
+            .select('id, nombre')
+            .single();
+        if (error || !nuevoContacto) {
+            console.error(`❌ Error creando contacto: ${error?.message}`);
+            throw new Error(`No se pudo crear el contacto: ${error?.message}`);
+        }
+        console.log(`✅ Contacto creado: ${telNormalizado} - ${nombre || 'Sin nombre'}`);
+        return { id: nuevoContacto.id, nombre: nuevoContacto.nombre };
+    }
+    /**
+     * Fija una conversación en Ventas, creándola si no existe
+     * CORREGIDO: Incluye telefono, contacto_id, nombre y VENTANAS
+     */
+    async fijarConversacionEnVentas(telefono, motivo, nombreContacto, esCTWA = false) {
         const telNormalizado = this.normalizarTelefono(telefono);
         let conversacionId = null;
+        // Obtener o crear contacto
+        const contacto = await this.obtenerOCrearContacto(telefono, nombreContacto);
+        // Calcular ventanas según el tipo de entrada
+        const ventanas = this.calcularVentanas(esCTWA);
         const { data: conv } = await supabase_1.supabase
             .from('conversaciones')
             .select('id')
@@ -29,53 +105,62 @@ class MenuController {
             await supabase_1.supabase
                 .from('conversaciones')
                 .update({
+                contacto_id: contacto.id,
+                nombre: contacto.nombre,
                 linea_origen: 'ventas',
                 area: 'ventas',
                 desconectado_wsp4: true,
                 inbox_fijo: 'ventas',
-                desconectado_por: 'automatizacion_ctwa',
+                desconectado_por: esCTWA ? 'automatizacion_ctwa' : 'automatizacion_entrada_directa',
                 desconectado_ts: new Date().toISOString(),
                 desconectado_motivo: motivo,
+                // Ventanas
+                ...ventanas,
                 updated_at: new Date().toISOString()
             })
                 .eq('id', conv.id);
-            console.log(`🔄 Conversación fijada en Ventas: ${telNormalizado} - ${motivo}`);
+            console.log(`🔄 Conversación fijada en Ventas: ${telNormalizado} - ${motivo} (${esCTWA ? '72h CTWA' : '24h directa'})`);
         }
         else {
             const { data: newConv, error } = await supabase_1.supabase
                 .from('conversaciones')
                 .insert({
+                telefono: telNormalizado,
+                contacto_id: contacto.id,
+                nombre: contacto.nombre,
                 linea_origen: 'ventas',
                 area: 'ventas',
                 canal: 'whatsapp',
                 estado: 'activa',
                 desconectado_wsp4: true,
                 inbox_fijo: 'ventas',
-                desconectado_por: 'automatizacion_entrada_directa',
+                desconectado_por: esCTWA ? 'automatizacion_ctwa' : 'automatizacion_entrada_directa',
                 desconectado_ts: new Date().toISOString(),
-                desconectado_motivo: motivo
+                desconectado_motivo: motivo,
+                // Ventanas
+                ...ventanas
             })
                 .select()
                 .single();
             if (newConv) {
                 conversacionId = newConv.id;
-                console.log(`✅ Conversación creada y fijada en Ventas: ${telNormalizado} - ${motivo}`);
+                console.log(`✅ Conversación creada en Ventas: ${telNormalizado} - ${motivo} (${esCTWA ? '72h CTWA' : '24h directa'})`);
             }
             else {
                 console.error(`❌ Error creando conversación: ${error?.message}`);
             }
         }
-        // Insertar mensaje de sistema para que el agente vea el contexto
+        // Insertar mensaje de sistema
         if (conversacionId) {
+            const tipoVentana = esCTWA ? '72h Meta Ads' : '24h';
             await supabase_1.supabase.from('mensajes').insert({
                 conversacion_id: conversacionId,
                 mensaje: `🤖 ${motivo}`,
                 tipo: 'text',
                 direccion: 'entrante',
                 remitente_tipo: 'sistema',
-                remitente_nombre: 'Sistema CTWA',
+                remitente_nombre: `Sistema ${esCTWA ? 'CTWA' : 'Ventas'}`,
             });
-            // Actualizar último mensaje de la conversación
             await supabase_1.supabase
                 .from('conversaciones')
                 .update({
@@ -155,14 +240,15 @@ class MenuController {
                 return;
             }
             if (esCtwa) {
-                await this.fijarConversacionEnVentas(body.telefono, `Ingreso CTWA - Curso: ${curso.codigo}`);
+                // CTWA: Ventana 72h
+                await this.fijarConversacionEnVentas(body.telefono, `Ingreso CTWA - Curso: ${curso.codigo}`, body.nombre_contacto, true);
             }
             const sesionData = {
                 telefono: body.telefono,
                 conversacion_id: body.conversacion_id || null,
                 curso_id: curso.id,
                 config_ctwa_id: configCtwaId,
-                estado: 'activo',
+                activo: true,
                 ad_id: body.ad_id || null,
                 ctwa_clid: body.ctwa_clid || null,
                 mensaje_inicial: body.mensaje_inicial || null,
@@ -170,7 +256,7 @@ class MenuController {
                 ultima_actividad: new Date().toISOString()
             };
             await supabase_1.supabase.from('menu_sesiones').upsert(sesionData, { onConflict: 'telefono' });
-            console.log(`📤 Menú enviado: ${body.telefono} → ${curso.codigo}${esCtwa ? ' (CTWA)' : ''}`);
+            console.log(`📤 Menú enviado: ${body.telefono} → ${curso.codigo}${esCtwa ? ' (CTWA 72h)' : ''}`);
             res.json({
                 success: true,
                 data: {
@@ -193,6 +279,7 @@ class MenuController {
                 res.status(400).json({ success: false, error: 'telefono y opcion_id son requeridos' });
                 return;
             }
+            const nombreContacto = body.nombre_contacto;
             const { data: opcion, error: opcionError } = await supabase_1.supabase
                 .from('menu_opciones')
                 .select('*, curso:cursos(*)')
@@ -209,6 +296,8 @@ class MenuController {
                 .eq('telefono', body.telefono)
                 .eq('estado', 'activo')
                 .single();
+            // Determinar si es CTWA basado en la sesión
+            const esCTWA = !!(sesion?.ad_id || sesion?.config_ctwa_id);
             await supabase_1.supabase.from('menu_interacciones').insert({
                 telefono: body.telefono,
                 conversacion_id: body.conversacion_id || sesion?.conversacion_id,
@@ -266,7 +355,8 @@ class MenuController {
                     await WhatsAppService_1.whatsAppService.enviarTexto(body.telefono, mensajeRespuesta);
                     respuestaEnviada = true;
                     derivado = true;
-                    await this.fijarConversacionEnVentas(body.telefono, `Derivación manual - Curso: ${curso.codigo}`);
+                    // Pasar esCTWA para establecer la ventana correcta
+                    await this.fijarConversacionEnVentas(body.telefono, `Derivación manual - Curso: ${curso.codigo}`, nombreContacto, esCTWA);
                     if (sesion) {
                         await supabase_1.supabase.from('menu_sesiones').update({ estado: 'derivado' }).eq('id', sesion.id);
                     }
@@ -276,7 +366,8 @@ class MenuController {
                     await WhatsAppService_1.whatsAppService.enviarTexto(body.telefono, mensajeRespuesta);
                     respuestaEnviada = true;
                     derivado = true;
-                    await this.fijarConversacionEnVentas(body.telefono, `Solicitud inscripción - Curso: ${curso.codigo}`);
+                    // Pasar esCTWA para establecer la ventana correcta
+                    await this.fijarConversacionEnVentas(body.telefono, `Solicitud inscripción - Curso: ${curso.codigo}`, nombreContacto, esCTWA);
                     if (sesion) {
                         await supabase_1.supabase.from('menu_sesiones').update({ estado: 'derivado' }).eq('id', sesion.id);
                     }
@@ -289,7 +380,7 @@ class MenuController {
                 .eq('opcion_id', body.opcion_id)
                 .order('created_at', { ascending: false })
                 .limit(1);
-            console.log(`✅ Selección procesada: ${body.telefono} → ${opcion.emoji || ''} ${opcion.titulo} (${opcion.tipo})${derivado ? ' [DERIVADO A VENTAS]' : ''}`);
+            console.log(`✅ Selección procesada: ${body.telefono} → ${opcion.emoji || ''} ${opcion.titulo} (${opcion.tipo})${derivado ? ` [DERIVADO ${esCTWA ? '72h' : '24h'}]` : ''}`);
             res.json({
                 success: true,
                 data: {
@@ -420,7 +511,8 @@ class MenuController {
                 return;
             }
             await supabase_1.supabase.from('menu_sesiones').upsert({
-                estado: 'activo',
+                telefono: telNormalizado,
+                activo: true,
                 interacciones: 0,
                 ultima_actividad: new Date().toISOString()
             }, { onConflict: 'telefono' });
@@ -434,7 +526,7 @@ class MenuController {
     }
     async listarCursosPorTipo(req, res) {
         try {
-            const { telefono, tipo } = req.body;
+            const { telefono, tipo, nombre_contacto } = req.body;
             if (!telefono || !tipo) {
                 res.status(400).json({ success: false, error: 'Teléfono y tipo son requeridos' });
                 return;
@@ -452,7 +544,8 @@ class MenuController {
                     ? 'No hay cursos disponibles en este momento.\n\nEn breve te atiende uno de nuestros asesores.'
                     : 'No hay especializaciones disponibles en este momento.\n\nEn breve te atiende uno de nuestros asesores.';
                 await WhatsAppService_1.whatsAppService.enviarTexto(telefono, mensaje);
-                await this.fijarConversacionEnVentas(telefono, `Entrada directa - Sin ${tipo}s disponibles`);
+                // Entrada directa: ventana 24h (esCTWA = false)
+                await this.fijarConversacionEnVentas(telefono, `Entrada directa - Sin ${tipo}s disponibles`, nombre_contacto, false);
                 res.json({ success: true, data: { tipo: 'derivado_sin_cursos' } });
                 return;
             }
@@ -490,7 +583,7 @@ class MenuController {
     }
     async procesarSeleccionDirecta(req, res) {
         try {
-            const { telefono, seleccion_id } = req.body;
+            const { telefono, seleccion_id, nombre_contacto } = req.body;
             if (!telefono || !seleccion_id) {
                 res.status(400).json({ success: false, error: 'Teléfono y seleccion_id son requeridos' });
                 return;
@@ -505,8 +598,9 @@ class MenuController {
             }
             if (seleccion_id === 'hablar_agente') {
                 await WhatsAppService_1.whatsAppService.enviarTexto(telefono, '¡Perfecto! 👋\n\nEn breve te atiende uno de nuestros asesores.');
-                await this.fijarConversacionEnVentas(telefono, 'Entrada directa - Solicitó hablar con agente');
-                console.log(`📤 Entrada directa: ${telefono} → Derivado a agente (solicitado)`);
+                // Entrada directa: ventana 24h (esCTWA = false)
+                await this.fijarConversacionEnVentas(telefono, 'Entrada directa - Solicitó hablar con agente', nombre_contacto, false);
+                console.log(`📤 Entrada directa: ${telefono} → Derivado a agente (24h)`);
                 res.json({ success: true, data: { tipo: 'derivado_agente' } });
                 return;
             }
@@ -529,7 +623,8 @@ class MenuController {
                     .order('orden', { ascending: true });
                 if (!opciones || opciones.length === 0) {
                     await WhatsAppService_1.whatsAppService.enviarTexto(telefono, `¡Gracias por tu interés en *${curso.nombre}*! 🎓\n\nEn breve te atiende uno de nuestros asesores.`);
-                    await this.fijarConversacionEnVentas(telefono, `Entrada directa - Curso: ${curso.codigo} (sin menú)`);
+                    // Entrada directa: ventana 24h
+                    await this.fijarConversacionEnVentas(telefono, `Entrada directa - Curso: ${curso.codigo} (sin menú)`, nombre_contacto, false);
                     res.json({ success: true, data: { tipo: 'derivado_sin_menu', curso: curso.codigo } });
                     return;
                 }
@@ -541,7 +636,7 @@ class MenuController {
                 await supabase_1.supabase.from('menu_sesiones').upsert({
                     telefono: this.normalizarTelefono(telefono),
                     curso_id: cursoId,
-                    estado: 'activo',
+                    activo: true,
                     interacciones: 1,
                     ultima_actividad: new Date().toISOString()
                 }, { onConflict: 'telefono' });
@@ -550,6 +645,7 @@ class MenuController {
                 return;
             }
             req.body.opcion_id = seleccion_id;
+            req.body.nombre_contacto = nombre_contacto;
             return this.procesarSeleccion(req, res);
         }
         catch (error) {

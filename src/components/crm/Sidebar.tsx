@@ -1,11 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useCRMStore } from '@/stores/crm-store';
+import { useAuth } from '@/contexts/AuthContext';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
 import { Sun, Moon, Settings, Home, DollarSign, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
@@ -26,13 +26,16 @@ const PAGINAS_EXTRA = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, usuario, sidebarExpandido, toggleSidebar } = useCRMStore();
+  const { user, signOut } = useAuth();
+  const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, sidebarExpandido, toggleSidebar } = useCRMStore();
   const isMainChat = pathname === '/crm';
 
+  // Obtener nombre y email del usuario autenticado
+  const userName = user?.user_metadata?.nombre || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuario';
+  const userEmail = user?.email || 'Sin email';
+
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+    await signOut();
   };
 
   return (
@@ -161,17 +164,34 @@ export default function Sidebar() {
           <Settings size={16} />
           {sidebarExpandido && <span className="text-xs">Ajustes</span>}
         </Link>
+        
+        {/* Botón de Cerrar Sesión */}
+        <button
+          onClick={handleLogout}
+          className={cn(
+            'mx-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center gap-2 group',
+            !sidebarExpandido && 'justify-center'
+          )}
+        >
+          <LogOut size={16} />
+          {sidebarExpandido && <span className="text-xs">Cerrar sesión</span>}
+          {!sidebarExpandido && (
+            <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-slate-900 dark:bg-slate-700 text-white text-[10px] rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              Cerrar sesión
+            </div>
+          )}
+        </button>
       </div>
 
-      {/* Avatar */}
+      {/* Avatar y Usuario */}
       <div className={cn('p-2 border-t border-slate-200 dark:border-slate-800', sidebarExpandido && 'flex items-center gap-2')}>
-        <button onClick={handleLogout} title="Cerrar sesión" className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-medium text-xs flex items-center justify-center hover:opacity-90 transition-opacity flex-shrink-0">
-          {getInitials(usuario?.nombre)}
-        </button>
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-medium text-xs flex items-center justify-center flex-shrink-0">
+          {getInitials(userName)}
+        </div>
         {sidebarExpandido && (
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-slate-800 dark:text-white truncate">{usuario?.nombre || 'Usuario'}</p>
-            <p className="text-[10px] text-slate-500 truncate">{usuario?.email || 'Sin email'}</p>
+            <p className="text-xs font-medium text-slate-800 dark:text-white truncate">{userName}</p>
+            <p className="text-[10px] text-slate-500 truncate">{userEmail}</p>
           </div>
         )}
       </div>

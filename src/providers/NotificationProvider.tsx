@@ -6,7 +6,8 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useCallback, ReactNode, useRef, useState } from 'react';
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { RealtimeChannel } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 import { useNotifications } from '@/hooks/useNotifications';
 
 interface Message {
@@ -28,9 +29,6 @@ interface NotificationContextValue {
   clearUnread: () => void;
   markConversationAsRead: (conversationId: string) => void;
 }
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
@@ -59,7 +57,6 @@ export function NotificationProvider({
     playSound
   } = useNotifications();
 
-  // Leer preferencias de localStorage
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [desktopEnabled, setDesktopEnabled] = useState(true);
 
@@ -72,7 +69,6 @@ export function NotificationProvider({
     }
   }, []);
 
-  // Escuchar cambios en localStorage
   useEffect(() => {
     const handleStorageChange = () => {
       const savedSound = localStorage.getItem('psi_notification_sound');
@@ -82,8 +78,7 @@ export function NotificationProvider({
     };
 
     window.addEventListener('storage', handleStorageChange);
-    
-    // También escuchar cambios locales (mismo tab)
+
     const interval = setInterval(() => {
       const savedSound = localStorage.getItem('psi_notification_sound');
       const savedDesktop = localStorage.getItem('psi_notification_desktop');
@@ -97,7 +92,6 @@ export function NotificationProvider({
     };
   }, []);
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   const getContactInfo = useCallback(async (conversacionId: string): Promise<{ nombre: string; telefono: string } | null> => {
@@ -124,7 +118,7 @@ export function NotificationProvider({
     } catch {
       return null;
     }
-  }, [supabase]);
+  }, []);
 
   const handleNewMessage = useCallback(async (payload: { new: Message }) => {
     const message = payload.new;
@@ -137,12 +131,10 @@ export function NotificationProvider({
 
     incrementUnread();
 
-    // Reproducir sonido solo si está habilitado
     if (soundEnabled) {
       playSound();
     }
 
-    // Mostrar notificación solo si está habilitado Y tiene permisos
     if (desktopEnabled && permissionStatus === 'granted') {
       let body = message.mensaje || '';
       if (body.length > 100) {
@@ -192,11 +184,6 @@ export function NotificationProvider({
   ]);
 
   useEffect(() => {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      console.warn('Supabase credentials not configured for notifications');
-      return;
-    }
-
     channelRef.current = supabase
       .channel('crm-notifications')
       .on(
@@ -217,7 +204,7 @@ export function NotificationProvider({
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [supabase, handleNewMessage]);
+  }, [handleNewMessage]);
 
   useEffect(() => {
     const loadInitialUnreadCount = async () => {
@@ -236,15 +223,13 @@ export function NotificationProvider({
       }
     };
 
-    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-      loadInitialUnreadCount();
-    }
-  }, [supabase, activeInboxes, setUnreadCount]);
+    loadInitialUnreadCount();
+  }, [activeInboxes, setUnreadCount]);
 
   const markConversationAsRead = useCallback(async (conversationId: string) => {
     try {
       await supabase.rpc('marcar_como_leidos', { conv_id: conversationId });
-      
+
       const { count } = await supabase
         .from('conversaciones')
         .select('*', { count: 'exact', head: true })
@@ -257,7 +242,7 @@ export function NotificationProvider({
     } catch (err) {
       console.error('Error marking conversation as read:', err);
     }
-  }, [supabase, activeInboxes, setUnreadCount]);
+  }, [activeInboxes, setUnreadCount]);
 
   const value: NotificationContextValue = {
     permissionStatus,

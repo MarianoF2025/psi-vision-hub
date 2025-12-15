@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Eye, MessageSquare, ChevronRight, Lightbulb, Home, BarChart3, LogIn } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Eye, MessageSquare, ChevronRight, Lightbulb, Home, BarChart3, LogIn, LogOut, User } from 'lucide-react';
 
 const MODULOS = [
   {
@@ -51,6 +52,10 @@ const SIDEBAR_ITEMS = [
 ];
 
 export default function HomePage() {
+  const { user, signOut, loading } = useAuth();
+  
+  const userName = user?.user_metadata?.nombre || user?.user_metadata?.full_name || user?.email?.split('@')[0] || null;
+
   return (
     <div className="min-h-screen flex bg-slate-50">
       {/* Sidebar */}
@@ -83,6 +88,28 @@ export default function HomePage() {
             </Link>
           ))}
         </nav>
+        
+        {/* Usuario en sidebar (si está logueado) */}
+        {user && (
+          <div className="p-3 border-t border-slate-800">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                {userName?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{userName}</p>
+                <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => signOut()}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-red-400 hover:bg-red-500/10 rounded-lg text-sm transition-colors"
+            >
+              <LogOut size={16} />
+              Cerrar sesión
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Main Content */}
@@ -105,9 +132,30 @@ export default function HomePage() {
             <Link href="/crm" className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded-full text-xs font-medium flex items-center gap-1.5 hover:bg-slate-50">
               <MessageSquare size={14} /> CRM
             </Link>
-            <Link href="/login" className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded-full text-xs font-medium flex items-center gap-1.5 hover:bg-slate-50">
-              <LogIn size={14} /> Iniciar sesión
-            </Link>
+            
+            {/* Botón contextual de sesión */}
+            {loading ? (
+              <div className="px-3 py-1.5 border border-slate-200 rounded-full">
+                <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : user ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-medium">
+                  <User size={14} />
+                  {userName}
+                </div>
+                <button
+                  onClick={() => signOut()}
+                  className="px-3 py-1.5 border border-red-300 text-red-600 rounded-full text-xs font-medium flex items-center gap-1.5 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut size={14} /> Salir
+                </button>
+              </div>
+            ) : (
+              <Link href="/login" className="px-3 py-1.5 border border-slate-300 text-slate-700 rounded-full text-xs font-medium flex items-center gap-1.5 hover:bg-slate-50">
+                <LogIn size={14} /> Iniciar sesión
+              </Link>
+            )}
           </div>
         </header>
 

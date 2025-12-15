@@ -3,7 +3,6 @@
 import { useEffect } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import Sidebar from '@/components/crm/Sidebar';
-import AuthProvider from '@/components/crm/AuthProvider';
 
 export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const { darkMode } = useCRMStore();
@@ -17,13 +16,11 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   }, [darkMode]);
 
   return (
-    <AuthProvider>
-      <div className="h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-950">
-        <Sidebar />
-        <main className="flex-1 flex overflow-hidden">
-          {children}
-        </main>
-      </div>
-    </AuthProvider>
+    <div className="h-screen flex overflow-hidden bg-slate-50 dark:bg-slate-950">
+      <Sidebar />
+      <main className="flex-1 flex overflow-hidden">
+        {children}
+      </main>
+    </div>
   );
 }
