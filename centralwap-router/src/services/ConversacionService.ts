@@ -3,6 +3,7 @@
 // Versión 2.5.0 - Agregado buscarPorTelefonoYLinea y renovarVentana24h
 // ===========================================
 import { supabase } from '../config/supabase';
+import { contactoService } from './ContactoService';
 import {
   Conversacion,
   ConversacionInsert,
@@ -248,15 +249,31 @@ export class ConversacionService {
   /**
    * Obtener o crear conversación (upsert manual)
    */
-  async obtenerOCrear(datos: ConversacionInsert): Promise<{ conversacion: Conversacion; esNueva: boolean }> {
+  async obtenerOCrear(datos: ConversacionInsert & { nombre?: string }): Promise<{ conversacion: Conversacion; esNueva: boolean }> {
+    // 0. Buscar o crear contacto
+    const { contacto } = await contactoService.obtenerOCrear({
+      telefono: datos.telefono,
+      nombre: datos.nombre || null,
+      origen: 'whatsapp',
+    });
+
     // 1. Buscar conversación activa existente
     const existente = await this.buscarActivaPorTelefono(datos.telefono);
 
     if (existente) {
-      const actualizada = await this.actualizar(existente.id, {
+      // Vincular contacto si no está vinculado
+      const updateData: Record<string, any> = {
         ultimo_mensaje_at: new Date().toISOString(),
         leida: false,
-      });
+      };
+      
+      if (!existente.contacto_id && contacto) {
+        updateData.contacto_id = contacto.id;
+        updateData.nombre = contacto.nombre;
+        console.log(`[ConversacionService] Vinculando contacto ${contacto.id} a conversación ${existente.id}`);
+      }
+
+      const actualizada = await this.actualizar(existente.id, updateData);
       return { conversacion: actualizada, esNueva: false };
     }
 
@@ -265,19 +282,36 @@ export class ConversacionService {
 
     if (previa) {
       console.log(`[ConversacionService] Reactivando conversación expirada ${previa.id} para ${datos.telefono}`);
+      
+      // Vincular contacto si no está vinculado
+      if (!previa.contacto_id && contacto) {
+        await supabase
+          .from('conversaciones')
+          .update({ contacto_id: contacto.id, nombre: contacto.nombre })
+          .eq('id', previa.id);
+      }
+
       const reactivada = await this.reactivar(previa.id);
       return { conversacion: reactivada, esNueva: false };
     }
 
-    // 3. Crear nueva
+    // 3. Crear nueva con contacto vinculado
     console.log(`[ConversacionService] Creando nueva conversación para ${datos.telefono}`);
-    const nueva = await this.crear(datos);
+    const nueva = await this.crear({
+      ...datos,
+      contacto_id: contacto?.id || null,
+    });
+
+    // Actualizar nombre en conversación
+    if (contacto?.nombre) {
+      await supabase
+        .from('conversaciones')
+        .update({ nombre: contacto.nombre })
+        .eq('id', nueva.id);
+    }
+
     return { conversacion: nueva, esNueva: true };
   }
-
-  /**
-   * Actualizar estado del router
-   */
   async actualizarEstadoRouter(
     id: string,
     routerEstado: RouterEstado,
