@@ -1,6 +1,6 @@
 // ===========================================
 // PSI ROUTER - SERVIDOR PRINCIPAL
-// Versión 3.4.0 - Endpoints líneas secundarias + mensaje educativo
+// Versión 4.0.0 - Menús Interactivos
 // ===========================================
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
@@ -11,10 +11,16 @@ import { verificarConexion, supabase } from './config/supabase';
 import { WhatsAppIncoming, MensajeInsert } from './types/database';
 import { conversacionService } from './services/ConversacionService';
 import { webhookService } from './services/WebhookService';
+import { interactiveService } from './services/InteractiveService';
+import { interactiveMenuProcessor } from './core/InteractiveMenuProcessor';
+import { obtenerMenuInteractivo, MENU_PRINCIPAL_INTERACTIVO, obtenerAccion } from './config/interactive-menus';
 
 // Configuración
 const PORT = process.env.PORT || 3002;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// URL de psi-automations para inscripciones
+const PSI_AUTOMATIONS_URL = process.env.PSI_AUTOMATIONS_URL || 'http://localhost:3003';
 
 // Crear aplicación Express
 const app = express();
@@ -181,19 +187,13 @@ function normalizarEvolutionPayload(body: any, linea: string): {
     const key = data.key || {};
     const message = data.message || {};
 
-    // Extraer teléfono con jerarquía correcta
     let telefonoRaw: string | null = null;
 
-    // 1. remoteJidAlt con @s.whatsapp.net
     if (key.remoteJidAlt && key.remoteJidAlt.includes('@s.whatsapp.net')) {
       telefonoRaw = key.remoteJidAlt;
-    }
-    // 2. sender con @s.whatsapp.net
-    else if (data.sender && data.sender.includes('@s.whatsapp.net')) {
+    } else if (data.sender && data.sender.includes('@s.whatsapp.net')) {
       telefonoRaw = data.sender;
-    }
-    // 3. remoteJid con @s.whatsapp.net (NO @lid)
-    else if (key.remoteJid && key.remoteJid.includes('@s.whatsapp.net')) {
+    } else if (key.remoteJid && key.remoteJid.includes('@s.whatsapp.net')) {
       telefonoRaw = key.remoteJid;
     }
 
@@ -206,7 +206,6 @@ function normalizarEvolutionPayload(body: any, linea: string): {
     const nombre = data.pushName || '';
     const messageId = key.id || '';
 
-    // Extraer mensaje
     let mensaje = '';
     let mediaType: string | undefined;
     let mediaUrl: string | undefined;
@@ -236,7 +235,6 @@ function normalizarEvolutionPayload(body: any, linea: string): {
       mensaje = '[Sticker]';
     }
 
-    // Context (mensaje citado)
     let contextMessageId: string | undefined;
     if (message.extendedTextMessage?.contextInfo?.stanzaId) {
       contextMessageId = message.extendedTextMessage.contextInfo.stanzaId;
@@ -274,9 +272,11 @@ function normalizarCloudAPIPayload(body: any): {
     let mediaType: string | undefined;
     let mediaUrl: string | undefined;
     let contextMessageId: string | undefined;
+
     if (msg.context?.id) {
       contextMessageId = msg.context.id;
     }
+
     if (tipo === 'text' && msg.text) {
       mensaje = msg.text.body || '';
     } else if (tipo === 'image' && msg.image) {
@@ -295,10 +295,11 @@ function normalizarCloudAPIPayload(body: any): {
       mediaType = 'sticker';
       mensaje = '[Sticker]';
     }
-    // Si viene media_url directamente (desde psi-automations), usarlo
+
     if (body.media_url) {
       mediaUrl = body.media_url;
     }
+
     return { telefono, mensaje, nombre, messageId, mediaType, mediaUrl, contextMessageId };
   } catch (error) {
     console.error('[Ventas] Error normalizando payload:', error);
@@ -324,13 +325,11 @@ async function procesarMensajeLineaSecundaria(
   try {
     console.log(`[${linea}] Procesando mensaje de ${payload.telefono}`);
 
-    // 1. Buscar conversación existente para esta línea
     const conversacionExistente = await conversacionService.buscarPorTelefonoYLinea(
       payload.telefono,
       linea
     );
 
-    // 2. Determinar si debemos enviar mensaje educativo
     let enviarEducativo = (linea !== 'ventas');
 
     if (conversacionExistente) {
@@ -342,15 +341,13 @@ async function procesarMensajeLineaSecundaria(
       if (iniciadoPorAgente && ventanaActiva) {
         enviarEducativo = false;
         console.log(`[${linea}] Conversación iniciada por agente, ventana activa. NO enviar educativo.`);
-        // Renovar ventana 24h
         await conversacionService.renovarVentana24h(conversacionExistente.id);
       }
     }
 
-    // 3. Si va a enviar educativo, NO crear conversación - solo enviar y salir
     if (enviarEducativo) {
       console.log(`[${linea}] Enviando mensaje educativo a ${payload.telefono} (sin crear conversación)`);
-      
+
       await webhookService.enviarMensajeViaWebhook({
         linea: linea,
         telefono: payload.telefono,
@@ -363,7 +360,6 @@ async function procesarMensajeLineaSecundaria(
       return { success: true, action: 'mensaje_educativo', enviado_educativo: true };
     }
 
-    // 4. Solo si NO envía educativo: Obtener o crear conversación
     const { conversacion } = await conversacionService.obtenerOCrear({
       telefono: payload.telefono,
       linea_origen: linea,
@@ -372,7 +368,6 @@ async function procesarMensajeLineaSecundaria(
       iniciado_por: 'usuario',
     });
 
-    // 5. Guardar mensaje entrante
     const mensajeData: MensajeInsert = {
       conversacion_id: conversacion.id,
       mensaje: payload.mensaje,
@@ -386,8 +381,6 @@ async function procesarMensajeLineaSecundaria(
     };
 
     await supabase.from('mensajes').insert(mensajeData);
-
-    // 6. Actualizar último mensaje
     await conversacionService.actualizarUltimoMensaje(conversacion.id, payload.mensaje);
 
     return { success: true, action: 'mensaje_guardado', enviado_educativo: false };
@@ -395,6 +388,159 @@ async function procesarMensajeLineaSecundaria(
   } catch (error) {
     console.error(`[${linea}] Error procesando mensaje:`, error);
     return { success: false, action: 'error', enviado_educativo: false };
+  }
+}
+
+// ===========================================
+// PROCESAR MENÚ INTERACTIVO WSP4
+// ===========================================
+async function procesarMenuInteractivo(
+  telefono: string,
+  listReplyId: string,
+  nombreContacto?: string
+): Promise<{ success: boolean; action: string; ticketId?: string }> {
+  try {
+    console.log(`[WSP4-Interactive] Procesando selección: ${listReplyId} de ${telefono}`);
+
+    const resultado = interactiveMenuProcessor.procesar({
+      listReplyId,
+      telefono,
+    });
+
+    // === MOSTRAR MENÚ/SUBMENÚ ===
+    if (resultado.accion === 'mostrar_menu' && resultado.menu) {
+      console.log(`[WSP4-Interactive] Enviando menú: ${resultado.menuId}`);
+      await interactiveService.enviarListaInteractiva(telefono, resultado.menu);
+
+      // Actualizar estado en conversación
+      const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+      const { data: conv } = await supabase
+        .from('conversaciones')
+        .select('id')
+        .eq('telefono', telNormalizado)
+        .eq('linea_origen', 'wsp4')
+        .single();
+
+      if (conv) {
+        await supabase
+          .from('conversaciones')
+          .update({
+            menu_actual: resultado.menuId,
+            router_estado: resultado.menuId === 'principal' ? 'menu_principal' : `submenu_${resultado.menuId}`
+          })
+          .eq('id', conv.id);
+      }
+
+      return { success: true, action: 'menu_enviado' };
+    }
+
+    // === DERIVAR A ÁREA ===
+    if (resultado.accion === 'derivar' && resultado.derivacion) {
+      console.log(`[WSP4-Interactive] Derivando a: ${resultado.derivacion.area} - ${resultado.derivacion.subetiqueta}`);
+
+      const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+      
+      // Buscar o crear conversación
+      const { conversacion } = await conversacionService.obtenerOCrear({
+        telefono: telNormalizado,
+        linea_origen: 'wsp4',
+        area: resultado.derivacion.area,
+        estado: 'derivada',
+        iniciado_por: 'usuario',
+      });
+
+      // Generar ticket_id único
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+      const ticketId = `TKT-${dateStr}-${randomSuffix}`;
+
+      // Actualizar conversación
+      await supabase
+        .from('conversaciones')
+        .update({
+          area: resultado.derivacion.area,
+          estado: 'derivada',
+          router_estado: 'derivado',
+          desconectado_motivo: resultado.derivacion.mensaje_contexto,
+        })
+        .eq('id', conversacion.id);
+
+      // Insertar mensaje de sistema para contexto del agente
+      await supabase.from('mensajes').insert({
+        conversacion_id: conversacion.id,
+        mensaje: `🤖 WSP4 → ${resultado.derivacion.area} → ${resultado.derivacion.mensaje_contexto}`,
+        tipo: 'text',
+        direccion: 'entrante',
+        remitente_tipo: 'sistema',
+        remitente_nombre: 'Router WSP4',
+      });
+
+      // Crear ticket
+      const { data: ticketData } = await supabase.from('tickets').insert({
+        conversacion_id: conversacion.id,
+        telefono: telNormalizado,
+        ticket_id: ticketId,
+        area: resultado.derivacion.area,
+        estado: 'abierto',
+        prioridad: 'normal',
+        area_origen: 'wsp4',
+        area_destino: resultado.derivacion.area,
+        subetiqueta: resultado.derivacion.subetiqueta,
+        metadata: {
+          menu_option: listReplyId,
+          mensaje_contexto: resultado.derivacion.mensaje_contexto,
+          nombre_contacto: nombreContacto,
+        },
+      }).select('id').single();
+
+      // Crear registro de derivación
+      await supabase.from('derivaciones').insert({
+        conversacion_id: conversacion.id,
+        telefono: telNormalizado,
+        area_origen: 'wsp4',
+        area_destino: resultado.derivacion.area,
+        motivo: resultado.derivacion.mensaje_contexto,
+        menu_option_selected: listReplyId,
+        subetiqueta: resultado.derivacion.subetiqueta,
+        ticket_id: ticketData?.id,
+        status: 'completada',
+        ts_derivacion: now.toISOString(),
+        sistema_version: '4.0.0',
+        nodo_procesador: 'centralwap-router',
+      });
+
+      // Crear audit_log
+      await supabase.from('audit_log').insert({
+        accion: 'derivacion_menu_interactivo',
+        tabla_afectada: 'conversaciones',
+        registro_id: conversacion.id,
+        valores_nuevos: {
+          area: resultado.derivacion.area,
+          estado: 'derivada',
+          router_estado: 'derivado',
+          ticket_id: ticketId,
+          subetiqueta: resultado.derivacion.subetiqueta,
+        },
+        motivo: `Derivación desde menú interactivo: ${resultado.derivacion.mensaje_contexto}`,
+        origen: 'router-wsp4',
+        detalles: `Usuario seleccionó: ${listReplyId} → ${resultado.derivacion.area}`,
+      });
+
+      // Enviar confirmación al usuario
+      if (resultado.mensajeConfirmacion) {
+        await interactiveService.enviarTexto(telefono, resultado.mensajeConfirmacion);
+      }
+
+      console.log(`[WSP4-Interactive] ✅ Derivación completada: ${ticketId}`);
+      return { success: true, action: 'derivado', ticketId };
+    }
+
+    return { success: false, action: 'unknown' };
+
+  } catch (error) {
+    console.error('[WSP4-Interactive] Error:', error);
+    return { success: false, action: 'error' };
   }
 }
 
@@ -408,8 +554,9 @@ app.get('/health', async (req: Request, res: Response) => {
     const health = await routerController.health();
     res.json({
       ...health,
-      version: '3.4.0',
+      version: '4.0.0',
       environment: NODE_ENV,
+      features: ['interactive_menus', 'list_reply', 'button_reply'],
       endpoints: [
         '/webhook/whatsapp/wsp4',
         '/webhook/whatsapp/ventas',
@@ -431,6 +578,7 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
     const body = req.body;
 
     let mensajeTexto = '';
+    console.log("[WSP4] Body recibido:", JSON.stringify(body).substring(0, 500));
     let mediaType: string | undefined;
     let mediaId: string | undefined;
     let mediaUrl: string | undefined;
@@ -440,6 +588,8 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
     let reactionMessageId: string | undefined;
     let reactionEmoji: string | undefined;
     let contextMessageId: string | undefined;
+    let listReplyId: string | undefined;
+    let buttonReplyId: string | undefined;
 
     if (body.messages && Array.isArray(body.messages) && body.messages[0]) {
       const msg = body.messages[0];
@@ -467,12 +617,12 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
         mediaType = 'video';
         mediaId = msg.video.id;
         mensajeTexto = msg.video.caption || '[Video]';
-        mediaUrl = body.media_url || body.mediaUrl; 
+        mediaUrl = body.media_url || body.mediaUrl;
       } else if (tipo === 'document' && msg.document) {
         mediaType = 'document';
         mediaId = msg.document.id;
         mensajeTexto = msg.document.filename || '[Documento]';
-        mediaUrl = body.media_url || body.mediaUrl; 
+        mediaUrl = body.media_url || body.mediaUrl;
       } else if (tipo === 'sticker' && msg.sticker) {
         mediaType = 'sticker';
         mediaId = msg.sticker.id;
@@ -488,6 +638,19 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       } else if (tipo === 'contacts' && msg.contacts) {
         mediaType = 'contact';
         mensajeTexto = '[Contacto compartido]';
+      } else if (tipo === 'interactive' && msg.interactive) {
+        // Respuesta de lista o botón interactivo
+        if (msg.interactive.type === 'list_reply' && msg.interactive.list_reply) {
+          mediaType = 'list_reply';
+          listReplyId = msg.interactive.list_reply.id;
+          mensajeTexto = msg.interactive.list_reply.title || listReplyId;
+          console.log(`[WSP4] List reply recibido: ${listReplyId}`);
+        } else if (msg.interactive.type === 'button_reply' && msg.interactive.button_reply) {
+          mediaType = 'button_reply';
+          buttonReplyId = msg.interactive.button_reply.id;
+          mensajeTexto = msg.interactive.button_reply.title || buttonReplyId;
+          console.log(`[WSP4] Button reply recibido: ${buttonReplyId}`);
+        }
       }
     }
 
@@ -507,6 +670,30 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       return;
     }
 
+    // Procesar respuestas de listas interactivas
+    if (mediaType === 'list_reply' && listReplyId) {
+      const telefono = telefonoExtraido || body.telefono;
+      if (!telefono) {
+        res.status(400).json({ success: false, error: 'Falta teléfono' });
+        return;
+      }
+      const resultado = await procesarMenuInteractivo(telefono, listReplyId, nombreContacto);
+      res.json(resultado);
+      return;
+    }
+
+    // Procesar respuestas de botones interactivos
+    if (mediaType === 'button_reply' && buttonReplyId) {
+      const telefono = telefonoExtraido || body.telefono;
+      if (!telefono) {
+        res.status(400).json({ success: false, error: 'Falta teléfono' });
+        return;
+      }
+      const resultado = await procesarMenuInteractivo(telefono, buttonReplyId, nombreContacto);
+      res.json(resultado);
+      return;
+    }
+
     const telefono = telefonoExtraido || body.telefono || body.phone || body.from || body.remoteJid;
     const mensaje = mensajeTexto || body.mensaje || body.message || body.text || body.body || body.contenido || '';
 
@@ -520,6 +707,48 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       return;
     }
 
+    // Verificar si es comando MENU para enviar menú interactivo
+    const comando = interactiveMenuProcessor.esComandoEspecial(mensaje);
+    if (comando === 'MENU' || comando === 'VOLVER') {
+      console.log(`[WSP4] Comando ${comando} recibido, enviando menú interactivo`);
+      await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+      res.json({ success: true, action: 'menu_enviado' });
+      return;
+    }
+
+    // Verificar si es conversación nueva (sin estado de router) para enviar menú
+    const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+    const { data: convExistente } = await supabase
+      .from('conversaciones')
+      .select('id, router_estado, estado')
+      .eq('telefono', telNormalizado)
+      .eq('linea_origen', 'wsp4')
+      .single();
+
+    // Si no hay conversación o está en estado inicial, enviar menú interactivo
+    if (!convExistente || convExistente.router_estado === 'menu_principal' || !convExistente.router_estado) {
+      // Solo enviar menú si NO está derivado
+      if (!convExistente || convExistente.estado !== 'derivada') {
+        console.log(`[WSP4] Conversación nueva o en menú, enviando menú interactivo`);
+        await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+        
+        // Crear o actualizar conversación
+        if (!convExistente) {
+          await conversacionService.obtenerOCrear({
+            telefono: telNormalizado,
+            linea_origen: 'wsp4',
+            area: 'wsp4',
+            estado: 'activa',
+            iniciado_por: 'usuario',
+          });
+        }
+        
+        res.json({ success: true, action: 'menu_enviado' });
+        return;
+      }
+    }
+
+    // Si está derivada, procesar normalmente (el agente verá el mensaje)
     const incoming: WhatsAppIncoming = {
       telefono: telefono,
       mensaje: mensaje,
@@ -553,21 +782,19 @@ app.post('/webhook/whatsapp/ventas', async (req: Request, res: Response) => {
     const body = req.body;
     const messages = body.messages || [];
     const msg = messages[0];
-    
-    // Detectar si es reacción
+
     if (msg && msg.type === 'reaction' && msg.reaction) {
       const telefono = '+' + msg.from;
       const emoji = msg.reaction.emoji || '';
       const reactionMessageId = msg.reaction.message_id;
-      
+
       if (reactionMessageId) {
         const resultado = await procesarReaccionEntrante(telefono, emoji, reactionMessageId);
         res.json(resultado);
         return;
       }
     }
-    
-    // Procesar mensaje normal
+
     const payload = normalizarCloudAPIPayload(body);
     if (!payload || !payload.telefono || !payload.mensaje) {
       res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
@@ -586,10 +813,8 @@ app.post('/webhook/whatsapp/ventas', async (req: Request, res: Response) => {
 // ===========================================
 app.post('/webhook/evolution/administracion', async (req: Request, res: Response) => {
   try {
-    // Detectar si viene normalizado (desde n8n) o crudo (desde Evolution directo)
     let payload;
     if (req.body.telefono && req.body.mensaje !== undefined) {
-      // Ya viene normalizado desde n8n
       payload = {
         telefono: req.body.telefono,
         mensaje: req.body.mensaje,
@@ -600,7 +825,6 @@ app.post('/webhook/evolution/administracion', async (req: Request, res: Response
         contextMessageId: req.body.contextMessageId,
       };
     } else {
-      // Viene crudo desde Evolution API
       payload = normalizarEvolutionPayload(req.body, 'administracion');
     }
     if (!payload || !payload.telefono || !payload.mensaje) {
@@ -614,6 +838,7 @@ app.post('/webhook/evolution/administracion', async (req: Request, res: Response
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
+
 // ===========================================
 // WEBHOOK ALUMNOS (EVOLUTION API)
 // ===========================================
@@ -644,6 +869,7 @@ app.post('/webhook/evolution/alumnos', async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
+
 // ===========================================
 // WEBHOOK COMUNIDAD (EVOLUTION API)
 // ===========================================
@@ -674,6 +900,7 @@ app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => 
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
+
 // ===========================================
 // WEBHOOK EVOLUTION GENÉRICO (LEGACY)
 // ===========================================
@@ -768,7 +995,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // ===========================================
 async function iniciar() {
   console.log('='.repeat(50));
-  console.log('PSI ROUTER v3.4.0 - Líneas secundarias');
+  console.log('PSI ROUTER v4.0.0 - Menús Interactivos');
   console.log('='.repeat(50));
 
   console.log('[Startup] Verificando conexión a Supabase...');
@@ -782,6 +1009,7 @@ async function iniciar() {
   app.listen(PORT, () => {
     console.log(`[Startup] ✅ Servidor iniciado en puerto ${PORT}`);
     console.log(`[Startup] Ambiente: ${NODE_ENV}`);
+    console.log(`[Startup] Features: Menús Interactivos (listas y botones)`);
     console.log(`[Startup] Endpoints:`);
     console.log(`  - /webhook/whatsapp/wsp4 (Router principal)`);
     console.log(`  - /webhook/whatsapp/ventas (Cloud API)`);
