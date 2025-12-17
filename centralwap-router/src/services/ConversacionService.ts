@@ -1,6 +1,6 @@
 // ===========================================
 // CONVERSACION SERVICE - Esquema Real Supabase
-// Versión 2.5.0 - Agregado buscarPorTelefonoYLinea y renovarVentana24h
+// Versión 2.6.0 - Agregado buscarDesconectadaPorTelefonoEInbox
 // ===========================================
 import { supabase } from '../config/supabase';
 import { contactoService } from './ContactoService';
@@ -86,7 +86,7 @@ export class ConversacionService {
    * Usado para líneas secundarias (Admin/Alumnos/Comunidad/Ventas)
    */
   async buscarPorTelefonoYLinea(
-    telefono: string, 
+    telefono: string,
     linea: string
   ): Promise<Conversacion | null> {
     try {
@@ -106,6 +106,37 @@ export class ConversacionService {
       return data || null;
     } catch (error) {
       console.error('[ConversacionService] Error en buscarPorTelefonoYLinea:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Buscar conversación desconectada por teléfono e inbox_fijo
+   * Usado para detectar conversaciones que fueron desconectadas del Router WSP4
+   */
+  async buscarDesconectadaPorTelefonoEInbox(
+    telefono: string,
+    inbox: string
+  ): Promise<Conversacion | null> {
+    try {
+      const { data, error } = await supabase
+        .from('conversaciones')
+        .select('*')
+        .eq('telefono', telefono)
+        .eq('desconectado_wsp4', true)
+        .eq('inbox_fijo', inbox)
+        .neq('estado', 'cerrada')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('[ConversacionService] Error buscando desconectada:', error);
+      }
+
+      return data || null;
+    } catch (error) {
+      console.error('[ConversacionService] Error en buscarDesconectadaPorTelefonoEInbox:', error);
       return null;
     }
   }
@@ -266,7 +297,7 @@ export class ConversacionService {
         ultimo_mensaje_at: new Date().toISOString(),
         leida: false,
       };
-      
+
       if (!existente.contacto_id && contacto) {
         updateData.contacto_id = contacto.id;
         updateData.nombre = contacto.nombre;
@@ -282,7 +313,7 @@ export class ConversacionService {
 
     if (previa) {
       console.log(`[ConversacionService] Reactivando conversación expirada ${previa.id} para ${datos.telefono}`);
-      
+
       // Vincular contacto si no está vinculado
       if (!previa.contacto_id && contacto) {
         await supabase
@@ -312,6 +343,7 @@ export class ConversacionService {
 
     return { conversacion: nueva, esNueva: true };
   }
+
   async actualizarEstadoRouter(
     id: string,
     routerEstado: RouterEstado,

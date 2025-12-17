@@ -494,16 +494,6 @@ export default function InfoContactoPanel() {
                 </div>
               )}
             </div>
-
-            {/* Desconectar */}
-            {!conversacionActual.desconectado_wsp4 && (
-              <button 
-                onClick={desconectar} 
-                className="w-full py-1.5 border border-red-300 text-red-500 text-[10px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center justify-center gap-1"
-              >
-                <Unlink size={12} /> Desconectar del Router
-              </button>
-            )}
           </>
         )}
       </div>

@@ -10,7 +10,7 @@ const WEBHOOKS: Record<string, string> = {
   wsp4: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_CRM || '',
   ventas: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1 || '',
   alumnos: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS || '',
-  admin: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION || '',
+  administracion: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION || '',
   comunidad: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD || '',
 };
 

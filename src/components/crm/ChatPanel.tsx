@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { type Mensaje } from '@/types/crm';
 import { cn, formatMessageTime, getInitials } from '@/lib/utils';
 import { LinkPreview, extractUrls } from './LinkPreview';
-import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download } from 'lucide-react';
+import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle } from 'lucide-react';
 
 interface RespuestaRapida { id: string; atajo: string; titulo: string; contenido: string; }
 interface ArchivoSeleccionado { file: File; preview: string | null; tipo: 'image' | 'video' | 'document' | 'audio'; }
@@ -66,7 +66,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function ChatPanel() {
-  const { conversacionActual, panelInfoAbierto, togglePanelInfo, mensajeEnRespuesta, setMensajeEnRespuesta } = useCRMStore();
+  const { conversacionActual, panelInfoAbierto, togglePanelInfo, mensajeEnRespuesta, setMensajeEnRespuesta, setConversacionActual } = useCRMStore();
   const { user } = useAuth();
   const userId = user?.id || null;
   const [mensajes, setMensajes] = useState<MensajeCompleto[]>([]);
@@ -102,7 +102,42 @@ export default function ChatPanel() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiContainerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Desconectar del Router
+  const desconectar = async () => {
+    if (!conversacionActual) return;
+    if (confirm('¿Desconectar del Router? El contacto ya no pasará por el menú automático.')) {
+      await supabase.from('conversaciones').update({
+        desconectado_wsp4: true,
+        inbox_fijo: conversacionActual.area
+      }).eq('id', conversacionActual.id);
+      setConversacionActual({
+        ...conversacionActual,
+        desconectado_wsp4: true,
+        inbox_fijo: conversacionActual.area
+      });
+    }
+  };
+
+  // Fin de Conversación (resetear desconexión)
+  const finConversacion = async () => {
+    if (!conversacionActual) return;
+    if (confirm('¿Finalizar conversación? El contacto volverá a ver el menú/mensaje educativo si escribe de nuevo.')) {
+      await supabase.from('conversaciones').update({
+        desconectado_wsp4: false,
+        inbox_fijo: undefined,
+        estado: 'cerrada'
+      }).eq('id', conversacionActual.id);
+      setConversacionActual({
+        ...conversacionActual,
+        desconectado_wsp4: false,
+        inbox_fijo: undefined,
+        estado: 'cerrada'
+      });
+    }
+  };
+
+    const menuRef = useRef<HTMLDivElement>(null);
 
   const insertarEmoji = (emoji: string) => {
     const textarea = textareaRef.current;
@@ -635,6 +670,8 @@ export default function ChatPanel() {
             <div className="flex items-center gap-0.5">
               <button className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><Search size={16} /></button>
               <button onClick={togglePanelInfo} className={cn('p-1.5 rounded-md transition-colors', panelInfoAbierto ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500')}><User size={16} /></button>
+              {!conversacionActual.desconectado_wsp4 && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
+              {conversacionActual.desconectado_wsp4 && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
               <button className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><MoreVertical size={16} /></button>
             </div>
           </>

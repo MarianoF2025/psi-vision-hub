@@ -322,13 +322,29 @@ async function procesarMensajeLineaSecundaria(
   try {
     console.log(`[${linea}] Procesando mensaje de ${payload.telefono}`);
 
+    // 1. Buscar conversación existente por línea origen
     const conversacionExistente = await conversacionService.buscarPorTelefonoYLinea(
       payload.telefono,
       linea
     );
 
-    let enviarEducativo = (linea !== 'ventas');
+    // 2. Buscar conversación desconectada (viene de WSP4 pero está fijada en esta línea)
+    const conversacionDesconectada = await conversacionService.buscarDesconectadaPorTelefonoEInbox(
+      payload.telefono,
+      linea
+    );
 
+    let enviarEducativo = (linea !== 'ventas');
+    let conversacionAUsar: any = null;
+
+    // 3. Si hay conversación desconectada, usarla y NO enviar educativo
+    if (conversacionDesconectada) {
+      enviarEducativo = false;
+      conversacionAUsar = conversacionDesconectada;
+      console.log(`[${linea}] Conversación desconectada encontrada (${conversacionDesconectada.id}). Usando para guardar mensaje.`);
+    }
+
+    // 4. Si hay conversación existente con ventana activa, NO enviar educativo
     if (conversacionExistente) {
       const iniciadoPorAgente = conversacionExistente.iniciado_por === 'agente';
       const ventanaActiva = conversacionExistente.ventana_24h_activa &&
@@ -337,11 +353,13 @@ async function procesarMensajeLineaSecundaria(
 
       if (iniciadoPorAgente && ventanaActiva) {
         enviarEducativo = false;
+        conversacionAUsar = conversacionExistente;
         console.log(`[${linea}] Conversación iniciada por agente, ventana activa. NO enviar educativo.`);
         await conversacionService.renovarVentana24h(conversacionExistente.id);
       }
     }
 
+    // 5. Enviar educativo si corresponde
     if (enviarEducativo) {
       console.log(`[${linea}] Enviando mensaje educativo a ${payload.telefono} (sin crear conversación)`);
 
@@ -357,16 +375,21 @@ async function procesarMensajeLineaSecundaria(
       return { success: true, action: 'mensaje_educativo', enviado_educativo: true };
     }
 
-    const { conversacion } = await conversacionService.obtenerOCrear({
-      telefono: payload.telefono,
-      linea_origen: linea,
-      area: linea,
-      estado: 'activa',
-      iniciado_por: 'usuario',
-    });
+    // 6. Obtener conversación a usar (desconectada, existente, o crear nueva)
+    if (!conversacionAUsar) {
+      const { conversacion } = await conversacionService.obtenerOCrear({
+        telefono: payload.telefono,
+        linea_origen: linea,
+        area: linea,
+        estado: 'activa',
+        iniciado_por: 'usuario',
+      });
+      conversacionAUsar = conversacion;
+    }
 
+    // 7. Guardar mensaje
     const mensajeData: MensajeInsert = {
-      conversacion_id: conversacion.id,
+      conversacion_id: conversacionAUsar.id,
       mensaje: payload.mensaje,
       tipo: payload.mediaType || 'text',
       direccion: 'entrante',
@@ -378,7 +401,7 @@ async function procesarMensajeLineaSecundaria(
     };
 
     await supabase.from('mensajes').insert(mensajeData);
-    await conversacionService.actualizarUltimoMensaje(conversacion.id, payload.mensaje);
+    await conversacionService.actualizarUltimoMensaje(conversacionAUsar.id, payload.mensaje);
 
     return { success: true, action: 'mensaje_guardado', enviado_educativo: false };
 
