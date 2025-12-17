@@ -37,16 +37,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = getSupabaseBrowser();
 
   const loadProfile = useCallback(async (userId: string, userEmail: string) => {
-    // No usamos tabla profiles, creamos datos desde auth.users
-    const profileData = {
-      id: userId,
-      email: userEmail,
-      nombre: userEmail?.split('@')[0] || 'Usuario',
-    };
-    setProfile(profileData);
-    setUsuario(profileData);
-    return;
-    // --- Código original comentado abajo ---
     try {
       const { data } = await supabase
         .from('profiles')
