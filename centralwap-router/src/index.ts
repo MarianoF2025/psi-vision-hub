@@ -1,6 +1,6 @@
 // ===========================================
 // PSI ROUTER - SERVIDOR PRINCIPAL
-// Versión 4.0.0 - Menús Interactivos
+// Versión 4.2.0 - Solo menú interactivo (sin menú numérico)
 // ===========================================
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
@@ -18,9 +18,6 @@ import { obtenerMenuInteractivo, MENU_PRINCIPAL_INTERACTIVO, obtenerAccion } fro
 // Configuración
 const PORT = process.env.PORT || 3002;
 const NODE_ENV = process.env.NODE_ENV || 'development';
-
-// URL de psi-automations para inscripciones
-const PSI_AUTOMATIONS_URL = process.env.PSI_AUTOMATIONS_URL || 'http://localhost:3003';
 
 // Crear aplicación Express
 const app = express();
@@ -439,7 +436,7 @@ async function procesarMenuInteractivo(
       console.log(`[WSP4-Interactive] Derivando a: ${resultado.derivacion.area} - ${resultado.derivacion.subetiqueta}`);
 
       const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
-      
+
       // Buscar o crear conversación
       const { conversacion } = await conversacionService.obtenerOCrear({
         telefono: telNormalizado,
@@ -506,7 +503,7 @@ async function procesarMenuInteractivo(
         ticket_id: ticketData?.id,
         status: 'completada',
         ts_derivacion: now.toISOString(),
-        sistema_version: '4.0.0',
+        sistema_version: '4.2.0',
         nodo_procesador: 'centralwap-router',
       });
 
@@ -545,6 +542,40 @@ async function procesarMenuInteractivo(
 }
 
 // ===========================================
+// GUARDAR MENSAJE SIMPLE (sin procesar menú)
+// ===========================================
+async function guardarMensajeSimple(
+  convId: string,
+  mensaje: string,
+  nombreContacto?: string,
+  mediaType?: string,
+  mediaUrl?: string,
+  wamid?: string,
+  contextMessageId?: string
+): Promise<void> {
+  await supabase.from('mensajes').insert({
+    conversacion_id: convId,
+    mensaje: mensaje,
+    tipo: mediaType || 'text',
+    direccion: 'entrante',
+    remitente_tipo: 'contacto',
+    remitente_nombre: nombreContacto,
+    media_url: mediaUrl,
+    media_type: mediaType,
+    whatsapp_message_id: wamid,
+    whatsapp_context_id: contextMessageId,
+  });
+
+  await supabase
+    .from('conversaciones')
+    .update({
+      ultimo_mensaje: mensaje,
+      ts_ultimo_mensaje: new Date().toISOString(),
+    })
+    .eq('id', convId);
+}
+
+// ===========================================
 // RUTAS
 // ===========================================
 
@@ -554,9 +585,9 @@ app.get('/health', async (req: Request, res: Response) => {
     const health = await routerController.health();
     res.json({
       ...health,
-      version: '4.0.0',
+      version: '4.2.0',
       environment: NODE_ENV,
-      features: ['interactive_menus', 'list_reply', 'button_reply'],
+      features: ['interactive_menus_only', 'no_numeric_menu'],
       endpoints: [
         '/webhook/whatsapp/wsp4',
         '/webhook/whatsapp/ventas',
@@ -639,7 +670,6 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
         mediaType = 'contact';
         mensajeTexto = '[Contacto compartido]';
       } else if (tipo === 'interactive' && msg.interactive) {
-        // Respuesta de lista o botón interactivo
         if (msg.interactive.type === 'list_reply' && msg.interactive.list_reply) {
           mediaType = 'list_reply';
           listReplyId = msg.interactive.list_reply.id;
@@ -658,7 +688,7 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       nombreContacto = body.contacts[0].profile?.name;
     }
 
-    // Procesar reacciones
+    // === PROCESAR REACCIONES ===
     if (mediaType === 'reaction' && reactionMessageId) {
       const telefono = telefonoExtraido || body.telefono || body.phone || body.from;
       if (!telefono) {
@@ -670,7 +700,7 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       return;
     }
 
-    // Procesar respuestas de listas interactivas
+    // === PROCESAR RESPUESTAS DE LISTAS INTERACTIVAS ===
     if (mediaType === 'list_reply' && listReplyId) {
       const telefono = telefonoExtraido || body.telefono;
       if (!telefono) {
@@ -682,7 +712,7 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       return;
     }
 
-    // Procesar respuestas de botones interactivos
+    // === PROCESAR RESPUESTAS DE BOTONES INTERACTIVOS ===
     if (mediaType === 'button_reply' && buttonReplyId) {
       const telefono = telefonoExtraido || body.telefono;
       if (!telefono) {
@@ -694,6 +724,7 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       return;
     }
 
+    // === PROCESAR MENSAJES DE TEXTO/MULTIMEDIA ===
     const telefono = telefonoExtraido || body.telefono || body.phone || body.from || body.remoteJid;
     const mensaje = mensajeTexto || body.mensaje || body.message || body.text || body.body || body.contenido || '';
 
@@ -707,17 +738,9 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       return;
     }
 
-    // Verificar si es comando MENU para enviar menú interactivo
-    const comando = interactiveMenuProcessor.esComandoEspecial(mensaje);
-    if (comando === 'MENU' || comando === 'VOLVER') {
-      console.log(`[WSP4] Comando ${comando} recibido, enviando menú interactivo`);
-      await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
-      res.json({ success: true, action: 'menu_enviado' });
-      return;
-    }
-
-    // Verificar si es conversación nueva (sin estado de router) para enviar menú
     const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+
+    // Buscar conversación existente
     const { data: convExistente } = await supabase
       .from('conversaciones')
       .select('id, router_estado, estado')
@@ -725,48 +748,63 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       .eq('linea_origen', 'wsp4')
       .single();
 
-    // Si no hay conversación o está en estado inicial, enviar menú interactivo
-    if (!convExistente || convExistente.router_estado === 'menu_principal' || !convExistente.router_estado) {
-      // Solo enviar menú si NO está derivado
-      if (!convExistente || convExistente.estado !== 'derivada') {
-        console.log(`[WSP4] Conversación nueva o en menú, enviando menú interactivo`);
-        await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
-        
-        // Crear o actualizar conversación
-        if (!convExistente) {
-          await conversacionService.obtenerOCrear({
-            telefono: telNormalizado,
-            linea_origen: 'wsp4',
-            area: 'wsp4',
+    // === VERIFICAR SI ES COMANDO MENU/VOLVER ===
+    const comando = interactiveMenuProcessor.esComandoEspecial(mensaje);
+    if (comando === 'MENU' || comando === 'VOLVER') {
+      console.log(`[WSP4] Comando ${comando} recibido, enviando menú interactivo`);
+      
+      // Si tiene conversación, actualizar estado
+      if (convExistente) {
+        await supabase
+          .from('conversaciones')
+          .update({
             estado: 'activa',
-            iniciado_por: 'usuario',
-          });
-        }
-        
-        res.json({ success: true, action: 'menu_enviado' });
-        return;
+            router_estado: 'menu_principal',
+            menu_actual: 'principal',
+          })
+          .eq('id', convExistente.id);
       }
+      
+      await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+      res.json({ success: true, action: 'menu_enviado' });
+      return;
     }
 
-    // Si está derivada, procesar normalmente (el agente verá el mensaje)
-    const incoming: WhatsAppIncoming = {
-      telefono: telefono,
-      mensaje: mensaje,
-      nombre: nombreContacto || body.nombre || body.name || body.pushName,
-      timestamp: body.timestamp || new Date().toISOString(),
-      messageId: wamid || body.whatsapp_message_id || body.messageId,
-      mediaType: mediaType || body.mediaType,
-      mediaUrl: mediaUrl || body.mediaUrl,
-      mediaId: mediaId,
-      contextMessageId: contextMessageId || body.whatsapp_context_id,
-      linea: 'wsp4',
-      utm_source: body.utm_source,
-      utm_campaign: body.utm_campaign,
-      es_lead_meta: body.es_lead_meta || false,
-    };
+    // === SI ESTÁ DERIVADA: SOLO GUARDAR MENSAJE ===
+    if (convExistente && (convExistente.router_estado === 'derivado' || convExistente.estado === 'derivada')) {
+      console.log(`[WSP4] Conversación derivada - guardando mensaje para agente`);
+      await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
+      res.json({ success: true, action: 'mensaje_guardado', derivada: true });
+      return;
+    }
 
-    const resultado = await routerController.procesarMensaje(incoming);
-    res.json(resultado);
+    // === CONVERSACIÓN NUEVA O EN MENÚ: ENVIAR MENÚ INTERACTIVO ===
+    if (!convExistente || !convExistente.router_estado || convExistente.router_estado === 'menu_principal' || convExistente.router_estado.startsWith('submenu_')) {
+      console.log(`[WSP4] Conversación nueva o en menú, enviando menú interactivo`);
+      
+      // Crear conversación si no existe
+      if (!convExistente) {
+        await conversacionService.obtenerOCrear({
+          telefono: telNormalizado,
+          linea_origen: 'wsp4',
+          area: 'wsp4',
+          estado: 'activa',
+          iniciado_por: 'usuario',
+        });
+      }
+      
+      await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+      res.json({ success: true, action: 'menu_enviado' });
+      return;
+    }
+
+    // === CASO EDGE: Guardar mensaje y enviar menú ===
+    console.log(`[WSP4] Caso no manejado - guardando mensaje y enviando menú`);
+    if (convExistente) {
+      await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
+    }
+    await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+    res.json({ success: true, action: 'menu_enviado_edge' });
 
   } catch (error) {
     console.error('[WSP4] Error:', error);
@@ -902,7 +940,7 @@ app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => 
 });
 
 // ===========================================
-// WEBHOOK EVOLUTION GENÉRICO (LEGACY)
+// WEBHOOK EVOLUTION GENÉRICO (LEGACY - Solo guardar)
 // ===========================================
 app.post('/webhook/evolution', async (req: Request, res: Response) => {
   try {
@@ -910,6 +948,7 @@ app.post('/webhook/evolution', async (req: Request, res: Response) => {
     const data = body.data || body;
     const message = data.message || {};
 
+    // Procesar reacciones
     if (message.reactionMessage) {
       const telefono = data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';
       const emoji = message.reactionMessage.text || '';
@@ -922,30 +961,41 @@ app.post('/webhook/evolution', async (req: Request, res: Response) => {
       }
     }
 
-    let contextMessageId: string | undefined;
-    if (message.extendedTextMessage?.contextInfo?.stanzaId) {
-      contextMessageId = message.extendedTextMessage.contextInfo.stanzaId;
-    }
+    // Extraer datos
+    const telefono = data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '';
+    const mensaje = message.conversation || message.extendedTextMessage?.text || '';
 
-    const incoming: WhatsAppIncoming = {
-      telefono: data.key?.remoteJid?.replace('@s.whatsapp.net', '') || '',
-      mensaje: message.conversation || message.extendedTextMessage?.text || '',
-      nombre: data.pushName || '',
-      timestamp: new Date().toISOString(),
-      messageId: data.key?.id,
-      mediaType: message.imageMessage ? 'image' : message.audioMessage ? 'audio' : undefined,
-      mediaUrl: undefined,
-      contextMessageId: contextMessageId,
-      linea: 'wsp4',
-    };
-
-    if (!incoming.telefono || !incoming.mensaje) {
+    if (!telefono || !mensaje) {
       res.json({ success: true, ignored: true });
       return;
     }
 
-    const resultado = await routerController.procesarMensaje(incoming);
-    res.json(resultado);
+    const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+
+    // Buscar conversación
+    const { data: conv } = await supabase
+      .from('conversaciones')
+      .select('id')
+      .eq('telefono', telNormalizado)
+      .eq('linea_origen', 'wsp4')
+      .single();
+
+    if (conv) {
+      // Solo guardar mensaje
+      await guardarMensajeSimple(conv.id, mensaje, data.pushName);
+      res.json({ success: true, action: 'mensaje_guardado' });
+    } else {
+      // Crear conversación y enviar menú
+      const { conversacion } = await conversacionService.obtenerOCrear({
+        telefono: telNormalizado,
+        linea_origen: 'wsp4',
+        area: 'wsp4',
+        estado: 'activa',
+        iniciado_por: 'usuario',
+      });
+      await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+      res.json({ success: true, action: 'menu_enviado' });
+    }
 
   } catch (error) {
     console.error('[Evolution] Error:', error);
@@ -953,7 +1003,7 @@ app.post('/webhook/evolution', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint de prueba manual
+// Endpoint de prueba manual (solo dev)
 app.post('/test', async (req: Request, res: Response) => {
   if (NODE_ENV === 'production') {
     res.status(403).json({ error: 'No disponible en producción' });
@@ -967,8 +1017,9 @@ app.post('/test', async (req: Request, res: Response) => {
       return;
     }
 
-    const resultado = await routerController.procesarMensaje({ telefono, mensaje, linea: 'wsp4' });
-    res.json(resultado);
+    // En test, solo enviar menú interactivo
+    await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+    res.json({ success: true, action: 'menu_enviado_test' });
 
   } catch (error) {
     console.error('[Test] Error:', error);
@@ -995,7 +1046,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // ===========================================
 async function iniciar() {
   console.log('='.repeat(50));
-  console.log('PSI ROUTER v4.0.0 - Menús Interactivos');
+  console.log('PSI ROUTER v4.2.0 - Solo Menú Interactivo');
   console.log('='.repeat(50));
 
   console.log('[Startup] Verificando conexión a Supabase...');
@@ -1009,7 +1060,7 @@ async function iniciar() {
   app.listen(PORT, () => {
     console.log(`[Startup] ✅ Servidor iniciado en puerto ${PORT}`);
     console.log(`[Startup] Ambiente: ${NODE_ENV}`);
-    console.log(`[Startup] Features: Menús Interactivos (listas y botones)`);
+    console.log(`[Startup] Features: Solo menú interactivo (sin numérico)`);
     console.log(`[Startup] Endpoints:`);
     console.log(`  - /webhook/whatsapp/wsp4 (Router principal)`);
     console.log(`  - /webhook/whatsapp/ventas (Cloud API)`);
