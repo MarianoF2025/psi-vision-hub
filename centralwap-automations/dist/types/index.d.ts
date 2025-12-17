@@ -9,6 +9,7 @@ export interface Curso {
     inscripciones_abiertas?: boolean;
     categoria?: string;
     mensaje_bienvenida?: string;
+    mensaje_saludo?: string;
     imagen_url?: string;
     info_precio?: string;
     info_fechas?: string;
@@ -33,6 +34,7 @@ export interface CursoCreate {
     nombre: string;
     descripcion?: string;
     mensaje_bienvenida?: string;
+    mensaje_saludo?: string;
     imagen_url?: string;
     info_precio?: string;
     info_fechas?: string;

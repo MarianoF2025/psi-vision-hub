@@ -29,8 +29,23 @@ class WhatsAppService {
     async enviarMenuInteractivo(telefono, curso, opciones) {
         try {
             const telefonoLimpio = this.normalizarTelefono(telefono);
+            // PASO 1: Si hay mensaje_saludo, enviarlo primero como mensaje separado
+            if (curso.mensaje_saludo) {
+                const saludoResult = await this.enviarTexto(telefono, curso.mensaje_saludo);
+                if (!saludoResult.success) {
+                    console.warn(`⚠️ Error enviando saludo previo: ${saludoResult.error}`);
+                    // Continuamos igual con el menú
+                }
+                else {
+                    console.log(`✅ Saludo previo enviado a ${telefonoLimpio}`);
+                    // Pequeña pausa para que lleguen en orden
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            }
+            // PASO 2: Enviar el menú interactivo
             const sections = this.construirSecciones(opciones);
-            const bodyText = curso.mensaje_bienvenida || `¡Hola! 👋 Gracias por tu interés en *${curso.nombre}*.\n\nSeleccioná qué información necesitás:`;
+            // Si no hay mensaje_bienvenida, usar texto simple
+            const bodyText = curso.mensaje_bienvenida || `Seleccioná qué información necesitás:`;
             const payload = {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',

@@ -11,6 +11,7 @@ interface Curso {
   descripcion?: string;
   activo: boolean;
   mensaje_bienvenida?: string;
+  mensaje_saludo?: string;
   tipo_formacion?: string;
   categoria?: string;
   inscripciones_abiertas?: boolean;
@@ -140,7 +141,7 @@ export default function CursoDetailPage() {
   const [savingAnuncio, setSavingAnuncio] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Curso>>({
-    codigo: '', nombre: '', descripcion: '', mensaje_bienvenida: '',
+    codigo: '', nombre: '', descripcion: '', mensaje_bienvenida: '', mensaje_saludo: '',
     tipo_formacion: 'curso', categoria: '', inscripciones_abiertas: true, disponible_entrada_directa: false,
     info_precio: '', info_fechas: '', info_duracion: '', info_certificacion: '',
     info_salida_laboral: '', info_modalidad: '',
@@ -377,6 +378,12 @@ export default function CursoDetailPage() {
               <label className="block text-sm font-medium mb-1">Descripción</label>
               <textarea value={formData.descripcion || ''} onChange={e => setFormData({ ...formData, descripcion: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg" rows={2} />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Mensaje de Saludo (previo al menú)</label>
+              <textarea value={formData.mensaje_saludo || ''} onChange={e => setFormData({ ...formData, mensaje_saludo: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="¡Hola! 👋 Gracias por escribirnos..." />
+              <p className="text-xs text-gray-500 mt-1">Se envía como mensaje separado antes del menú</p>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Mensaje de Bienvenida (menú)</label>
