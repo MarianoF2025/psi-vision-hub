@@ -77,19 +77,6 @@ function extraerSufijoWamid(wamid: string): string | null {
 // ===========================================
 async function buscarMensajePorSufijo(sufijo: string): Promise<{ id: string; conversacion_id: string } | null> {
   try {
-    // 1. Primero buscar directamente por el ID (Evolution API)
-    const { data: directMatch } = await supabase
-      .from('mensajes')
-      .select('id, conversacion_id')
-      .eq('whatsapp_message_id', sufijo)
-      .single();
-    
-    if (directMatch) {
-      console.log('[Reacción] Mensaje encontrado por ID directo:', sufijo);
-      return { id: directMatch.id, conversacion_id: directMatch.conversacion_id };
-    }
-
-    // 2. Si no encuentra, buscar por sufijo (Cloud API con wamid)
     const { data: mensajes } = await supabase
       .from('mensajes')
       .select('id, conversacion_id, whatsapp_message_id')
@@ -103,13 +90,10 @@ async function buscarMensajePorSufijo(sufijo: string): Promise<{ id: string; con
       if (msg.whatsapp_message_id) {
         const msgSufijo = extraerSufijoWamid(msg.whatsapp_message_id);
         if (msgSufijo === sufijo) {
-          console.log('[Reacción] Mensaje encontrado por sufijo WAMID:', sufijo);
           return { id: msg.id, conversacion_id: msg.conversacion_id };
         }
       }
     }
-    
-    console.log('[Reacción] Mensaje NO encontrado para:', sufijo);
     return null;
   } catch (error) {
     console.error('[Reacción] Error buscando por sufijo:', error);
@@ -890,62 +874,27 @@ app.post('/webhook/whatsapp/ventas', async (req: Request, res: Response) => {
 // ===========================================
 app.post('/webhook/evolution/administracion', async (req: Request, res: Response) => {
   try {
+    // LOG TEMPORAL - Ver payload completo
     console.log('[Admin] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
     
-    const body = req.body;
-    
-    // 1. DETECTAR REACCIONES
-    if (body.tipo === 'reaction' && body.reactionToMessageId) {
-      console.log('[Admin] Procesando reacción:', body.emoji, 'al mensaje:', body.reactionToMessageId);
-      const resultado = await procesarReaccionEntrante(
-        body.telefono,
-        body.emoji || '',
-        body.reactionToMessageId
-      );
-      res.json(resultado);
-      return;
-    }
-    
-    // 2. NORMALIZAR PAYLOAD (desde n8n o directo de Evolution)
     let payload;
-    if (body.telefono) {
+    if (req.body.telefono && req.body.mensaje !== undefined) {
       payload = {
-        telefono: body.telefono,
-        mensaje: body.mensaje || '',
-        nombre: body.nombre || '',
-        messageId: body.messageId || '',
-        mediaType: body.mediaType || body.media_type,
-        mediaUrl: body.mediaUrl || body.media_url,
-        contextMessageId: body.contextMessageId,
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
       };
     } else {
-      payload = normalizarEvolutionPayload(body, 'administracion');
+      payload = normalizarEvolutionPayload(req.body, 'administracion');
     }
-    
-    // 3. VALIDAR - permitir mensaje vacío si hay multimedia
-    if (!payload || !payload.telefono) {
-      res.json({ success: true, ignored: true, reason: 'Sin teléfono' });
+    if (!payload || !payload.telefono || !payload.mensaje) {
+      res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-    
-    // Si no hay mensaje pero hay media, poner placeholder
-    if (!payload.mensaje && payload.mediaUrl) {
-      const placeholders: Record<string, string> = {
-        'image': '[Imagen]',
-        'audio': '[Audio]',
-        'video': '[Video]',
-        'document': '[Documento]',
-        'sticker': '[Sticker]'
-      };
-      payload.mensaje = placeholders[payload.mediaType || ''] || '[Multimedia]';
-    }
-    
-    // Si sigue sin mensaje, ignorar
-    if (!payload.mensaje) {
-      res.json({ success: true, ignored: true, reason: 'Sin mensaje ni multimedia' });
-      return;
-    }
-    
     const resultado = await procesarMensajeLineaSecundaria('administracion', payload);
     res.json(resultado);
   } catch (error) {
@@ -954,61 +903,29 @@ app.post('/webhook/evolution/administracion', async (req: Request, res: Response
   }
 });
 
+// ===========================================
 // WEBHOOK ALUMNOS (EVOLUTION API)
 // ===========================================
 app.post('/webhook/evolution/alumnos', async (req: Request, res: Response) => {
   try {
-    console.log('[Alumnos] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
-    
-    const body = req.body;
-    
-    // 1. DETECTAR REACCIONES
-    if (body.tipo === 'reaction' && body.reactionToMessageId) {
-      console.log('[Alumnos] Procesando reacción:', body.emoji, 'al mensaje:', body.reactionToMessageId);
-      const resultado = await procesarReaccionEntrante(
-        body.telefono,
-        body.emoji || '',
-        body.reactionToMessageId
-      );
-      res.json(resultado);
-      return;
-    }
-    
-    // 2. NORMALIZAR PAYLOAD
     let payload;
-    if (body.telefono) {
+    if (req.body.telefono && req.body.mensaje !== undefined) {
       payload = {
-        telefono: body.telefono,
-        mensaje: body.mensaje || '',
-        nombre: body.nombre || '',
-        messageId: body.messageId || '',
-        mediaType: body.mediaType || body.media_type,
-        mediaUrl: body.mediaUrl || body.media_url,
-        contextMessageId: body.contextMessageId,
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
       };
     } else {
-      payload = normalizarEvolutionPayload(body, 'alumnos');
+      payload = normalizarEvolutionPayload(req.body, 'alumnos');
     }
-    
-    // 3. VALIDAR
-    if (!payload || !payload.telefono) {
-      res.json({ success: true, ignored: true, reason: 'Sin teléfono' });
+    if (!payload || !payload.telefono || !payload.mensaje) {
+      res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-    
-    if (!payload.mensaje && payload.mediaUrl) {
-      const placeholders: Record<string, string> = {
-        'image': '[Imagen]', 'audio': '[Audio]', 'video': '[Video]',
-        'document': '[Documento]', 'sticker': '[Sticker]'
-      };
-      payload.mensaje = placeholders[payload.mediaType || ''] || '[Multimedia]';
-    }
-    
-    if (!payload.mensaje) {
-      res.json({ success: true, ignored: true, reason: 'Sin mensaje ni multimedia' });
-      return;
-    }
-    
     const resultado = await procesarMensajeLineaSecundaria('alumnos', payload);
     res.json(resultado);
   } catch (error) {
@@ -1022,57 +939,24 @@ app.post('/webhook/evolution/alumnos', async (req: Request, res: Response) => {
 // ===========================================
 app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => {
   try {
-    console.log('[Comunidad] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
-    
-    const body = req.body;
-    
-    // 1. DETECTAR REACCIONES
-    if (body.tipo === 'reaction' && body.reactionToMessageId) {
-      console.log('[Comunidad] Procesando reacción:', body.emoji, 'al mensaje:', body.reactionToMessageId);
-      const resultado = await procesarReaccionEntrante(
-        body.telefono,
-        body.emoji || '',
-        body.reactionToMessageId
-      );
-      res.json(resultado);
-      return;
-    }
-    
-    // 2. NORMALIZAR PAYLOAD
     let payload;
-    if (body.telefono) {
+    if (req.body.telefono && req.body.mensaje !== undefined) {
       payload = {
-        telefono: body.telefono,
-        mensaje: body.mensaje || '',
-        nombre: body.nombre || '',
-        messageId: body.messageId || '',
-        mediaType: body.mediaType || body.media_type,
-        mediaUrl: body.mediaUrl || body.media_url,
-        contextMessageId: body.contextMessageId,
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
       };
     } else {
-      payload = normalizarEvolutionPayload(body, 'comunidad');
+      payload = normalizarEvolutionPayload(req.body, 'comunidad');
     }
-    
-    // 3. VALIDAR
-    if (!payload || !payload.telefono) {
-      res.json({ success: true, ignored: true, reason: 'Sin teléfono' });
+    if (!payload || !payload.telefono || !payload.mensaje) {
+      res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-    
-    if (!payload.mensaje && payload.mediaUrl) {
-      const placeholders: Record<string, string> = {
-        'image': '[Imagen]', 'audio': '[Audio]', 'video': '[Video]',
-        'document': '[Documento]', 'sticker': '[Sticker]'
-      };
-      payload.mensaje = placeholders[payload.mediaType || ''] || '[Multimedia]';
-    }
-    
-    if (!payload.mensaje) {
-      res.json({ success: true, ignored: true, reason: 'Sin mensaje ni multimedia' });
-      return;
-    }
-    
     const resultado = await procesarMensajeLineaSecundaria('comunidad', payload);
     res.json(resultado);
   } catch (error) {
@@ -1081,6 +965,7 @@ app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => 
   }
 });
 
+// ===========================================
 // WEBHOOK EVOLUTION GENÉRICO (LEGACY - Solo guardar)
 // ===========================================
 app.post('/webhook/evolution', async (req: Request, res: Response) => {
