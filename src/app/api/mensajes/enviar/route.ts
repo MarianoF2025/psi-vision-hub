@@ -8,7 +8,8 @@ const supabase = createClient(
 
 const WEBHOOKS: Record<string, string> = {
   wsp4: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_CRM || '',
-  ventas: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_VENTAS_1 || '',
+  ventas: process.env.N8N_WEBHOOK_ENVIO_VENTAS || '',
+  ventas_api: process.env.N8N_WEBHOOK_ENVIO_VENTAS_API || '',
   alumnos: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ALUMNOS || '',
   administracion: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_ADMINISTRACION || '',
   comunidad: process.env.N8N_WEBHOOK_ENVIOS_ROUTER_COMUNIDAD || '',
