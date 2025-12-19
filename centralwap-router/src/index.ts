@@ -350,7 +350,7 @@ async function procesarMensajeLineaSecundaria(
       linea
     );
 
-    let enviarEducativo = (linea !== 'ventas');
+    let enviarEducativo = true;
     let conversacionAUsar: any = null;
 
     // 3. Si hay conversación desconectada, usarla y NO enviar educativo
@@ -1022,7 +1022,6 @@ app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => 
 app.post('/webhook/evolution/ventas', async (req: Request, res: Response) => {
   try {
     console.log('[Ventas] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
-    
     const body = req.body;
     
     // 1. DETECTAR REACCIONES
@@ -1072,15 +1071,118 @@ app.post('/webhook/evolution/ventas', async (req: Request, res: Response) => {
       return;
     }
     
+    // 4. DETECTAR ORIGEN WEB (mensaje empieza con 🌐)
+    const esDesdeWeb = payload.mensaje.startsWith('🌐');
+    
+    if (esDesdeWeb) {
+      // === FLUJO WEB: Directo a Ventas sin educativo ===
+      console.log('[Ventas] Mensaje desde botón web detectado');
+      
+      // Limpiar el emoji del mensaje
+      payload.mensaje = payload.mensaje.replace(/^🌐\s*/, '').trim() || 'Consulta desde web';
+      
+      // Buscar o crear contacto con origen='web'
+      let contacto = await supabase
+        .from('contactos')
+        .select('*')
+        .eq('telefono', payload.telefono)
+        .single();
+      
+      if (!contacto.data) {
+        const nuevoContacto = await supabase
+          .from('contactos')
+          .insert({
+            telefono: payload.telefono,
+            nombre: payload.nombre || null,
+            origen: 'web',
+            tipo: 'lead',
+            activo: true
+          })
+          .select()
+          .single();
+        contacto = nuevoContacto;
+        console.log('[Ventas] Contacto creado con origen web:', payload.telefono);
+      } else if (contacto.data.origen !== 'web') {
+        // Actualizar origen si no era web
+        await supabase
+          .from('contactos')
+          .update({ origen: 'web' })
+          .eq('id', contacto.data.id);
+      }
+      
+      // Buscar conversación activa o crear nueva
+      let conversacion = await supabase
+        .from('conversaciones')
+        .select('*')
+        .eq('telefono', payload.telefono)
+        .eq('inbox_id', 'ventas')
+        .in('estado', ['abierta', 'en_menu', 'esperando', 'derivada'])
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (!conversacion.data) {
+        // Crear conversación nueva en inbox ventas
+        const nuevaConv = await supabase
+          .from('conversaciones')
+          .insert({
+            telefono: payload.telefono,
+            contacto_id: contacto.data?.id,
+            nombre: payload.nombre || contacto.data?.nombre || null,
+            canal: 'whatsapp',
+            inbox_id: 'ventas',
+            inbox_name: 'Ventas',
+            area: 'ventas',
+            linea_origen: 'ventas',
+            estado: 'abierta',
+            ultimo_mensaje: payload.mensaje,
+            ts_ultimo_mensaje: new Date().toISOString(),
+            origen: 'web'
+          })
+          .select()
+          .single();
+        conversacion = nuevaConv;
+        console.log('[Ventas] Conversación creada para web:', payload.telefono);
+      } else {
+        // Actualizar conversación existente
+        await supabase
+          .from('conversaciones')
+          .update({
+            ultimo_mensaje: payload.mensaje,
+            ts_ultimo_mensaje: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', conversacion.data.id);
+      }
+      
+      // Guardar mensaje
+      await supabase.from('mensajes').insert({
+        conversacion_id: conversacion.data?.id,
+        telefono: payload.telefono,
+        mensaje: payload.mensaje,
+        tipo: payload.mediaType || 'text',
+        direccion: 'entrante',
+        media_url: payload.mediaUrl || null,
+        media_type: payload.mediaType || null,
+        remitente_tipo: 'contacto',
+        remitente_nombre: payload.nombre || null,
+        whatsapp_message_id: payload.messageId || null,
+        timestamp: new Date().toISOString()
+      });
+      
+      res.json({ success: true, action: 'mensaje_web_guardado', origen: 'web' });
+      return;
+    }
+    
+    // === FLUJO NORMAL: Mensaje educativo ===
     const resultado = await procesarMensajeLineaSecundaria('ventas', payload);
     res.json(resultado);
+    
   } catch (error) {
     console.error('[Ventas] Error:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
-// ===========================================
-// WEBHOOK EVOLUTION GENÉRICO (LEGACY - Solo guardar)
 // ===========================================
 app.post('/webhook/evolution', async (req: Request, res: Response) => {
   try {
