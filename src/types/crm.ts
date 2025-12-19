@@ -2,7 +2,7 @@
 // TIPOS CRM PSI - CENTRALWAP
 // ==========================================
 
-export type InboxType = 'wsp4' | 'ventas' | 'alumnos' | 'admin' | 'comunidad';
+export type InboxType = 'wsp4' | 'ventas' | 'ventas_api' | 'alumnos' | 'admin' | 'comunidad';
 export type EstadoConversacion = 'nueva' | 'activa' | 'esperando' | 'derivada' | 'resuelta' | 'cerrada';
 export type EstadoLead = 'nuevo' | 'contactado' | 'interesado' | 'negociando' | 'ganado' | 'perdido' | 'no_responde';
 export type Resultado = 'INS' | 'NOINT' | 'NOCONT' | 'NOEX' | 'NR+';
@@ -167,6 +167,7 @@ export interface InboxConfig {
 export const INBOXES: InboxConfig[] = [
   { id: 'wsp4', nombre: 'PSI Principal', icono: '🏠', colorLight: 'bg-indigo-100 text-indigo-700', colorDark: 'bg-indigo-500/20 text-indigo-400', gradiente: 'from-indigo-500 to-purple-500' },
   { id: 'ventas', nombre: 'Ventas', icono: '💰', colorLight: 'bg-amber-100 text-amber-700', colorDark: 'bg-amber-500/20 text-amber-400', gradiente: 'from-amber-500 to-orange-500' },
+  { id: 'ventas_api', nombre: 'Ventas Ads', icono: '📢', colorLight: 'bg-orange-100 text-orange-700', colorDark: 'bg-orange-500/20 text-orange-400', gradiente: 'from-orange-500 to-red-500' },
   { id: 'alumnos', nombre: 'Alumnos', icono: '🎓', colorLight: 'bg-emerald-100 text-emerald-700', colorDark: 'bg-emerald-500/20 text-emerald-400', gradiente: 'from-emerald-500 to-teal-500' },
   { id: 'admin', nombre: 'Administración', icono: '📋', colorLight: 'bg-blue-100 text-blue-700', colorDark: 'bg-blue-500/20 text-blue-400', gradiente: 'from-blue-500 to-indigo-500' },
   { id: 'comunidad', nombre: 'Comunidad', icono: '👥', colorLight: 'bg-purple-100 text-purple-700', colorDark: 'bg-purple-500/20 text-purple-400', gradiente: 'from-purple-500 to-pink-500' }
@@ -184,6 +185,7 @@ export const ESTADO_COLORS = {
 export const WEBHOOKS: Record<InboxType, string> = {
   wsp4: process.env.NEXT_PUBLIC_WEBHOOK_WSP4 || 'https://n8n.psi.com/webhook/wsp4/enviar',
   ventas: process.env.NEXT_PUBLIC_WEBHOOK_VENTAS || 'https://n8n.psi.com/webhook/ventas/enviar',
+  ventas_api: process.env.NEXT_PUBLIC_WEBHOOK_VENTAS_API || 'https://n8n.psi.com/webhook/ventas_api/enviar',
   alumnos: process.env.NEXT_PUBLIC_WEBHOOK_ALUMNOS || 'https://n8n.psi.com/webhook/alumnos/enviar',
   admin: process.env.NEXT_PUBLIC_WEBHOOK_ADMIN || 'https://n8n.psi.com/webhook/admin/enviar',
   comunidad: process.env.NEXT_PUBLIC_WEBHOOK_COMUNIDAD || 'https://n8n.psi.com/webhook/comunidad/enviar'

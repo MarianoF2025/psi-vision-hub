@@ -6,11 +6,12 @@ import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
-import { Sun, Moon, Settings, Home, DollarSign, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
   ventas: <DollarSign size={16} />,
+  ventas_api: <Megaphone size={16} />,
   alumnos: <GraduationCap size={16} />,
   admin: <ClipboardList size={16} />,
   comunidad: <Users size={16} />,

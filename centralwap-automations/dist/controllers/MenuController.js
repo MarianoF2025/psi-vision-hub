@@ -107,10 +107,10 @@ class MenuController {
                 .update({
                 contacto_id: contacto.id,
                 nombre: contacto.nombre,
-                linea_origen: 'ventas',
-                area: 'ventas',
+                linea_origen: 'ventas_api',
+                area: 'ventas_api',
                 desconectado_wsp4: true,
-                inbox_fijo: 'ventas',
+                inbox_fijo: 'ventas_api',
                 desconectado_por: esCTWA ? 'automatizacion_ctwa' : 'automatizacion_entrada_directa',
                 desconectado_ts: new Date().toISOString(),
                 desconectado_motivo: motivo,
@@ -128,12 +128,12 @@ class MenuController {
                 telefono: telNormalizado,
                 contacto_id: contacto.id,
                 nombre: contacto.nombre,
-                linea_origen: 'ventas',
-                area: 'ventas',
+                linea_origen: 'ventas_api',
+                area: 'ventas_api',
                 canal: 'whatsapp',
                 estado: 'activa',
                 desconectado_wsp4: true,
-                inbox_fijo: 'ventas',
+                inbox_fijo: 'ventas_api',
                 desconectado_por: esCTWA ? 'automatizacion_ctwa' : 'automatizacion_entrada_directa',
                 desconectado_ts: new Date().toISOString(),
                 desconectado_motivo: motivo,
@@ -473,7 +473,7 @@ class MenuController {
                 .select('id, desconectado_wsp4, inbox_fijo')
                 .eq('telefono', telNormalizado)
                 .single();
-            if (convExistente?.desconectado_wsp4 && convExistente?.inbox_fijo === 'ventas') {
+            if (convExistente?.desconectado_wsp4 && convExistente?.inbox_fijo === 'ventas_api') {
                 try {
                     const routerPayload = {
                         messages: req.body.messages,

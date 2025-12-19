@@ -40,7 +40,7 @@ export const useCRMStore = create<CRMState>()(
       panelInfoAbierto: false,
       togglePanelInfo: () => set((state) => ({ panelInfoAbierto: !state.panelInfoAbierto })),
       setPanelInfoAbierto: (open) => set({ panelInfoAbierto: open }),
-      contadores: { wsp4: 0, ventas: 0, alumnos: 0, admin: 0, comunidad: 0 },
+      contadores: { wsp4: 0, ventas: 0, ventas_api: 0, alumnos: 0, admin: 0, comunidad: 0 },
       setContador: (inbox, count) => set((state) => ({
         contadores: { ...state.contadores, [inbox]: count }
       })),
