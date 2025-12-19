@@ -958,57 +958,24 @@ app.post('/webhook/evolution/administracion', async (req: Request, res: Response
 // ===========================================
 app.post('/webhook/evolution/alumnos', async (req: Request, res: Response) => {
   try {
-    console.log('[Alumnos] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
-    
-    const body = req.body;
-    
-    // 1. DETECTAR REACCIONES
-    if (body.tipo === 'reaction' && body.reactionToMessageId) {
-      console.log('[Alumnos] Procesando reacción:', body.emoji, 'al mensaje:', body.reactionToMessageId);
-      const resultado = await procesarReaccionEntrante(
-        body.telefono,
-        body.emoji || '',
-        body.reactionToMessageId
-      );
-      res.json(resultado);
-      return;
-    }
-    
-    // 2. NORMALIZAR PAYLOAD
     let payload;
-    if (body.telefono) {
+    if (req.body.telefono && req.body.mensaje !== undefined) {
       payload = {
-        telefono: body.telefono,
-        mensaje: body.mensaje || '',
-        nombre: body.nombre || '',
-        messageId: body.messageId || '',
-        mediaType: body.mediaType || body.media_type,
-        mediaUrl: body.mediaUrl || body.media_url,
-        contextMessageId: body.contextMessageId,
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
       };
     } else {
-      payload = normalizarEvolutionPayload(body, 'alumnos');
+      payload = normalizarEvolutionPayload(req.body, 'alumnos');
     }
-    
-    // 3. VALIDAR
-    if (!payload || !payload.telefono) {
-      res.json({ success: true, ignored: true, reason: 'Sin teléfono' });
+    if (!payload || !payload.telefono || !payload.mensaje) {
+      res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
       return;
     }
-    
-    if (!payload.mensaje && payload.mediaUrl) {
-      const placeholders: Record<string, string> = {
-        'image': '[Imagen]', 'audio': '[Audio]', 'video': '[Video]',
-        'document': '[Documento]', 'sticker': '[Sticker]'
-      };
-      payload.mensaje = placeholders[payload.mediaType || ''] || '[Multimedia]';
-    }
-    
-    if (!payload.mensaje) {
-      res.json({ success: true, ignored: true, reason: 'Sin mensaje ni multimedia' });
-      return;
-    }
-    
     const resultado = await procesarMensajeLineaSecundaria('alumnos', payload);
     res.json(resultado);
   } catch (error) {
@@ -1022,13 +989,45 @@ app.post('/webhook/evolution/alumnos', async (req: Request, res: Response) => {
 // ===========================================
 app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => {
   try {
-    console.log('[Comunidad] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
+    let payload;
+    if (req.body.telefono && req.body.mensaje !== undefined) {
+      payload = {
+        telefono: req.body.telefono,
+        mensaje: req.body.mensaje,
+        nombre: req.body.nombre || '',
+        messageId: req.body.messageId || '',
+        mediaType: req.body.mediaType,
+        mediaUrl: req.body.media_url,
+        contextMessageId: req.body.contextMessageId,
+      };
+    } else {
+      payload = normalizarEvolutionPayload(req.body, 'comunidad');
+    }
+    if (!payload || !payload.telefono || !payload.mensaje) {
+      res.json({ success: true, ignored: true, reason: 'Payload vacío o inválido' });
+      return;
+    }
+    const resultado = await procesarMensajeLineaSecundaria('comunidad', payload);
+    res.json(resultado);
+  } catch (error) {
+    console.error('[Comunidad] Error:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
+  }
+});
+
+
+// ===========================================
+// WEBHOOK VENTAS (EVOLUTION API)
+// ===========================================
+app.post('/webhook/evolution/ventas', async (req: Request, res: Response) => {
+  try {
+    console.log('[Ventas] Payload recibido:', JSON.stringify(req.body, null, 2).substring(0, 1000));
     
     const body = req.body;
     
     // 1. DETECTAR REACCIONES
     if (body.tipo === 'reaction' && body.reactionToMessageId) {
-      console.log('[Comunidad] Procesando reacción:', body.emoji, 'al mensaje:', body.reactionToMessageId);
+      console.log('[Ventas] Procesando reacción:', body.emoji, 'al mensaje:', body.reactionToMessageId);
       const resultado = await procesarReaccionEntrante(
         body.telefono,
         body.emoji || '',
@@ -1051,7 +1050,7 @@ app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => 
         contextMessageId: body.contextMessageId,
       };
     } else {
-      payload = normalizarEvolutionPayload(body, 'comunidad');
+      payload = normalizarEvolutionPayload(body, 'ventas');
     }
     
     // 3. VALIDAR
@@ -1073,14 +1072,14 @@ app.post('/webhook/evolution/comunidad', async (req: Request, res: Response) => 
       return;
     }
     
-    const resultado = await procesarMensajeLineaSecundaria('comunidad', payload);
+    const resultado = await procesarMensajeLineaSecundaria('ventas', payload);
     res.json(resultado);
   } catch (error) {
-    console.error('[Comunidad] Error:', error);
+    console.error('[Ventas] Error:', error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
   }
 });
-
+// ===========================================
 // WEBHOOK EVOLUTION GENÉRICO (LEGACY - Solo guardar)
 // ===========================================
 app.post('/webhook/evolution', async (req: Request, res: Response) => {
