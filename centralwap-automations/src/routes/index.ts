@@ -70,3 +70,8 @@ router.post('/test/ctwa', async (req, res) => {
   req.body = { telefono, ad_id, curso_id };
   return menuController.enviarMenu(req, res);
 });
+
+// AUTORESPUESTAS
+import { autorespuestasController } from '../controllers/AutorespuestasController';
+router.post('/autorespuesta/verificar', (req, res) => autorespuestasController.verificar(req, res));
+router.get('/autorespuesta/estado/:linea', (req, res) => autorespuestasController.estado(req, res));

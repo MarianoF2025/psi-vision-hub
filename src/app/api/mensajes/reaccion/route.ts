@@ -10,6 +10,7 @@ const supabase = createClient(
 const WEBHOOKS_ENVIO: Record<string, string> = {
   wsp4: process.env.NEXT_PUBLIC_WEBHOOK_WSP4 || 'https://webhookn8n.psivisionhub.com/webhook/wsp4/enviar',
   ventas: process.env.NEXT_PUBLIC_WEBHOOK_VENTAS || 'https://webhookn8n.psivisionhub.com/webhook/ventas/enviar',
+  ventas_api: process.env.NEXT_PUBLIC_WEBHOOK_VENTAS_API || 'https://webhookn8n.psivisionhub.com/webhook/crm/enviar-mensaje-ventas_api',
   alumnos: process.env.NEXT_PUBLIC_WEBHOOK_ALUMNOS || 'https://webhookn8n.psivisionhub.com/webhook/alumnos/enviar',
   administracion: process.env.NEXT_PUBLIC_WEBHOOK_ADMIN || 'https://webhookn8n.psivisionhub.com/webhook/admin/enviar',
   comunidad: process.env.NEXT_PUBLIC_WEBHOOK_COMUNIDAD || 'https://webhookn8n.psivisionhub.com/webhook/comunidad/enviar',
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     if (msgError || !mensaje?.whatsapp_message_id) {
       return NextResponse.json({
-        error: 'No se encontro el mensaje o no tiene ID de WhatsApp',
+        error: 'No se encontró el mensaje o no tiene ID de WhatsApp',
         details: msgError?.message
       }, { status: 404 });
     }
@@ -55,7 +56,9 @@ export async function POST(request: NextRequest) {
 
     const webhookUrl = WEBHOOKS_ENVIO[linea] || WEBHOOKS_ENVIO['wsp4'];
 
-    // Enviar reaccion al webhook correspondiente
+    console.log(`[Reacción CRM] Enviando ${emoji} a ${linea} → ${webhookUrl}`);
+
+    // Enviar reacción al webhook correspondiente
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -72,13 +75,13 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Error enviando reaccion:', errorText);
-      return NextResponse.json({ error: 'Error enviando reaccion', details: errorText }, { status: 500 });
+      console.error('[Reacción CRM] Error:', errorText);
+      return NextResponse.json({ error: 'Error enviando reacción', details: errorText }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, linea });
+    return NextResponse.json({ success: true, linea, webhook: webhookUrl });
   } catch (error) {
-    console.error('Error en API reaccion:', error);
+    console.error('[Reacción CRM] Error interno:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }

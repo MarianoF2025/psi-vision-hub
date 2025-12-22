@@ -13,6 +13,7 @@ interface RespuestaRapida { id: string; atajo: string; titulo: string; contenido
 interface ArchivoSeleccionado { file: File; preview: string | null; tipo: 'image' | 'video' | 'document' | 'audio'; }
 
 interface MensajeCompleto extends Mensaje {
+  estado_envio?: 'sent' | 'delivered' | 'read';
   reacciones?: { emoji: string; usuario_id: string; created_at: string }[];
   destacado?: boolean;
   fijado?: boolean;
@@ -66,7 +67,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function ChatPanel() {
-  const { conversacionActual, panelInfoAbierto, togglePanelInfo, mensajeEnRespuesta, setMensajeEnRespuesta, setConversacionActual } = useCRMStore();
+  const { conversacionActual, panelInfoAbierto, togglePanelInfo, mensajeEnRespuesta, setMensajeEnRespuesta, setConversacionActual, usuario } = useCRMStore();
   const { user } = useAuth();
   const userId = user?.id || null;
   const [mensajes, setMensajes] = useState<MensajeCompleto[]>([]);
@@ -471,7 +472,9 @@ export default function ChatPanel() {
           desconectado_wsp4: conversacionActual.desconectado_wsp4,
           respuesta_a: respuestaId,
           media_url: mediaUrl,
-          media_type: mediaType
+          media_type: mediaType,
+          agente_id: user?.id || null,
+          agente_nombre: usuario?.nombre || user?.email?.split("@")[0] || "Agente"
         }),
       });
       
@@ -503,8 +506,8 @@ export default function ChatPanel() {
 
   const getTicks = (msg: MensajeCompleto) => {
     if (msg.direccion === 'entrante') return null;
-    const estado = msg.leido ? 'leido' : msg.entregado ? 'entregado' : msg.enviado ? 'enviado' : 'pendiente';
-    return estado === 'enviado' ? <span className="text-indigo-200">✓</span> : estado === 'entregado' ? <span className="text-indigo-200">✓✓</span> : estado === 'leido' ? <span className="text-white">✓✓</span> : <span className="text-indigo-200">○</span>;
+    const estado = msg.estado_envio || (msg.leido ? 'read' : msg.enviado ? 'sent' : 'pending');
+    return estado === 'sent' ? <span className="text-indigo-200">✓</span> : estado === 'delivered' ? <span className="text-indigo-200">✓✓</span> : estado === 'read' ? <span className="text-blue-400">✓✓</span> : <span className="text-indigo-200">○</span>;
   };
 
   const renderReacciones = (msg: MensajeCompleto) => {

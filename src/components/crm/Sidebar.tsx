@@ -21,8 +21,15 @@ const PAGINAS_EXTRA = [
   { id: 'contactos', nombre: 'Contactos', href: '/crm/contactos', icono: Contact },
   { id: 'etiquetas', nombre: 'Etiquetas', href: '/crm/etiquetas', icono: Tag },
   { id: 'respuestas', nombre: 'Respuestas', href: '/crm/respuestas', icono: MessageSquare },
-  { id: 'estadisticas', nombre: 'Estadísticas', href: '/crm/estadisticas', icono: BarChart3 },
+  { id: 'estadisticas', nombre: 'Estadísticas', href: '/crm/estadisticas', icono: BarChart3, soloAdmin: true },
   { id: 'automatizaciones', nombre: 'Automatizaciones', href: '/crm/automatizaciones', icono: Zap },
+];
+
+// Emails con acceso a estadísticas
+const EMAILS_ADMIN = [
+  'ninadulcich@gmail.com',
+  'asociacionpsi.gestion@gmail.com',
+  'marfer1@gmail.com',
 ];
 
 export default function Sidebar() {
@@ -113,7 +120,7 @@ export default function Sidebar() {
         {sidebarExpandido && (
           <p className="px-3 text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Gestión</p>
         )}
-        {PAGINAS_EXTRA.map((pagina) => {
+        {PAGINAS_EXTRA.filter(p => !p.soloAdmin || EMAILS_ADMIN.includes(userEmail)).map((pagina) => {
           const isActive = pathname === pagina.href;
           return (
             <Link

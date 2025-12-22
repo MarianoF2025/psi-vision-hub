@@ -28,7 +28,9 @@ export async function POST(request: NextRequest) {
       respuesta_a,
       media_url,
       media_type,
-      duracion
+      duracion,
+      agente_id,
+      agente_nombre
     } = body;
 
     if (!telefono || !mensaje) {
@@ -43,7 +45,6 @@ export async function POST(request: NextRequest) {
         .select('whatsapp_message_id')
         .eq('id', respuesta_a)
         .single();
-
       if (mensajeOriginal?.whatsapp_message_id) {
         whatsapp_context_id = mensajeOriginal.whatsapp_message_id;
       }
@@ -54,13 +55,13 @@ export async function POST(request: NextRequest) {
     if (desconectado_wsp4 && inbox_fijo) {
       webhookKey = inbox_fijo;
     }
-    const webhookUrl = WEBHOOKS[webhookKey];
 
+    const webhookUrl = WEBHOOKS[webhookKey];
     if (!webhookUrl) {
       return NextResponse.json({ error: `Webhook no configurado para: ${webhookKey}` }, { status: 500 });
     }
 
-    // Solo enviar a n8n - n8n guarda el mensaje
+    // Enviar a n8n con datos del agente
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -75,6 +76,9 @@ export async function POST(request: NextRequest) {
         duracion,
         origen: 'crm',
         timestamp: new Date().toISOString(),
+        // Datos del agente para tracking
+        agente_id,
+        agente_nombre
       }),
     });
 
@@ -91,7 +95,6 @@ export async function POST(request: NextRequest) {
       data: result,
       mensaje_id: result.message_id
     });
-
   } catch (error) {
     console.error('Error en API enviar:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });

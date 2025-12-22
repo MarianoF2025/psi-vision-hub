@@ -5,7 +5,7 @@ export declare class WhatsAppService {
         messageId?: string;
         error?: string;
     }>;
-    enviarMenuInteractivo(telefono: string, curso: Curso, opciones: MenuOpcion[]): Promise<{
+    enviarMenuInteractivo(telefono: string, curso: Curso, opciones: MenuOpcion[], omitirSaludo?: boolean, omitirDescripcion?: boolean): Promise<{
         success: boolean;
         messageId?: string;
         error?: string;

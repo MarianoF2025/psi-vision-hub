@@ -23,6 +23,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,52 +37,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setUsuario } = useCRMStore();
   const supabase = getSupabaseBrowser();
 
-  const loadProfile = useCallback(async (userId: string, userEmail: string) => {
-    // No usamos tabla profiles, creamos datos desde auth.users
+  const loadProfile = useCallback(async (authUser: User) => {
+    const nombreFromMetadata = authUser.user_metadata?.nombre;
     const profileData = {
-      id: userId,
-      email: userEmail,
-      nombre: userEmail?.split('@')[0] || 'Usuario',
+      id: authUser.id,
+      email: authUser.email || '',
+      nombre: nombreFromMetadata || authUser.email?.split('@')[0] || 'Usuario',
     };
     setProfile(profileData);
     setUsuario(profileData);
-    return;
-    // --- Código original comentado abajo ---
-    try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+  }, [setUsuario]);
 
-      const profileData = data || {
-        id: userId,
-        email: userEmail,
-        nombre: userEmail?.split('@')[0],
-      };
-
-      setProfile(profileData);
-      setUsuario(profileData);
-    } catch (error) {
-      console.error('Error loading profile:', error);
+  const refreshProfile = useCallback(async () => {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (currentUser) {
+      await loadProfile(currentUser);
     }
-  }, [supabase, setUsuario]);
+  }, [supabase, loadProfile]);
 
   useEffect(() => {
     let mounted = true;
-
     const getInitialSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-
         if (mounted) {
           setSession(session);
           setUser(session?.user ?? null);
-
           if (session?.user) {
-            await loadProfile(session.user.id, session.user.email || '');
+            await loadProfile(session.user);
           }
-
           setLoading(false);
         }
       } catch (error) {
@@ -89,28 +73,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (mounted) setLoading(false);
       }
     };
-
     getInitialSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return;
-
         console.log('Auth event:', event);
         setSession(session);
         setUser(session?.user ?? null);
-
         if (session?.user) {
-          await loadProfile(session.user.id, session.user.email || '');
+          await loadProfile(session.user);
         } else {
           setProfile(null);
           setUsuario(null);
         }
-
         setLoading(false);
       }
     );
-
     return () => {
       mounted = false;
       subscription.unsubscribe();
@@ -119,24 +97,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         if (error.message === 'Invalid login credentials') {
           return { error: 'Email o contraseña incorrectos' };
         }
         return { error: error.message };
       }
-
       window.location.href = '/';
       return { error: null };
     } catch (err) {
       return { error: 'Error de conexión. Intenta de nuevo.' };
     }
-  }, [supabase, router]);
+  }, [supabase]);
 
   const signOut = useCallback(async () => {
     try {
@@ -149,18 +122,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
     setUsuario(null);
     window.location.href = '/';
-  }, [supabase, router, setUsuario]);
+  }, [supabase, setUsuario]);
 
   const resetPassword = useCallback(async (email: string) => {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
-
-      if (error) {
-        return { error: error.message };
-      }
-
+      if (error) return { error: error.message };
       return { error: null };
     } catch (err) {
       return { error: 'Error de conexión. Intenta de nuevo.' };
@@ -169,14 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updatePassword = useCallback(async (newPassword: string) => {
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (error) {
-        return { error: error.message };
-      }
-
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) return { error: error.message };
       return { error: null };
     } catch (err) {
       return { error: 'Error de conexión. Intenta de nuevo.' };
@@ -184,18 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        profile,
-        session,
-        loading,
-        signIn,
-        signOut,
-        resetPassword,
-        updatePassword,
-      }}
-    >
+    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, resetPassword, updatePassword, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

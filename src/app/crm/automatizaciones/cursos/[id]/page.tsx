@@ -12,6 +12,7 @@ interface Curso {
   activo: boolean;
   mensaje_bienvenida?: string;
   mensaje_saludo?: string;
+  mensaje_menu_body?: string;
   tipo_formacion?: string;
   categoria?: string;
   inscripciones_abiertas?: boolean;
@@ -141,7 +142,7 @@ export default function CursoDetailPage() {
   const [savingAnuncio, setSavingAnuncio] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Curso>>({
-    codigo: '', nombre: '', descripcion: '', mensaje_bienvenida: '', mensaje_saludo: '',
+    codigo: '', nombre: '', descripcion: '', mensaje_bienvenida: '', mensaje_saludo: '', mensaje_menu_body: '',
     tipo_formacion: 'curso', categoria: '', inscripciones_abiertas: true, disponible_entrada_directa: false,
     info_precio: '', info_fechas: '', info_duracion: '', info_certificacion: '',
     info_salida_laboral: '', info_modalidad: '',
@@ -388,7 +389,14 @@ export default function CursoDetailPage() {
             <div>
               <label className="block text-sm font-medium mb-1">Mensaje de Bienvenida (menú)</label>
               <textarea value={formData.mensaje_bienvenida || ''} onChange={e => setFormData({ ...formData, mensaje_bienvenida: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg" rows={3} placeholder="¡Hola! 👋 Gracias por tu interés en..." />
+                className="w-full px-3 py-2 border rounded-lg" rows={3} placeholder="Descripción completa del curso..." />
+              <p className="text-xs text-gray-500 mt-1">Se envía como mensaje separado después del saludo</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Texto del Menú (body corto)</label>
+              <textarea value={formData.mensaje_menu_body || ''} onChange={e => setFormData({ ...formData, mensaje_menu_body: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="Seleccioná qué información necesitás:" />
+              <p className="text-xs text-gray-500 mt-1">Texto que aparece en el menú interactivo</p>
             </div>
             <hr />
             <h3 className="font-semibold">Configuración</h3>

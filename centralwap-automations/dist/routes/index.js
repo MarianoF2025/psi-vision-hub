@@ -61,4 +61,8 @@ router.post('/test/ctwa', async (req, res) => {
     req.body = { telefono, ad_id, curso_id };
     return MenuController_1.menuController.enviarMenu(req, res);
 });
+// AUTORESPUESTAS
+const AutorespuestasController_1 = require("../controllers/AutorespuestasController");
+router.post('/autorespuesta/verificar', (req, res) => AutorespuestasController_1.autorespuestasController.verificar(req, res));
+router.get('/autorespuesta/estado/:linea', (req, res) => AutorespuestasController_1.autorespuestasController.estado(req, res));
 //# sourceMappingURL=index.js.map
