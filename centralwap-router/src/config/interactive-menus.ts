@@ -156,14 +156,14 @@ export const ACCIONES_MENU: Record<string, AccionMenu> = {
   'area_alumnos': { tipo: 'submenu', submenu: 'alumnos' },
   'area_inscripciones': { tipo: 'submenu', submenu: 'inscripciones' },
   'area_comunidad': { tipo: 'submenu', submenu: 'comunidad' },
-  'area_otra': { tipo: 'derivar', area: 'administracion', subetiqueta: 'otra_consulta', mensaje_contexto: 'Otra consulta' },
+  'area_otra': { tipo: 'derivar', area: 'admin', subetiqueta: 'otra_consulta', mensaje_contexto: 'Otra consulta' },
 
   // Submenú Administración
-  'admin_pagos': { tipo: 'derivar', area: 'administracion', subetiqueta: 'pagos', mensaje_contexto: 'Pagos y medios de pago' },
-  'admin_cuota': { tipo: 'derivar', area: 'administracion', subetiqueta: 'cuota', mensaje_contexto: 'Problemas con la cuota' },
-  'admin_facturas': { tipo: 'derivar', area: 'administracion', subetiqueta: 'facturas', mensaje_contexto: 'Facturas / Comprobantes' },
-  'admin_certificados': { tipo: 'derivar', area: 'administracion', subetiqueta: 'certificados', mensaje_contexto: 'Certificados / Constancias' },
-  'admin_otro': { tipo: 'derivar', area: 'administracion', subetiqueta: 'otro', mensaje_contexto: 'Otra consulta administrativa' },
+  'admin_pagos': { tipo: 'derivar', area: 'admin', subetiqueta: 'pagos', mensaje_contexto: 'Pagos y medios de pago' },
+  'admin_cuota': { tipo: 'derivar', area: 'admin', subetiqueta: 'cuota', mensaje_contexto: 'Problemas con la cuota' },
+  'admin_facturas': { tipo: 'derivar', area: 'admin', subetiqueta: 'facturas', mensaje_contexto: 'Facturas / Comprobantes' },
+  'admin_certificados': { tipo: 'derivar', area: 'admin', subetiqueta: 'certificados', mensaje_contexto: 'Certificados / Constancias' },
+  'admin_otro': { tipo: 'derivar', area: 'admin', subetiqueta: 'otro', mensaje_contexto: 'Otra consulta administrativa' },
 
   // Submenú Alumnos
   'alumnos_campus': { tipo: 'derivar', area: 'alumnos', subetiqueta: 'campus', mensaje_contexto: 'Acceso al campus' },
