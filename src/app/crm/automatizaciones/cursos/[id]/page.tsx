@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Save, BookOpen, List, Megaphone, BarChart3, Plus, Trash2, Eye, X, Link2, Award, HeartHandshake, TrendingUp, Baby, Puzzle, GraduationCap, User, Brain, ChevronDown, Circle, DollarSign, Calendar, Clock, Medal, Briefcase, Home, FileText, ClipboardList, Users, MousePointerClick, Target, UserX, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, BookOpen, List, Megaphone, BarChart3, Plus, Trash2, Eye, X, Link2, Award, HeartHandshake, TrendingUp, Baby, Puzzle, GraduationCap, User, Brain, ChevronDown, Circle, DollarSign, Calendar, Clock, Medal, Briefcase, Home, FileText, ClipboardList, Users, MousePointerClick, Target, UserX, RefreshCw, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Curso {
   id: string;
@@ -128,15 +132,12 @@ export default function CursoDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Stats
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
-  // Dropdown categoría
   const [openCatDropdown, setOpenCatDropdown] = useState(false);
   const catDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Modal anuncio
   const [showAnuncioModal, setShowAnuncioModal] = useState(false);
   const [nuevoAnuncio, setNuevoAnuncio] = useState({ ad_id: '', nombre: '' });
   const [savingAnuncio, setSavingAnuncio] = useState(false);
@@ -147,6 +148,8 @@ export default function CursoDetailPage() {
     info_precio: '', info_fechas: '', info_duracion: '', info_certificacion: '',
     info_salida_laboral: '', info_modalidad: '',
   });
+
+  const mesActual = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -315,6 +318,117 @@ export default function CursoDetailPage() {
     } catch (err) { console.error(err); }
   }
 
+  // === FUNCIONES DE EXPORTACIÓN ===
+  function exportarExcel() {
+    if (!stats) return;
+    const wb = XLSX.utils.book_new();
+    
+    const resumenData = [
+      ['Estadísticas del Curso', formData.nombre || ''],
+      ['Período', mesActual],
+      [''],
+      ['Métrica', 'Valor'],
+      ['Leads (mes actual)', stats.resumen.leads_mes_actual],
+      ['Leads (mes anterior)', stats.resumen.leads_mes_anterior],
+      ['Variación', `${stats.resumen.variacion_leads}%`],
+      ['Tasa Engagement', `${stats.resumen.tasa_engagement}%`],
+      ['Tasa Inscripción', `${stats.resumen.tasa_inscripcion}%`],
+      ['Tasa Abandono', `${stats.resumen.tasa_abandono}%`],
+      ['Total Interacciones', stats.resumen.total_interacciones],
+      ['Inscripciones', stats.resumen.inscripciones],
+      ['Derivaciones', stats.resumen.derivaciones],
+    ];
+    const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
+    XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
+    
+    if (stats.opciones.length > 0) {
+      const opcionesData = [
+        ['Emoji', 'Título', 'Tipo', 'Veces Elegida', 'CTR (%)'],
+        ...stats.opciones.map(o => [o.emoji, o.titulo, o.tipo, o.veces_elegida, o.ctr])
+      ];
+      const wsOpciones = XLSX.utils.aoa_to_sheet(opcionesData);
+      XLSX.utils.book_append_sheet(wb, wsOpciones, 'Menú');
+    }
+    
+    if (stats.anuncios.length > 0) {
+      const anunciosData = [
+        ['Nombre', 'Ad ID', 'Leads', 'Engagement (%)', 'Inscripciones', 'Tasa Inscripción (%)'],
+        ...stats.anuncios.map(a => [a.nombre || `Anuncio ${a.ad_id.slice(-8)}`, a.ad_id, a.leads, a.engagement, a.inscripciones, a.tasa_inscripcion])
+      ];
+      const wsAnuncios = XLSX.utils.aoa_to_sheet(anunciosData);
+      XLSX.utils.book_append_sheet(wb, wsAnuncios, 'Anuncios');
+    }
+    
+    const filename = `estadisticas_${formData.codigo || 'curso'}_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+  }
+
+  function exportarPDF() {
+    if (!stats) return;
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    doc.setFontSize(18);
+    doc.text(`Estadísticas: ${formData.nombre || 'Curso'}`, pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(11);
+    doc.text(mesActual, pageWidth / 2, 28, { align: 'center' });
+    
+    doc.setFontSize(14);
+    doc.text('Resumen', 14, 40);
+    autoTable(doc, {
+      startY: 45,
+      head: [['Métrica', 'Valor']],
+      body: [
+        ['Leads (mes actual)', stats.resumen.leads_mes_actual.toString()],
+        ['Variación vs mes anterior', `${stats.resumen.variacion_leads}%`],
+        ['Tasa Engagement', `${stats.resumen.tasa_engagement}%`],
+        ['Tasa Inscripción', `${stats.resumen.tasa_inscripcion}%`],
+        ['Tasa Abandono', `${stats.resumen.tasa_abandono}%`],
+        ['Total Interacciones', stats.resumen.total_interacciones.toString()],
+        ['Inscripciones', stats.resumen.inscripciones.toString()],
+        ['Derivaciones', stats.resumen.derivaciones.toString()],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [59, 130, 246] },
+    });
+
+    let currentY = (doc as any).lastAutoTable.finalY + 10;
+
+    if (stats.opciones.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Rendimiento del Menú', 14, currentY);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Emoji', 'Título', 'Tipo', 'Veces Elegida', 'CTR (%)']],
+        body: stats.opciones.map(o => [o.emoji, o.titulo, o.tipo, o.veces_elegida.toString(), `${o.ctr}%`]),
+        theme: 'striped',
+        headStyles: { fillColor: [34, 197, 94] },
+      });
+      currentY = (doc as any).lastAutoTable.finalY + 10;
+    }
+
+    if (stats.anuncios.length > 0) {
+      doc.setFontSize(14);
+      doc.text('Rendimiento por Anuncio', 14, currentY);
+      autoTable(doc, {
+        startY: currentY + 5,
+        head: [['Anuncio', 'Leads', 'Engagement', 'Inscripciones', 'Tasa']],
+        body: stats.anuncios.map(a => [
+          a.nombre || `...${a.ad_id.slice(-8)}`,
+          a.leads.toString(),
+          `${a.engagement}%`,
+          a.inscripciones.toString(),
+          `${a.tasa_inscripcion}%`
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [168, 85, 247] },
+      });
+    }
+    
+    const filename = `estadisticas_${formData.codigo || 'curso'}_${new Date().toISOString().slice(0,10)}.pdf`;
+    doc.save(filename);
+  }
+
   const selectedCategoria = CATEGORIAS.find(c => c.value === formData.categoria);
   const getCampoInfo = (value: string) => CAMPOS_INFO.find(c => c.value === value);
 
@@ -326,8 +440,6 @@ export default function CursoDetailPage() {
     { id: 'anuncios', label: 'Anuncios', icon: Megaphone, disabled: isNew },
     { id: 'stats', label: 'Estadísticas', icon: BarChart3, disabled: isNew },
   ];
-
-  const mesActual = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
 
   return (
     <div className="p-6 max-w-5xl mx-auto h-full overflow-y-auto">
@@ -559,9 +671,21 @@ export default function CursoDetailPage() {
                 <h3 className="font-semibold text-lg">Estadísticas del Curso</h3>
                 <p className="text-sm text-gray-500 capitalize">{mesActual}</p>
               </div>
-              <button onClick={cargarStats} disabled={loadingStats} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-                <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} /> Actualizar
-              </button>
+              <div className="flex items-center gap-2">
+                {stats && (
+                  <>
+                    <button onClick={exportarExcel} className="flex items-center gap-2 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">
+                      <Download className="w-4 h-4" /> Excel
+                    </button>
+                    <button onClick={exportarPDF} className="flex items-center gap-2 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
+                      <Download className="w-4 h-4" /> PDF
+                    </button>
+                  </>
+                )}
+                <button onClick={cargarStats} disabled={loadingStats} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 px-3 py-2">
+                  <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} /> Actualizar
+                </button>
+              </div>
             </div>
 
             {loadingStats ? (
@@ -647,7 +771,7 @@ export default function CursoDetailPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {stats.anuncios.map((an, idx) => {
+                          {stats.anuncios.map((an) => {
                             const isBest = stats.anuncios.length > 1 && an.tasa_inscripcion === Math.max(...stats.anuncios.map(a => a.tasa_inscripcion)) && an.tasa_inscripcion > 0;
                             return (
                               <tr key={an.id} className="border-b last:border-0">
