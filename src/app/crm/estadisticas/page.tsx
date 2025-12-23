@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import { 
+import {
   MessageSquare, Users, Clock, TrendingUp, TrendingDown,
   Phone, Megaphone, UserCheck, RefreshCw, Download, BarChart3,
   Send, Inbox, GitBranch, Target, Award, Calendar, FileSpreadsheet,
@@ -55,9 +55,10 @@ interface StatsAgente {
   mensajesEnviados: number;
   mensajesAnterior: number;
   conversacionesAtendidas: number;
+  conversacionesAsignadas: number;
   conversacionesAnterior: number;
   porLinea: { linea: string; mensajes: number }[];
-  tiempoRespuestaPromedio: number | null; // en minutos
+  tiempoRespuestaPromedio: number | null;
   conversiones: number;
 }
 
@@ -76,7 +77,6 @@ export default function EstadisticasPage() {
   const [exportando, setExportando] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
 
-  // Fechas personalizadas
   const [fechaDesde, setFechaDesde] = useState<string>('');
   const [fechaHasta, setFechaHasta] = useState<string>('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -127,11 +127,11 @@ export default function EstadisticasPage() {
           hasta.setHours(23, 59, 59, 999);
           const duracion = hasta.getTime() - desde.getTime();
           const inicioAnterior = new Date(desde.getTime() - duracion);
-          return { 
-            inicio: desde.toISOString(), 
-            fin: hasta.toISOString(), 
-            inicioAnterior: inicioAnterior.toISOString(), 
-            finAnterior: desde.toISOString() 
+          return {
+            inicio: desde.toISOString(),
+            fin: hasta.toISOString(),
+            inicioAnterior: inicioAnterior.toISOString(),
+            finAnterior: desde.toISOString()
           };
         }
         return { inicio: null, fin: null, inicioAnterior: null, finAnterior: null };
@@ -204,36 +204,46 @@ export default function EstadisticasPage() {
 
   const cargarStatsVentas = async () => {
     try {
+      // Usar menu_sesiones como fuente (igual que Automatizaciones)
       const { count: leadsHoy } = await supabase
-        .from('conversaciones')
+        .from('menu_sesiones')
         .select('*', { count: 'exact', head: true })
-        .eq('linea_origen', 'ventas_api')
         .gte('created_at', inicioHoy);
 
       const { count: leadsSemana } = await supabase
-        .from('conversaciones')
+        .from('menu_sesiones')
         .select('*', { count: 'exact', head: true })
-        .eq('linea_origen', 'ventas_api')
         .gte('created_at', inicioSemana);
 
       const { count: leadsMes } = await supabase
-        .from('conversaciones')
+        .from('menu_sesiones')
         .select('*', { count: 'exact', head: true })
-        .eq('linea_origen', 'ventas_api')
         .gte('created_at', inicioMes);
 
-      const { data: anuncios } = await supabase
+      // Top anuncios: contar sesiones por anuncio
+      const { data: anunciosConfig } = await supabase
         .from('config_cursos_ctwa')
-        .select('nombre, ad_id, ejecuciones, meta_headline')
-        .eq('activo', true)
-        .order('ejecuciones', { ascending: false })
-        .limit(5);
+        .select('id, nombre, ad_id, meta_headline, curso_id')
+        .eq('activo', true);
 
-      const topAnuncios = anuncios?.map(a => ({
-        nombre: a.meta_headline || a.nombre || 'Sin nombre',
-        ad_id: a.ad_id || '',
-        leads: a.ejecuciones || 0
-      })) || [];
+      const topAnuncios: { nombre: string; ad_id: string; leads: number }[] = [];
+      
+      if (anunciosConfig) {
+        for (const anuncio of anunciosConfig) {
+          const { count } = await supabase
+            .from('menu_sesiones')
+            .select('*', { count: 'exact', head: true })
+            .eq('curso_id', anuncio.curso_id)
+            .eq('origen', 'ctwa');
+          
+          topAnuncios.push({
+            nombre: anuncio.meta_headline || anuncio.nombre || 'Sin nombre',
+            ad_id: anuncio.ad_id || '',
+            leads: count || 0
+          });
+        }
+        topAnuncios.sort((a, b) => b.leads - a.leads);
+      }
 
       const { count: autoHoy } = await supabase
         .from('autorespuestas_enviadas')
@@ -250,7 +260,7 @@ export default function EstadisticasPage() {
         leadsHoy: leadsHoy || 0,
         leadsSemana: leadsSemana || 0,
         leadsMes: leadsMes || 0,
-        topAnuncios,
+        topAnuncios: topAnuncios.slice(0, 5),
         autorespuestasHoy: autoHoy || 0,
         conversiones: conversiones || 0
       });
@@ -263,7 +273,6 @@ export default function EstadisticasPage() {
     try {
       const { inicio, fin, inicioAnterior, finAnterior } = getFechasPeriodo(periodoAgentes);
 
-      // Mensajes del período actual
       let queryActual = supabase
         .from('mensajes')
         .select('remitente_id, remitente_nombre, conversacion_id, created_at')
@@ -280,7 +289,6 @@ export default function EstadisticasPage() {
 
       const { data: mensajesActual } = await queryActual;
 
-      // Mensajes del período anterior (para comparativa)
       let mensajesAnterior: typeof mensajesActual = [];
       if (inicioAnterior && finAnterior) {
         const { data } = await supabase
@@ -294,7 +302,6 @@ export default function EstadisticasPage() {
         mensajesAnterior = data || [];
       }
 
-      // Obtener conversaciones para el desglose por línea y conversiones
       const convIds = [...new Set(mensajesActual?.map(m => m.conversacion_id) || [])];
       const { data: conversaciones } = await supabase
         .from('conversaciones')
@@ -308,7 +315,6 @@ export default function EstadisticasPage() {
         if (c.contacto_id) convContactoMap[c.id] = c.contacto_id;
       });
 
-      // Obtener contactos ganados para conversiones por agente
       const contactoIds = [...new Set(Object.values(convContactoMap))];
       const { data: contactosGanados } = await supabase
         .from('contactos')
@@ -318,7 +324,20 @@ export default function EstadisticasPage() {
 
       const contactosGanadosSet = new Set(contactosGanados?.map(c => c.id) || []);
 
-      // Obtener mensajes entrantes para calcular tiempo de respuesta
+      // NUEVO: Obtener conversaciones ASIGNADAS a cada agente
+      const { data: convsAsignadas } = await supabase
+        .from('conversaciones')
+        .select('id, asignado_a')
+        .not('asignado_a', 'is', null)
+        .in('estado', ['activa', 'abierta', 'en_menu', 'derivada']);
+
+      const convsAsignadasPorAgente: Record<string, number> = {};
+      convsAsignadas?.forEach(c => {
+        if (c.asignado_a) {
+          convsAsignadasPorAgente[c.asignado_a] = (convsAsignadasPorAgente[c.asignado_a] || 0) + 1;
+        }
+      });
+
       let queryEntrantes = supabase
         .from('mensajes')
         .select('conversacion_id, created_at')
@@ -328,7 +347,6 @@ export default function EstadisticasPage() {
 
       const { data: mensajesEntrantes } = await queryEntrantes;
 
-      // Mapear primer mensaje entrante por conversación
       const primerMensajeEntrante: Record<string, string> = {};
       mensajesEntrantes?.forEach(m => {
         if (!primerMensajeEntrante[m.conversacion_id]) {
@@ -341,7 +359,6 @@ export default function EstadisticasPage() {
         return;
       }
 
-      // Agrupar por agente
       const agentesMap: Record<string, {
         nombre: string;
         mensajes: number;
@@ -371,27 +388,23 @@ export default function EstadisticasPage() {
           const linea = convLineaMap[m.conversacion_id] || 'otros';
           agentesMap[m.remitente_id].porLinea[linea] = (agentesMap[m.remitente_id].porLinea[linea] || 0) + 1;
 
-          // Guardar primera respuesta del agente en cada conversación
           if (!agentesMap[m.remitente_id].primerRespuestaPorConv[m.conversacion_id]) {
             agentesMap[m.remitente_id].primerRespuestaPorConv[m.conversacion_id] = m.created_at;
           }
         }
       });
 
-      // Calcular tiempo de respuesta y conversiones
       Object.entries(agentesMap).forEach(([agenteId, data]) => {
-        // Tiempo de respuesta
         Object.entries(data.primerRespuestaPorConv).forEach(([convId, respuestaTime]) => {
           const entranteTime = primerMensajeEntrante[convId];
           if (entranteTime) {
             const diffMs = new Date(respuestaTime).getTime() - new Date(entranteTime).getTime();
-            if (diffMs > 0 && diffMs < 24 * 60 * 60 * 1000) { // Solo si es < 24h (filtrar anomalías)
-              data.tiemposRespuesta.push(diffMs / 1000 / 60); // en minutos
+            if (diffMs > 0 && diffMs < 24 * 60 * 60 * 1000) {
+              data.tiemposRespuesta.push(diffMs / 1000 / 60);
             }
           }
         });
 
-        // Conversiones
         data.convs.forEach(convId => {
           const contactoId = convContactoMap[convId];
           if (contactoId && contactosGanadosSet.has(contactoId)) {
@@ -400,7 +413,6 @@ export default function EstadisticasPage() {
         });
       });
 
-      // Contar período anterior
       const anteriorMap: Record<string, { mensajes: number; convs: Set<string> }> = {};
       mensajesAnterior?.forEach(m => {
         if (m.remitente_id) {
@@ -423,6 +435,7 @@ export default function EstadisticasPage() {
           mensajesEnviados: data.mensajes,
           mensajesAnterior: anteriorMap[id]?.mensajes || 0,
           conversacionesAtendidas: data.convs.size,
+          conversacionesAsignadas: convsAsignadasPorAgente[id] || 0,
           conversacionesAnterior: anteriorMap[id]?.convs.size || 0,
           porLinea: Object.entries(data.porLinea)
             .map(([linea, mensajes]) => ({ linea, mensajes }))
@@ -482,7 +495,6 @@ export default function EstadisticasPage() {
     try {
       const wb = XLSX.utils.book_new();
 
-      // Hoja WSP4
       const wsp4Data = [
         ['Estadísticas WSP4 Router', ''],
         ['Fecha de exportación', new Date().toLocaleString('es-AR')],
@@ -500,7 +512,6 @@ export default function EstadisticasPage() {
       const wsWSP4 = XLSX.utils.aoa_to_sheet(wsp4Data);
       XLSX.utils.book_append_sheet(wb, wsWSP4, 'WSP4 Router');
 
-      // Hoja Ventas
       const ventasData = [
         ['Estadísticas Ventas API', ''],
         ['Fecha de exportación', new Date().toLocaleString('es-AR')],
@@ -518,18 +529,18 @@ export default function EstadisticasPage() {
       const wsVentas = XLSX.utils.aoa_to_sheet(ventasData);
       XLSX.utils.book_append_sheet(wb, wsVentas, 'Ventas API');
 
-      // Hoja Agentes
       const periodoNombre = getPeriodoNombre();
       const agentesData = [
         ['Rendimiento por Agente', ''],
         ['Período', periodoNombre],
         ['Fecha de exportación', new Date().toLocaleString('es-AR')],
         [''],
-        ['Agente', 'Mensajes', 'Conv.', 'Promedio', 'T. Respuesta', 'Conversiones', 'Variación'],
+        ['Agente', 'Mensajes', 'Conv. Atendidas', 'Conv. Asignadas', 'Promedio', 'T. Respuesta', 'Conversiones', 'Variación'],
         ...statsAgentes.map(a => [
           a.nombre,
           a.mensajesEnviados,
           a.conversacionesAtendidas,
+          a.conversacionesAsignadas,
           a.conversacionesAtendidas > 0 ? (a.mensajesEnviados / a.conversacionesAtendidas).toFixed(1) : '0',
           a.tiempoRespuestaPromedio ? formatTiempo(a.tiempoRespuestaPromedio) : 'N/A',
           a.conversiones,
@@ -557,7 +568,6 @@ export default function EstadisticasPage() {
       let csv = 'Estadísticas PSI Vision Hub\n';
       csv += `Fecha de exportación,${new Date().toLocaleString('es-AR')}\n\n`;
 
-      // WSP4
       csv += 'WSP4 ROUTER\n';
       csv += `Mensajes Hoy,${statsWSP4.mensajesHoy}\n`;
       csv += `Mensajes Semana,${statsWSP4.mensajesSemana}\n`;
@@ -565,14 +575,12 @@ export default function EstadisticasPage() {
       csv += `Conversaciones Hoy,${statsWSP4.conversacionesHoy}\n`;
       csv += `Autorespuestas Hoy,${statsWSP4.autorespuestasHoy}\n\n`;
 
-      // Derivaciones
       csv += 'Derivaciones por Área\n';
       statsWSP4.derivacionesHoy.forEach(d => {
         csv += `${formatArea(d.area)},${d.cantidad}\n`;
       });
       csv += '\n';
 
-      // Ventas
       csv += 'VENTAS API\n';
       csv += `Leads Hoy,${statsVentas.leadsHoy}\n`;
       csv += `Leads Semana,${statsVentas.leadsSemana}\n`;
@@ -580,15 +588,14 @@ export default function EstadisticasPage() {
       csv += `Conversiones,${statsVentas.conversiones}\n`;
       csv += `Autorespuestas Hoy,${statsVentas.autorespuestasHoy}\n\n`;
 
-      // Agentes
       csv += 'RENDIMIENTO POR AGENTE\n';
-      csv += 'Agente,Mensajes,Conv.,Promedio,T. Respuesta,Conversiones,Variación\n';
+      csv += 'Agente,Mensajes,Conv. Atendidas,Conv. Asignadas,Promedio,T. Respuesta,Conversiones,Variación\n';
       statsAgentes.forEach(a => {
         const variacion = a.mensajesAnterior > 0
           ? `${(((a.mensajesEnviados - a.mensajesAnterior) / a.mensajesAnterior) * 100).toFixed(0)}%`
           : 'N/A';
         const tiempo = a.tiempoRespuestaPromedio ? formatTiempo(a.tiempoRespuestaPromedio) : 'N/A';
-        csv += `"${a.nombre}",${a.mensajesEnviados},${a.conversacionesAtendidas},${a.conversacionesAtendidas > 0 ? (a.mensajesEnviados / a.conversacionesAtendidas).toFixed(1) : '0'},${tiempo},${a.conversiones},${variacion}\n`;
+        csv += `"${a.nombre}",${a.mensajesEnviados},${a.conversacionesAtendidas},${a.conversacionesAsignadas},${a.conversacionesAtendidas > 0 ? (a.mensajesEnviados / a.conversacionesAtendidas).toFixed(1) : '0'},${tiempo},${a.conversiones},${variacion}\n`;
       });
 
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -608,7 +615,6 @@ export default function EstadisticasPage() {
       const doc = new jsPDF();
       const fechaExport = new Date().toLocaleString('es-AR');
 
-      // Título
       doc.setFontSize(20);
       doc.setTextColor(79, 70, 229);
       doc.text('Estadísticas PSI Vision Hub', 14, 20);
@@ -619,7 +625,6 @@ export default function EstadisticasPage() {
 
       let yPos = 40;
 
-      // WSP4 Router
       doc.setFontSize(14);
       doc.setTextColor(30, 64, 175);
       doc.text('WSP4 Router', 14, yPos);
@@ -642,7 +647,6 @@ export default function EstadisticasPage() {
 
       yPos = (doc as any).lastAutoTable.finalY + 15;
 
-      // Ventas API
       doc.setFontSize(14);
       doc.setTextColor(16, 185, 129);
       doc.text('Ventas API', 14, yPos);
@@ -662,7 +666,6 @@ export default function EstadisticasPage() {
         margin: { left: 14, right: 14 },
       });
 
-      // Nueva página para Agentes
       doc.addPage();
 
       doc.setFontSize(14);
@@ -672,16 +675,22 @@ export default function EstadisticasPage() {
       if (statsAgentes.length > 0) {
         autoTable(doc, {
           startY: 28,
-          head: [['#', 'Agente', 'Msgs', 'Conv.', 'T.Resp', 'Conv.', 'Var.']],
+          head: [['#', 'Agente', 'Msgs', 'Atend.', 'Asign.', 'T.Resp', 'Conv.', 'Var.']],
           body: statsAgentes.map((a, i) => {
-            const promedio = a.conversacionesAtendidas > 0
-              ? (a.mensajesEnviados / a.conversacionesAtendidas).toFixed(1)
-              : '0';
             const variacion = a.mensajesAnterior > 0
               ? `${(((a.mensajesEnviados - a.mensajesAnterior) / a.mensajesAnterior) * 100).toFixed(0)}%`
               : 'N/A';
             const tiempo = a.tiempoRespuestaPromedio ? formatTiempo(a.tiempoRespuestaPromedio) : 'N/A';
-            return [(i + 1).toString(), a.nombre, a.mensajesEnviados.toString(), a.conversacionesAtendidas.toString(), tiempo, a.conversiones.toString(), variacion];
+            return [
+              (i + 1).toString(),
+              a.nombre,
+              a.mensajesEnviados.toString(),
+              a.conversacionesAtendidas.toString(),
+              a.conversacionesAsignadas.toString(),
+              tiempo,
+              a.conversiones.toString(),
+              variacion
+            ];
           }),
           theme: 'striped',
           headStyles: { fillColor: [79, 70, 229] },
@@ -689,7 +698,6 @@ export default function EstadisticasPage() {
         });
       }
 
-      // Footer
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -824,7 +832,6 @@ export default function EstadisticasPage() {
             <p className="text-sm text-slate-500 mt-1">Métricas de rendimiento del sistema</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Dropdown Exportar */}
             <div className="relative">
               <button
                 onClick={() => setShowExportMenu(!showExportMenu)}
@@ -948,7 +955,6 @@ export default function EstadisticasPage() {
                   </div>
                 </div>
 
-                {/* Derivaciones por área */}
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
                   <h3 className="font-semibold text-slate-800 dark:text-white mb-4">Derivaciones por Área (Hoy)</h3>
                   {statsWSP4.derivacionesHoy.length > 0 ? (
@@ -1028,7 +1034,6 @@ export default function EstadisticasPage() {
                   </div>
                 </div>
 
-                {/* Top 5 Anuncios */}
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
                   <div className="flex items-center gap-2 mb-4">
                     <Award size={20} className="text-amber-500" />
@@ -1063,7 +1068,6 @@ export default function EstadisticasPage() {
                   )}
                 </div>
 
-                {/* Autorespuestas */}
                 <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
                   <div className="flex items-center justify-between">
                     <div>
@@ -1079,7 +1083,6 @@ export default function EstadisticasPage() {
             {/* ============ TAB: POR AGENTE ============ */}
             {tab === 'agentes' && (
               <div className="space-y-6">
-                {/* Filtro de período */}
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-2">
                     <Calendar size={16} className="text-slate-400" />
@@ -1110,7 +1113,6 @@ export default function EstadisticasPage() {
                         </button>
                       ))}
                     </div>
-                    {/* Botón fecha personalizada */}
                     <div className="relative">
                       <button
                         onClick={() => setShowDatePicker(!showDatePicker)}
@@ -1167,7 +1169,6 @@ export default function EstadisticasPage() {
 
                       return (
                         <div key={agente.id} className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
-                          {/* Header del agente */}
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
                               <div className={cn(
@@ -1198,8 +1199,7 @@ export default function EstadisticasPage() {
                             )}
                           </div>
 
-                          {/* Métricas principales */}
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
                             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
                               <div className="flex items-center gap-2 text-slate-500 mb-1">
                                 <Send size={14} />
@@ -1210,9 +1210,16 @@ export default function EstadisticasPage() {
                             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
                               <div className="flex items-center gap-2 text-slate-500 mb-1">
                                 <MessageSquare size={14} />
-                                <span className="text-xs">Conv.</span>
+                                <span className="text-xs">Atendidas</span>
                               </div>
                               <p className="text-xl font-bold text-slate-800 dark:text-white">{agente.conversacionesAtendidas}</p>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
+                              <div className="flex items-center gap-2 text-slate-500 mb-1">
+                                <Inbox size={14} />
+                                <span className="text-xs">Asignadas</span>
+                              </div>
+                              <p className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{agente.conversacionesAsignadas}</p>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3">
                               <div className="flex items-center gap-2 text-slate-500 mb-1">
@@ -1231,8 +1238,8 @@ export default function EstadisticasPage() {
                                 <span className="text-xs">T. Resp.</span>
                               </div>
                               <p className="text-xl font-bold text-slate-800 dark:text-white">
-                                {agente.tiempoRespuestaPromedio 
-                                  ? formatTiempo(agente.tiempoRespuestaPromedio) 
+                                {agente.tiempoRespuestaPromedio
+                                  ? formatTiempo(agente.tiempoRespuestaPromedio)
                                   : 'N/A'}
                               </p>
                             </div>
@@ -1245,7 +1252,6 @@ export default function EstadisticasPage() {
                             </div>
                           </div>
 
-                          {/* Desglose por línea */}
                           {agente.porLinea.length > 0 && (
                             <div>
                               <p className="text-xs text-slate-500 mb-2">Actividad por línea</p>

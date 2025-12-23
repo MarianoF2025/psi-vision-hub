@@ -16,6 +16,8 @@ interface Curso {
 
 interface DashboardStats {
   leads_este_mes: number;
+  leads_ctwa: number;
+  leads_directos: number;
   interacciones_este_mes: number;
   ctr_promedio: number;
   cursos_activos: number;
@@ -39,12 +41,10 @@ export default function AutomatizacionesPage() {
     setLoading(true);
     setError(null);
     try {
-      // Cargar stats
       const statsRes = await fetch(`${API_URL}?path=stats/dashboard`);
       const statsData = await statsRes.json();
       if (statsData.success) setStats(statsData.data);
 
-      // Cargar cursos con CTR
       const cursosRes = await fetch(`${API_URL}?path=stats/cursos`);
       const cursosData = await cursosRes.json();
       if (cursosData.success) setCursos(cursosData.data);
@@ -82,7 +82,7 @@ export default function AutomatizacionesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Automatizaciones CTWA</h1>
-          <p className="text-gray-500">Menús interactivos para leads de Meta Ads</p>
+          <p className="text-gray-500">Menús interactivos para leads de Meta Ads y entrada directa</p>
         </div>
         <button
           onClick={() => router.push('/crm/automatizaciones/cursos/nuevo')}
@@ -101,26 +101,34 @@ export default function AutomatizacionesPage() {
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-8">
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="text-3xl font-bold text-blue-600">{stats.leads_este_mes}</div>
             <div className="text-sm text-gray-500">Leads este mes</div>
           </div>
+          <div className="bg-gradient-to-br from-orange-50 to-white rounded-xl shadow-sm border p-4">
+            <div className="text-3xl font-bold text-orange-600">{stats.leads_ctwa || 0}</div>
+            <div className="text-sm text-gray-500">📢 CTWA (Ads)</div>
+          </div>
+          <div className="bg-gradient-to-br from-teal-50 to-white rounded-xl shadow-sm border p-4">
+            <div className="text-3xl font-bold text-teal-600">{stats.leads_directos || 0}</div>
+            <div className="text-sm text-gray-500">🌐 Directos</div>
+          </div>
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="text-3xl font-bold text-green-600">{stats.ctr_promedio}%</div>
-            <div className="text-sm text-gray-500">CTR Promedio</div>
+            <div className="text-sm text-gray-500">Engagement</div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="text-3xl font-bold text-purple-600">{stats.interacciones_este_mes}</div>
             <div className="text-sm text-gray-500">Interacciones</div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border p-4">
-            <div className="text-3xl font-bold text-orange-600">{stats.cursos_activos}</div>
-            <div className="text-sm text-gray-500">Cursos activos</div>
+            <div className="text-3xl font-bold text-indigo-600">{stats.cursos_activos}</div>
+            <div className="text-sm text-gray-500">Cursos</div>
           </div>
           <div className="bg-white rounded-xl shadow-sm border p-4">
             <div className="text-3xl font-bold text-pink-600">{stats.anuncios_activos}</div>
-            <div className="text-sm text-gray-500">Anuncios activos</div>
+            <div className="text-sm text-gray-500">Anuncios</div>
           </div>
         </div>
       )}
@@ -158,7 +166,6 @@ export default function AutomatizacionesPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {/* Toggle activo */}
                   <button
                     onClick={() => toggleCurso(curso.id)}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${curso.activo ? 'bg-green-500' : 'bg-gray-300'}`}
@@ -166,7 +173,6 @@ export default function AutomatizacionesPage() {
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${curso.activo ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
 
-                  {/* Botón configurar */}
                   <button
                     onClick={() => router.push(`/crm/automatizaciones/cursos/${curso.id}`)}
                     className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
@@ -175,7 +181,6 @@ export default function AutomatizacionesPage() {
                     <Settings className="w-5 h-5" />
                   </button>
 
-                  {/* Botón stats */}
                   <button
                     onClick={() => router.push(`/crm/automatizaciones/cursos/${curso.id}?tab=stats`)}
                     className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition"
