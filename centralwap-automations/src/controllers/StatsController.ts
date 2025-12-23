@@ -150,7 +150,7 @@ export class StatsController {
         .from('menu_sesiones')
         .select('id')
         .eq('curso_id', cursoId)
-        .gt('total_interacciones', 0);
+        .gt('interacciones', 0);
 
       const sesionesEngaged = sesionesConInteraccion?.length || 0;
       const tasaEngagement = leadsTotal && leadsTotal > 0 
@@ -210,7 +210,7 @@ export class StatsController {
           .from('menu_sesiones')
           .select('id')
           .eq('config_ctwa_id', anuncio.id)
-          .gt('total_interacciones', 0);
+          .gt('interacciones', 0);
 
         const engageAnuncio = sesionesAnuncio?.length || 0;
         

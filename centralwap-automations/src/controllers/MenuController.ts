@@ -101,9 +101,6 @@ export class MenuController {
     }
   }
 
-  // ===========================================
-  // EXTRAER SUFIJO ÚNICO DEL WAMID (igual que Router)
-  // ===========================================
   private extraerSufijoWamid(wamid: string): string | null {
     try {
       const base64Part = wamid.replace('wamid.', '');
@@ -121,12 +118,8 @@ export class MenuController {
     }
   }
 
-  // ===========================================
-  // BUSCAR MENSAJE POR SUFIJO (igual que Router)
-  // ===========================================
   private async buscarMensajePorSufijo(sufijo: string): Promise<{ id: string; conversacion_id: string } | null> {
     try {
-      // 1. Buscar directamente por ID (Evolution API)
       const { data: directMatch } = await supabase
         .from('mensajes').select('id, conversacion_id').eq('whatsapp_message_id', sufijo).single();
       if (directMatch) {
@@ -134,7 +127,6 @@ export class MenuController {
         return { id: directMatch.id, conversacion_id: directMatch.conversacion_id };
       }
 
-      // 2. Buscar por sufijo (Cloud API con wamid)
       const { data: mensajes } = await supabase
         .from('mensajes').select('id, conversacion_id, whatsapp_message_id')
         .not('whatsapp_message_id', 'is', null)
@@ -159,9 +151,6 @@ export class MenuController {
     }
   }
 
-  // ===========================================
-  // PROCESAR REACCIÓN (igual que Router)
-  // ===========================================
   private async procesarReaccion(req: Request, res: Response): Promise<void> {
     try {
       const mensaje = req.body.messages?.[0];
@@ -182,7 +171,6 @@ export class MenuController {
         return;
       }
 
-      // Si emoji vacío = quitar reacción
       if (!emoji) {
         const mensajeOriginal = await this.buscarMensajePorSufijo(sufijoReaccion);
         if (mensajeOriginal) {
@@ -200,17 +188,14 @@ export class MenuController {
         return;
       }
 
-      // Verificar si ya existe reacción
       const { data: reaccionExistente } = await supabase
         .from('mensaje_reacciones').select('id, emoji')
         .eq('mensaje_id', mensajeOriginal.id).is('usuario_id', null).single();
 
       if (reaccionExistente) {
-        // Actualizar reacción existente
         await supabase.from('mensaje_reacciones').update({ emoji }).eq('id', reaccionExistente.id);
         console.log(`[Reacción] ✏️ Actualizada: ${emoji} en mensaje ${mensajeOriginal.id}`);
       } else {
-        // Crear nueva reacción
         await supabase.from('mensaje_reacciones').insert({
           mensaje_id: mensajeOriginal.id, emoji, usuario_id: null
         });
@@ -226,15 +211,60 @@ export class MenuController {
 
   private async buscarMensajeCitadoId(whatsappContextId: string): Promise<string | null> {
     if (!whatsappContextId) return null;
-    // Primero intentar con sufijo
     const sufijo = this.extraerSufijoWamid(whatsappContextId);
     if (sufijo) {
       const msg = await this.buscarMensajePorSufijo(sufijo);
       if (msg) return msg.id;
     }
-    // Fallback: búsqueda directa
     const { data } = await supabase.from('mensajes').select('id').eq('whatsapp_message_id', whatsappContextId).single();
     return data?.id || null;
+  }
+
+  // Helper para crear/actualizar sesión con campos correctos
+  private async crearOActualizarSesion(datos: {
+    telefono: string;
+    curso_id?: string;
+    config_ctwa_id?: string;
+    ad_id?: string;
+    ctwa_clid?: string;
+    conversacion_id?: string;
+    mensaje_inicial?: string;
+  }): Promise<void> {
+    const telNormalizado = this.normalizarTelefono(datos.telefono);
+    const ahora = new Date().toISOString();
+    
+    const sesionData: any = {
+      telefono: telNormalizado,
+      estado: 'activo',
+      interacciones: 0,
+      ultima_actividad: ahora,
+    };
+    
+    if (datos.curso_id) sesionData.curso_id = datos.curso_id;
+    if (datos.config_ctwa_id) sesionData.config_ctwa_id = datos.config_ctwa_id;
+    if (datos.ad_id) sesionData.ad_id = datos.ad_id;
+    if (datos.ctwa_clid) sesionData.ctwa_clid = datos.ctwa_clid;
+    if (datos.conversacion_id) sesionData.conversacion_id = datos.conversacion_id;
+    if (datos.mensaje_inicial) sesionData.mensaje_inicial = datos.mensaje_inicial;
+
+    const { error } = await supabase.from('menu_sesiones').upsert(sesionData, { onConflict: 'telefono' });
+    if (error) {
+      console.error('[Sesión] Error creando/actualizando:', error);
+    } else {
+      console.log(`[Sesión] ✅ Creada/actualizada para ${telNormalizado}${datos.curso_id ? ` (curso: ${datos.curso_id})` : ''}`);
+    }
+  }
+
+  // Helper para incrementar interacciones
+  private async incrementarInteracciones(telefono: string): Promise<void> {
+    const telNormalizado = this.normalizarTelefono(telefono);
+    const { data: sesion } = await supabase.from('menu_sesiones').select('id, interacciones').eq('telefono', telNormalizado).eq('estado', 'activo').single();
+    if (sesion) {
+      await supabase.from('menu_sesiones').update({
+        total_interacciones: (sesion.interacciones || 0) + 1,
+        ultima_actividad: new Date().toISOString()
+      }).eq('id', sesion.id);
+    }
   }
 
   async enviarMenu(req: Request, res: Response): Promise<void> {
@@ -272,11 +302,16 @@ export class MenuController {
 
       if (esCtwa) await this.fijarConversacionEnVentas(body.telefono, `Ingreso CTWA - Curso: ${curso.codigo}`, body.nombre_contacto, true);
 
-      await supabase.from('menu_sesiones').upsert({
-        telefono: body.telefono, conversacion_id: body.conversacion_id || null, curso_id: curso.id, config_ctwa_id: configCtwaId,
-        activo: true as const, ad_id: body.ad_id || null, ctwa_clid: body.ctwa_clid || null,
-        mensaje_inicial: body.mensaje_inicial || null, interacciones: 0, ultima_actividad: new Date().toISOString()
-      }, { onConflict: 'telefono' });
+      // Crear sesión con campos correctos
+      await this.crearOActualizarSesion({
+        telefono: body.telefono,
+        curso_id: curso.id,
+        config_ctwa_id: configCtwaId || undefined,
+        ad_id: body.ad_id,
+        ctwa_clid: body.ctwa_clid,
+        conversacion_id: body.conversacion_id,
+        mensaje_inicial: body.mensaje_inicial,
+      });
 
       console.log(`📤 Menú enviado: ${body.telefono} → ${curso.codigo}${esCtwa ? ' (CTWA 72h)' : ''}`);
       res.json({ success: true, data: { messageId: resultado.messageId, curso: { id: curso.id, codigo: curso.codigo, nombre: curso.nombre }, opcionesEnviadas: opciones.length }, message: `Menú de ${curso.nombre} enviado exitosamente` });
@@ -295,7 +330,8 @@ export class MenuController {
       if (!opcion) { res.status(404).json({ success: false, error: 'Opción no encontrada' }); return; }
 
       const curso = opcion.curso as Curso;
-      const { data: sesion } = await supabase.from('menu_sesiones').select('*').eq('telefono', body.telefono).eq('estado', 'activo').single();
+      const telNormalizado = this.normalizarTelefono(body.telefono);
+      const { data: sesion } = await supabase.from('menu_sesiones').select('*').eq('telefono', telNormalizado).eq('estado', 'activo').single();
       const esCTWA = !!(sesion?.ad_id || sesion?.config_ctwa_id);
 
       await supabase.from('menu_interacciones').insert({
@@ -304,7 +340,7 @@ export class MenuController {
         config_ctwa_id: sesion?.config_ctwa_id, ad_id: sesion?.ad_id, ctwa_clid: sesion?.ctwa_clid, respuesta_enviada: false, derivado: false
       });
 
-      if (sesion) await supabase.from('menu_sesiones').update({ interacciones: (sesion.interacciones || 0) + 1, ultima_actividad: new Date().toISOString() }).eq('id', sesion.id);
+      await this.incrementarInteracciones(body.telefono);
 
       let respuestaEnviada = false, derivado = false, mensajeRespuesta = '';
 
@@ -355,7 +391,8 @@ export class MenuController {
   async obtenerSesion(req: Request, res: Response): Promise<void> {
     try {
       const { telefono } = req.params;
-      const { data, error } = await supabase.from('menu_sesiones').select('*, curso:cursos(id, codigo, nombre)').eq('telefono', telefono).eq('estado', 'activo').single();
+      const telNormalizado = this.normalizarTelefono(telefono);
+      const { data, error } = await supabase.from('menu_sesiones').select('*, curso:cursos(id, codigo, nombre)').eq('telefono', telNormalizado).eq('estado', 'activo').single();
       if (error?.code === 'PGRST116') { res.status(404).json({ success: false, error: 'No hay sesión activa' }); return; }
       if (error) throw error;
       res.json({ success: true, data });
@@ -365,7 +402,8 @@ export class MenuController {
   async finalizarSesion(req: Request, res: Response): Promise<void> {
     try {
       const { telefono } = req.params;
-      const { data, error } = await supabase.from('menu_sesiones').update({ estado: 'finalizado' }).eq('telefono', telefono).eq('estado', 'activo').select().single();
+      const telNormalizado = this.normalizarTelefono(telefono);
+      const { data, error } = await supabase.from('menu_sesiones').update({ estado: 'finalizado' }).eq('telefono', telNormalizado).eq('estado', 'activo').select().single();
       if (error?.code === 'PGRST116') { res.status(404).json({ success: false, error: 'No hay sesión activa' }); return; }
       if (error) throw error;
       res.json({ success: true, data, message: 'Sesión finalizada' });
@@ -377,7 +415,6 @@ export class MenuController {
       const { telefono, nombre_contacto } = req.body;
       const tipoMensaje = req.body.tipo || req.body.messages?.[0]?.type || 'text';
 
-      // CASO 1: REACCIÓN
       if (tipoMensaje === 'reaction') {
         return this.procesarReaccion(req, res);
       }
@@ -387,7 +424,6 @@ export class MenuController {
       const telNormalizado = this.normalizarTelefono(telefono);
       const { data: convExistente } = await supabase.from('conversaciones').select('id, desconectado_wsp4, inbox_fijo').eq('telefono', telNormalizado).single();
 
-      // CASO 2: CONVERSACIÓN FIJADA EN VENTAS_API
       if (convExistente?.desconectado_wsp4 && convExistente?.inbox_fijo === 'ventas_api') {
         const ahora = new Date().toISOString();
         const contenido = req.body.contenido || req.body.messages?.[0]?.text?.body || '';
@@ -414,13 +450,14 @@ export class MenuController {
         return;
       }
 
-      // CASO 3: CONVERSACIÓN NUEVA - MOSTRAR BOTONES
       const resultado = await whatsAppService.enviarBotones(telefono, '¡Hola! 👋 Gracias por escribirnos a PSI.\n\n¿Qué tipo de formación te interesa?',
         [{ id: 'tipo_curso', titulo: '📚 Cursos' }, { id: 'tipo_especializacion', titulo: '🎓 Especializaciones' }, { id: 'hablar_agente', titulo: '💬 Hablar c/asesor' }], '🎓 PSI Asociación');
 
       if (!resultado.success) { res.status(500).json({ success: false, error: resultado.error || 'Error enviando botones' }); return; }
 
-      await supabase.from('menu_sesiones').upsert({ telefono: telNormalizado, activo: true, interacciones: 0, ultima_actividad: new Date().toISOString() }, { onConflict: 'telefono' });
+      // Crear sesión SIN curso_id (se asignará cuando elija curso)
+      await this.crearOActualizarSesion({ telefono: telNormalizado });
+      
       console.log(`📤 Botones entrada directa enviados: ${telefono}`);
       res.json({ success: true, message: 'Botones de entrada directa enviados' });
     } catch (error: any) {
@@ -453,6 +490,8 @@ export class MenuController {
 
       const resultado = await whatsAppService.enviarMenuGenerico(telefono, tipo === 'curso' ? 'Seleccioná el curso:' : 'Seleccioná la especialización:', sections, tipo === 'curso' ? '📚 Cursos Disponibles' : '🎓 Especializaciones');
       if (!resultado.success) { res.status(500).json({ success: false, error: resultado.error }); return; }
+      
+      await this.incrementarInteracciones(telefono);
       res.json({ success: true, data: { tipo, cantidad: cursos.length } });
     } catch (error: any) { res.status(500).json({ success: false, error: error.message }); }
   }
@@ -468,6 +507,7 @@ export class MenuController {
       if (seleccion_id === 'hablar_agente') {
         await whatsAppService.enviarTexto(telefono, '¡Perfecto! 👋\n\nEn breve te atiende un asesor.');
         await this.fijarConversacionEnVentas(telefono, 'Entrada directa - Solicitó hablar con agente', nombre_contacto, false);
+        await this.incrementarInteracciones(telefono);
         res.json({ success: true, data: { tipo: 'derivado_agente' } }); return;
       }
 
@@ -486,7 +526,10 @@ export class MenuController {
         const resultado = await whatsAppService.enviarMenuInteractivo(telefono, curso, opciones, true, false);
         if (!resultado.success) { res.status(500).json({ success: false, error: resultado.error }); return; }
 
-        await supabase.from('menu_sesiones').upsert({ telefono: this.normalizarTelefono(telefono), curso_id: cursoId, activo: true, interacciones: 1, ultima_actividad: new Date().toISOString() }, { onConflict: 'telefono' });
+        // Actualizar sesión CON curso_id
+        await this.crearOActualizarSesion({ telefono, curso_id: cursoId });
+        
+        console.log(`✅ Menu generico enviado a ${this.normalizarTelefono(telefono).replace('+', '')}`);
         res.json({ success: true, data: { tipo: 'menu_curso', curso: curso.codigo } }); return;
       }
 

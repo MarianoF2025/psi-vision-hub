@@ -8,6 +8,8 @@ export declare class MenuController {
     private buscarMensajePorSufijo;
     private procesarReaccion;
     private buscarMensajeCitadoId;
+    private crearOActualizarSesion;
+    private incrementarInteracciones;
     enviarMenu(req: Request, res: Response): Promise<void>;
     procesarSeleccion(req: Request, res: Response): Promise<void>;
     webhookRespuestaMenu(req: Request, res: Response): Promise<void>;
