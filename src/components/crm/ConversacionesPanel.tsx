@@ -297,6 +297,7 @@ export default function ConversacionesPanel() {
                       conv.estado === 'derivada' && 'bg-purple-100 dark:bg-purple-500/20 text-purple-600'
                     )}>{conv.estado}</span>
                     {windowInfo && <span className={cn('flex items-center gap-0.5 text-[8px]', windowInfo.color)}><Clock size={8} />{windowInfo.texto}</span>}
+                    {conv.asignado_nombre && <span className="px-1 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[8px] font-medium rounded">👤 {conv.asignado_nombre}</span>}
                   </div>
                   <p className="text-[10px] text-slate-500 truncate mt-0.5">{conv.ultimo_mensaje || 'Sin mensajes'}</p>
                 </div>

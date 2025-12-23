@@ -48,6 +48,10 @@ export interface Conversacion {
   ts_ultimo_mensaje?: string;
   etiqueta?: string;
   subetiqueta?: string;
+  // Campos de asignación
+  asignado_a?: string;
+  asignado_nombre?: string;
+  asignado_ts?: string;
   created_at?: string;
   updated_at?: string;
 }
