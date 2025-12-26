@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Send, Clock, Users, Pause, Play, Copy, Trash2, Edit3, Check, X, Eye, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Send, Clock, Users, Pause, Play, Copy, Trash2, Edit3, Check, X, Save, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 
 interface Campana {
@@ -48,6 +48,21 @@ interface Etiqueta {
   color: string;
 }
 
+interface Template {
+  id: string;
+  nombre: string;
+  categoria: string;
+  variables: number;
+}
+
+const cursosDisponibles = [
+  { codigo: 'AT', nombre: 'Acompañante Terapéutico' },
+  { codigo: 'APA', nombre: 'Aprendizaje y Psicología del Adulto' },
+  { codigo: 'PNIE', nombre: 'Psiconeuroinmunoendocrinología' },
+  { codigo: 'COACHING', nombre: 'Coaching Ontológico' },
+  { codigo: 'MINDFULNESS', nombre: 'Mindfulness' },
+];
+
 export default function DetalleCampanaPage() {
   const router = useRouter();
   const params = useParams();
@@ -56,14 +71,28 @@ export default function DetalleCampanaPage() {
   const [campana, setCampana] = useState<Campana | null>(null);
   const [envios, setEnvios] = useState<Envio[]>([]);
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [cargando, setCargando] = useState(true);
   const [tabActiva, setTabActiva] = useState<'resumen' | 'envios'>('resumen');
   const [accionando, setAccionando] = useState(false);
+  
+  // Estados para edición
+  const [modoEdicion, setModoEdicion] = useState(false);
+  const [editNombre, setEditNombre] = useState('');
+  const [editDescripcion, setEditDescripcion] = useState('');
+  const [editTemplateId, setEditTemplateId] = useState('');
+  const [editCursoExcluir, setEditCursoExcluir] = useState('');
+  const [editEtiquetas, setEditEtiquetas] = useState<string[]>([]);
+  const [editTipoEnvio, setEditTipoEnvio] = useState<'manual' | 'programado'>('manual');
+  const [editFechaProgramada, setEditFechaProgramada] = useState('');
+  const [editHoraProgramada, setEditHoraProgramada] = useState('09:00');
+  const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
     if (id) {
       cargarCampana();
       cargarEtiquetas();
+      cargarTemplates();
     }
   }, [id]);
 
@@ -79,7 +108,6 @@ export default function DetalleCampanaPage() {
       if (error) throw error;
       setCampana(data);
 
-      // Cargar envíos si la campaña ya se envió
       if (data.estado !== 'borrador') {
         const { data: enviosData } = await supabase
           .from('remarketing_envios')
@@ -99,12 +127,103 @@ export default function DetalleCampanaPage() {
   };
 
   const cargarEtiquetas = async () => {
-    const { data } = await supabase.from('etiquetas').select('*');
+    const { data } = await supabase.from('etiquetas').select('*').order('nombre');
     if (data) setEtiquetas(data);
   };
 
-  const getNombreEtiqueta = (id: string) => {
-    return etiquetas.find(e => e.id === id)?.nombre || id;
+  const cargarTemplates = async () => {
+    const { data } = await supabase
+      .from('remarketing_templates')
+      .select('*')
+      .eq('estado', 'activo')
+      .order('nombre');
+    if (data) setTemplates(data);
+  };
+
+  const iniciarEdicion = () => {
+    if (!campana) return;
+    setEditNombre(campana.nombre || '');
+    setEditDescripcion(campana.descripcion || '');
+    setEditTemplateId(campana.template_id || '');
+    setEditCursoExcluir(campana.curso_codigo || '');
+    setEditEtiquetas(campana.audiencia_filtros?.etiquetas || []);
+    setEditTipoEnvio(campana.programada_para ? 'programado' : 'manual');
+    if (campana.programada_para) {
+      const fecha = new Date(campana.programada_para);
+      setEditFechaProgramada(fecha.toISOString().split('T')[0]);
+      setEditHoraProgramada(fecha.toTimeString().slice(0, 5));
+    }
+    setModoEdicion(true);
+  };
+
+  const cancelarEdicion = () => {
+    setModoEdicion(false);
+  };
+
+  const toggleEtiqueta = (etiquetaId: string) => {
+    setEditEtiquetas(prev =>
+      prev.includes(etiquetaId) ? prev.filter(e => e !== etiquetaId) : [...prev, etiquetaId]
+    );
+  };
+
+  const guardarEdicion = async () => {
+    if (!campana) return;
+    if (!editNombre.trim()) {
+      alert('El nombre es obligatorio');
+      return;
+    }
+    if (editEtiquetas.length === 0) {
+      alert('Seleccioná al menos una etiqueta');
+      return;
+    }
+
+    setGuardando(true);
+    try {
+      const cursoData = cursosDisponibles.find(c => c.codigo === editCursoExcluir);
+      const templateData = templates.find(t => t.id === editTemplateId);
+      
+      let programadaPara = null;
+      let nuevoEstado = campana.estado;
+      
+      if (editTipoEnvio === 'programado' && editFechaProgramada) {
+        programadaPara = `${editFechaProgramada}T${editHoraProgramada}:00`;
+        if (campana.estado === 'borrador') {
+          nuevoEstado = 'programada';
+        }
+      } else if (editTipoEnvio === 'manual' && campana.estado === 'programada') {
+        nuevoEstado = 'borrador';
+      }
+
+      const { error } = await supabase
+        .from('remarketing_campanas')
+        .update({
+          nombre: editNombre.trim(),
+          descripcion: editDescripcion.trim(),
+          curso_codigo: editCursoExcluir || null,
+          curso_nombre: cursoData?.nombre || null,
+          template_nombre: templateData?.nombre || null,
+          template_id: editTemplateId || null,
+          audiencia_filtros: { etiquetas: editEtiquetas },
+          programada_para: programadaPara,
+          estado: nuevoEstado,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setModoEdicion(false);
+      cargarCampana();
+    } catch (error) {
+      console.error('Error guardando:', error);
+      alert('Error al guardar los cambios');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const getNombreEtiqueta = (etiquetaId: string) => {
+    return etiquetas.find(e => e.id === etiquetaId)?.nombre || etiquetaId;
   };
 
   const getEstadoBadge = (estado: string) => {
@@ -142,7 +261,6 @@ export default function DetalleCampanaPage() {
         .eq('id', id);
       if (error) throw error;
       
-      // TODO: Aquí iría la lógica real de envío
       alert('Campaña iniciada. Los mensajes se enviarán en segundo plano.');
       cargarCampana();
     } catch (error) {
@@ -239,6 +357,8 @@ export default function DetalleCampanaPage() {
     }
   };
 
+  const puedeEditar = campana?.estado === 'borrador' || campana?.estado === 'programada';
+
   if (cargando) {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -280,88 +400,255 @@ export default function DetalleCampanaPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {campana.estado === 'borrador' && (
+          {modoEdicion ? (
             <>
               <button
-                onClick={enviarAhora}
-                disabled={accionando || campana.total_elegibles === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                onClick={cancelarEdicion}
+                disabled={guardando}
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
               >
-                <Send size={16} />
-                Enviar ahora
+                <X size={16} />
+                Cancelar
+              </button>
+              <button
+                onClick={guardarEdicion}
+                disabled={guardando}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+              >
+                <Save size={16} />
+                {guardando ? 'Guardando...' : 'Guardar cambios'}
               </button>
             </>
-          )}
-          {campana.estado === 'enviando' && (
-            <button
-              onClick={pausarCampana}
-              disabled={accionando}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
-            >
-              <Pause size={16} />
-              Pausar
-            </button>
-          )}
-          {campana.estado === 'pausada' && (
-            <button
-              onClick={reanudarCampana}
-              disabled={accionando}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
-            >
-              <Play size={16} />
-              Reanudar
-            </button>
-          )}
-          <button
-            onClick={duplicarCampana}
-            disabled={accionando}
-            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400"
-            title="Duplicar"
-          >
-            <Copy size={18} />
-          </button>
-          {campana.estado === 'borrador' && (
-            <button
-              onClick={eliminarCampana}
-              disabled={accionando}
-              className="p-2 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg text-red-600"
-              title="Eliminar"
-            >
-              <Trash2 size={18} />
-            </button>
+          ) : (
+            <>
+              {puedeEditar && (
+                <button
+                  onClick={iniciarEdicion}
+                  className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  <Edit3 size={16} />
+                  Editar
+                </button>
+              )}
+              {campana.estado === 'borrador' && (
+                <button
+                  onClick={enviarAhora}
+                  disabled={accionando || campana.total_elegibles === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                >
+                  <Send size={16} />
+                  Enviar ahora
+                </button>
+              )}
+              {campana.estado === 'enviando' && (
+                <button
+                  onClick={pausarCampana}
+                  disabled={accionando}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                >
+                  <Pause size={16} />
+                  Pausar
+                </button>
+              )}
+              {campana.estado === 'pausada' && (
+                <button
+                  onClick={reanudarCampana}
+                  disabled={accionando}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                >
+                  <Play size={16} />
+                  Reanudar
+                </button>
+              )}
+              <button
+                onClick={duplicarCampana}
+                disabled={accionando}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400"
+                title="Duplicar"
+              >
+                <Copy size={18} />
+              </button>
+              {puedeEditar && (
+                <button
+                  onClick={eliminarCampana}
+                  disabled={accionando}
+                  className="p-2 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg text-red-600"
+                  title="Eliminar"
+                >
+                  <Trash2 size={18} />
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6">
-        <div className="flex gap-6">
-          <button
-            onClick={() => setTabActiva('resumen')}
-            className={`py-3 text-sm font-medium border-b-2 transition-colors ${
-              tabActiva === 'resumen'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-            }`}
-          >
-            Resumen
-          </button>
-          <button
-            onClick={() => setTabActiva('envios')}
-            className={`py-3 text-sm font-medium border-b-2 transition-colors ${
-              tabActiva === 'envios'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-            }`}
-          >
-            Envíos ({envios.length})
-          </button>
+      {!modoEdicion && (
+        <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6">
+          <div className="flex gap-6">
+            <button
+              onClick={() => setTabActiva('resumen')}
+              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+                tabActiva === 'resumen'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+              }`}
+            >
+              Resumen
+            </button>
+            <button
+              onClick={() => setTabActiva('envios')}
+              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+                tabActiva === 'envios'
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+              }`}
+            >
+              Envíos ({envios.length})
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
-        {tabActiva === 'resumen' ? (
+        {modoEdicion ? (
+          /* MODO EDICIÓN */
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Información básica */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Información básica</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nombre *</label>
+                  <input
+                    type="text"
+                    value={editNombre}
+                    onChange={(e) => setEditNombre(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Descripción</label>
+                  <textarea
+                    value={editDescripcion}
+                    onChange={(e) => setEditDescripcion(e.target.value)}
+                    rows={2}
+                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Audiencia */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                <Users size={16} />
+                Audiencia
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Etiquetas *</label>
+                  <div className="flex flex-wrap gap-2">
+                    {etiquetas.map((etiqueta) => (
+                      <button
+                        key={etiqueta.id}
+                        onClick={() => toggleEtiqueta(etiqueta.id)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                          editEtiquetas.includes(etiqueta.id)
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        {etiqueta.nombre}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Excluir inscriptos en curso</label>
+                  <select
+                    value={editCursoExcluir}
+                    onChange={(e) => setEditCursoExcluir(e.target.value)}
+                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">No excluir ningún curso</option>
+                    {cursosDisponibles.map((curso) => (
+                      <option key={curso.codigo} value={curso.codigo}>{curso.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Template */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Template de WhatsApp</h2>
+              <select
+                value={editTemplateId}
+                onChange={(e) => setEditTemplateId(e.target.value)}
+                className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Seleccionar template...</option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.nombre}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tipo de envío */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Tipo de envío</h2>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <button
+                  onClick={() => setEditTipoEnvio('manual')}
+                  className={`p-4 rounded-lg border-2 transition-colors ${
+                    editTipoEnvio === 'manual' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <Send size={24} className={editTipoEnvio === 'manual' ? 'text-indigo-600 mb-2' : 'text-slate-400 mb-2'} />
+                  <p className={`font-medium ${editTipoEnvio === 'manual' ? 'text-indigo-600' : 'text-slate-700 dark:text-slate-300'}`}>Envío manual</p>
+                  <p className="text-xs text-slate-500 mt-1">Enviás cuando quieras</p>
+                </button>
+                <button
+                  onClick={() => setEditTipoEnvio('programado')}
+                  className={`p-4 rounded-lg border-2 transition-colors ${
+                    editTipoEnvio === 'programado' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <Clock size={24} className={editTipoEnvio === 'programado' ? 'text-indigo-600 mb-2' : 'text-slate-400 mb-2'} />
+                  <p className={`font-medium ${editTipoEnvio === 'programado' ? 'text-indigo-600' : 'text-slate-700 dark:text-slate-300'}`}>Programar envío</p>
+                  <p className="text-xs text-slate-500 mt-1">Se envía automáticamente</p>
+                </button>
+              </div>
+              {editTipoEnvio === 'programado' && (
+                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fecha</label>
+                    <input
+                      type="date"
+                      value={editFechaProgramada}
+                      onChange={(e) => setEditFechaProgramada(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hora</label>
+                    <input
+                      type="time"
+                      value={editHoraProgramada}
+                      onChange={(e) => setEditHoraProgramada(e.target.value)}
+                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : tabActiva === 'resumen' ? (
+          /* TAB RESUMEN */
           <div className="max-w-4xl mx-auto space-y-6">
             {/* Métricas principales */}
             <div className="grid grid-cols-4 gap-4">
@@ -492,6 +779,7 @@ export default function DetalleCampanaPage() {
             )}
           </div>
         ) : (
+          /* TAB ENVÍOS */
           <div className="max-w-6xl mx-auto">
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
               <table className="w-full">
