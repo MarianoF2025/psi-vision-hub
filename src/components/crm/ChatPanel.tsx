@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { type Mensaje, type InboxType, INBOXES } from '@/types/crm';
 import { cn, formatMessageTime, getInitials } from '@/lib/utils';
 import { LinkPreview, extractUrls } from './LinkPreview';
-import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft } from 'lucide-react';
+import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface RespuestaRapida { id: string; atajo: string; titulo: string; contenido: string; }
 interface ArchivoSeleccionado { file: File; preview: string | null; tipo: 'image' | 'video' | 'document' | 'audio'; }
@@ -101,6 +101,12 @@ export default function ChatPanel() {
   const [motivoDerivacion, setMotivoDerivacion] = useState('');
   const [derivando, setDerivando] = useState(false);
 
+  // Estados para búsqueda en chat
+  const [modoBusqueda, setModoBusqueda] = useState(false);
+  const [terminoBusqueda, setTerminoBusqueda] = useState('');
+  const [indiceCoincidencia, setIndiceCoincidencia] = useState(0);
+  const [coincidencias, setCoincidencias] = useState<string[]>([]);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -111,6 +117,59 @@ export default function ChatPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiContainerRef = useRef<HTMLDivElement>(null);
   const menuAccionesRef = useRef<HTMLDivElement>(null);
+  const busquedaInputRef = useRef<HTMLInputElement>(null);
+  const mensajeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Buscar coincidencias cuando cambia el término
+  useEffect(() => {
+    if (!terminoBusqueda.trim()) {
+      setCoincidencias([]);
+      setIndiceCoincidencia(0);
+      return;
+    }
+    const termino = terminoBusqueda.toLowerCase();
+    const ids = mensajes
+      .filter(m => m.mensaje?.toLowerCase().includes(termino))
+      .map(m => m.id);
+    setCoincidencias(ids);
+    setIndiceCoincidencia(ids.length > 0 ? 0 : -1);
+  }, [terminoBusqueda, mensajes]);
+
+  // Scroll al mensaje cuando cambia el índice de coincidencia
+  useEffect(() => {
+    if (coincidencias.length > 0 && indiceCoincidencia >= 0) {
+      const msgId = coincidencias[indiceCoincidencia];
+      const el = mensajeRefs.current[msgId];
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [indiceCoincidencia, coincidencias]);
+
+  const navegarCoincidencia = (direccion: 'prev' | 'next') => {
+    if (coincidencias.length === 0) return;
+    if (direccion === 'next') {
+      setIndiceCoincidencia((prev) => (prev + 1) % coincidencias.length);
+    } else {
+      setIndiceCoincidencia((prev) => (prev - 1 + coincidencias.length) % coincidencias.length);
+    }
+  };
+
+  const cerrarBusqueda = () => {
+    setModoBusqueda(false);
+    setTerminoBusqueda('');
+    setCoincidencias([]);
+    setIndiceCoincidencia(0);
+  };
+
+  // Fijar/desfijar conversación
+  const toggleFijarConversacion = async () => {
+    if (!conversacionActual) return;
+    const nuevoEstado = !conversacionActual.fijada;
+    await supabase.from('conversaciones').update({ fijada: nuevoEstado }).eq('id', conversacionActual.id);
+    setConversacionActual({ ...conversacionActual, fijada: nuevoEstado });
+    setMostrarMenuAcciones(false);
+  };
 
   // Desconectar del Router
   const desconectar = async () => {
@@ -407,8 +466,20 @@ export default function ChatPanel() {
     return () => { supabase.removeChannel(channel); };
   }, [conversacionActual?.id]);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [mensajes]);
+  useEffect(() => { 
+    if (!modoBusqueda) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+    }
+  }, [mensajes, modoBusqueda]);
+  
   useEffect(() => { return () => { if (archivoSeleccionado?.preview) { URL.revokeObjectURL(archivoSeleccionado.preview); } }; }, [archivoSeleccionado]);
+
+  // Focus en input de búsqueda cuando se activa
+  useEffect(() => {
+    if (modoBusqueda && busquedaInputRef.current) {
+      busquedaInputRef.current.focus();
+    }
+  }, [modoBusqueda]);
 
   const abrirMenuContextual = (e: React.MouseEvent, msg: MensajeCompleto) => {
     e.preventDefault();
@@ -608,6 +679,15 @@ export default function ChatPanel() {
     } else if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensaje(); }
   };
 
+  const handleBusquedaKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      navegarCoincidencia('next');
+    } else if (e.key === 'Escape') {
+      cerrarBusqueda();
+    }
+  };
+
   const getTicks = (msg: MensajeCompleto) => {
     if (msg.direccion === 'entrante') return null;
     const estado = msg.estado_envio || (msg.leido ? 'read' : msg.enviado ? 'sent' : 'pending');
@@ -739,6 +819,27 @@ export default function ChatPanel() {
     return null;
   };
 
+  // Resaltar texto de búsqueda
+  const resaltarTexto = (texto: string, msgId: string) => {
+    if (!terminoBusqueda.trim() || !texto) return texto;
+    const termino = terminoBusqueda.toLowerCase();
+    const index = texto.toLowerCase().indexOf(termino);
+    if (index === -1) return texto;
+    
+    const antes = texto.substring(0, index);
+    const match = texto.substring(index, index + terminoBusqueda.length);
+    const despues = texto.substring(index + terminoBusqueda.length);
+    const esActual = coincidencias[indiceCoincidencia] === msgId;
+    
+    return (
+      <>
+        {antes}
+        <mark className={cn("px-0.5 rounded", esActual ? "bg-yellow-400 text-black" : "bg-yellow-200 text-black")}>{match}</mark>
+        {despues}
+      </>
+    );
+  };
+
   // Obtener área actual para mostrar en header
   const areaActualInfo = INBOXES.find(i => i.id === conversacionActual?.area);
 
@@ -757,83 +858,123 @@ export default function ChatPanel() {
     <div className="flex-1 flex flex-col bg-slate-100 dark:bg-slate-950 h-full min-w-0 overflow-hidden">
       <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={handleFileSelect} className="hidden" />
 
-      <div className="h-11 px-3 flex items-center justify-between bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
-        {modoSeleccion ? (
-          <div className="flex items-center gap-3 w-full">
-            <button onClick={() => { setModoSeleccion(false); setMensajesSeleccionados(new Set()); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"><X size={18} className="text-slate-500" /></button>
-            <span className="text-sm text-slate-700 dark:text-slate-300">{mensajesSeleccionados.size} seleccionados</span>
-            <div className="ml-auto flex items-center gap-1">
-              <button className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-500"><Forward size={18} /></button>
-              <button className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-500"><Star size={18} /></button>
-              <button onClick={eliminarSeleccionados} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md text-red-500"><Trash2 size={18} /></button>
-            </div>
+      {/* Header normal o modo búsqueda */}
+      {modoBusqueda ? (
+        <div className="h-11 px-3 flex items-center gap-2 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <button onClick={cerrarBusqueda} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+            <X size={18} className="text-slate-500" />
+          </button>
+          <div className="flex-1 relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              ref={busquedaInputRef}
+              type="text"
+              value={terminoBusqueda}
+              onChange={(e) => setTerminoBusqueda(e.target.value)}
+              onKeyDown={handleBusquedaKeyDown}
+              placeholder="Buscar en la conversación..."
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-sm text-slate-800 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-indigo-500"
+            />
           </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-[10px] font-medium">{getInitials(conversacionActual.nombre || conversacionActual.telefono)}</div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <p className="font-medium text-[13px] text-slate-800 dark:text-white leading-tight">{conversacionActual.nombre || conversacionActual.telefono}</p>
-                  {areaActualInfo && (
-                    <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium", areaActualInfo.colorLight)}>
-                      {areaActualInfo.icono} {areaActualInfo.nombre}
-                    </span>
+          {coincidencias.length > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-500">
+                {indiceCoincidencia + 1} de {coincidencias.length}
+              </span>
+              <button onClick={() => navegarCoincidencia('prev')} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
+                <ChevronUp size={16} className="text-slate-500" />
+              </button>
+              <button onClick={() => navegarCoincidencia('next')} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
+                <ChevronDown size={16} className="text-slate-500" />
+              </button>
+            </div>
+          )}
+          {terminoBusqueda && coincidencias.length === 0 && (
+            <span className="text-xs text-slate-400">Sin resultados</span>
+          )}
+        </div>
+      ) : (
+        <div className="h-11 px-3 flex items-center justify-between bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          {modoSeleccion ? (
+            <div className="flex items-center gap-3 w-full">
+              <button onClick={() => { setModoSeleccion(false); setMensajesSeleccionados(new Set()); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"><X size={18} className="text-slate-500" /></button>
+              <span className="text-sm text-slate-700 dark:text-slate-300">{mensajesSeleccionados.size} seleccionados</span>
+              <div className="ml-auto flex items-center gap-1">
+                <button className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-500"><Forward size={18} /></button>
+                <button className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-500"><Star size={18} /></button>
+                <button onClick={eliminarSeleccionados} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-md text-red-500"><Trash2 size={18} /></button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-[10px] font-medium">{getInitials(conversacionActual.nombre || conversacionActual.telefono)}</div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <p className="font-medium text-[13px] text-slate-800 dark:text-white leading-tight">{conversacionActual.nombre || conversacionActual.telefono}</p>
+                    {conversacionActual.fijada && (
+                      <Pin size={12} className="text-amber-500 fill-amber-500" />
+                    )}
+                    {areaActualInfo && (
+                      <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium", areaActualInfo.colorLight)}>
+                        {areaActualInfo.icono} {areaActualInfo.nombre}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-tight">{conversacionActual.telefono}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5">
+                <button onClick={() => setModoBusqueda(true)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><Search size={16} /></button>
+                <button onClick={togglePanelInfo} className={cn('p-1.5 rounded-md transition-colors', panelInfoAbierto ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500')}><User size={16} /></button>
+                {!conversacionActual.asignado_a && <button onClick={tomarConversacion} className="px-2 py-1 border border-emerald-400 text-emerald-600 text-[11px] font-medium rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex items-center gap-1"><UserCheck size={12} /> Tomar</button>}
+                {conversacionActual.asignado_a === user?.email && <button onClick={soltarConversacion} className="px-2 py-1 border border-amber-400 text-amber-600 text-[11px] font-medium rounded-md hover:bg-amber-50 dark:hover:bg-amber-500/10 flex items-center gap-1"><UserMinus size={12} /> Soltar</button>}
+                {conversacionActual.asignado_a && conversacionActual.asignado_a !== user?.email && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] rounded-md">{conversacionActual.asignado_nombre}</span>}
+                {!conversacionActual.desconectado_wsp4 && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
+                {conversacionActual.desconectado_wsp4 && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
+                
+                {/* Botón de acciones con dropdown */}
+                <div className="relative" ref={menuAccionesRef}>
+                  <button 
+                    onClick={() => setMostrarMenuAcciones(!mostrarMenuAcciones)} 
+                    className={cn("p-1.5 rounded-md transition-colors", mostrarMenuAcciones ? "bg-slate-100 dark:bg-slate-800 text-slate-700" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500")}
+                  >
+                    <MoreVertical size={16} />
+                  </button>
+                  
+                  {/* Dropdown de acciones */}
+                  {mostrarMenuAcciones && (
+                    <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-50 w-48">
+                      <button 
+                        onClick={() => { setMostrarModalDerivar(true); setMostrarMenuAcciones(false); }}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-200"
+                      >
+                        <ArrowRightLeft size={16} className="text-indigo-500" />
+                        Derivar a otra área
+                      </button>
+                      <div className="border-t border-slate-100 dark:border-slate-700" />
+                      <button 
+                        onClick={() => { setModoBusqueda(true); setMostrarMenuAcciones(false); }}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-200"
+                      >
+                        <Search size={16} className="text-slate-400" />
+                        Buscar en chat
+                      </button>
+                      <button 
+                        onClick={toggleFijarConversacion}
+                        className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-200"
+                      >
+                        <Pin size={16} className={conversacionActual.fijada ? "text-amber-500 fill-amber-500" : "text-slate-400"} />
+                        {conversacionActual.fijada ? 'Desfijar conversación' : 'Fijar conversación'}
+                      </button>
+                    </div>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 leading-tight">{conversacionActual.telefono}</p>
               </div>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <button className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><Search size={16} /></button>
-              <button onClick={togglePanelInfo} className={cn('p-1.5 rounded-md transition-colors', panelInfoAbierto ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500')}><User size={16} /></button>
-              {!conversacionActual.asignado_a && <button onClick={tomarConversacion} className="px-2 py-1 border border-emerald-400 text-emerald-600 text-[11px] font-medium rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex items-center gap-1"><UserCheck size={12} /> Tomar</button>}
-              {conversacionActual.asignado_a === user?.email && <button onClick={soltarConversacion} className="px-2 py-1 border border-amber-400 text-amber-600 text-[11px] font-medium rounded-md hover:bg-amber-50 dark:hover:bg-amber-500/10 flex items-center gap-1"><UserMinus size={12} /> Soltar</button>}
-              {conversacionActual.asignado_a && conversacionActual.asignado_a !== user?.email && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] rounded-md">{conversacionActual.asignado_nombre}</span>}
-              {!conversacionActual.desconectado_wsp4 && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
-              {conversacionActual.desconectado_wsp4 && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
-              
-              {/* Botón de acciones con dropdown */}
-              <div className="relative" ref={menuAccionesRef}>
-                <button 
-                  onClick={() => setMostrarMenuAcciones(!mostrarMenuAcciones)} 
-                  className={cn("p-1.5 rounded-md transition-colors", mostrarMenuAcciones ? "bg-slate-100 dark:bg-slate-800 text-slate-700" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500")}
-                >
-                  <MoreVertical size={16} />
-                </button>
-                
-                {/* Dropdown de acciones */}
-                {mostrarMenuAcciones && (
-                  <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-50 w-48">
-                    <button 
-                      onClick={() => { setMostrarModalDerivar(true); setMostrarMenuAcciones(false); }}
-                      className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-200"
-                    >
-                      <ArrowRightLeft size={16} className="text-indigo-500" />
-                      Derivar a otra área
-                    </button>
-                    <div className="border-t border-slate-100 dark:border-slate-700" />
-                    <button 
-                      disabled
-                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-[13px] text-slate-400 cursor-not-allowed"
-                    >
-                      <Search size={16} />
-                      Buscar en chat
-                    </button>
-                    <button 
-                      disabled
-                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-[13px] text-slate-400 cursor-not-allowed"
-                    >
-                      <Pin size={16} />
-                      Fijar conversación
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Modal de derivación */}
       {mostrarModalDerivar && (
@@ -935,11 +1076,13 @@ export default function ChatPanel() {
           const isSelected = mensajesSeleccionados.has(msg.id);
           const hasReacciones = msg.reacciones && msg.reacciones.length > 0;
           const mensajeCitado = getMensajeCitado(msg);
+          const esCoincidencia = coincidencias.includes(msg.id);
 
           return (
             <div
               key={msg.id}
-              className={cn('flex group', isOut ? 'justify-end' : 'justify-start', isSelected && 'bg-indigo-50 dark:bg-indigo-500/10 -mx-4 px-4', hasReacciones ? 'mb-4' : 'mb-1')}
+              ref={(el) => { mensajeRefs.current[msg.id] = el; }}
+              className={cn('flex group', isOut ? 'justify-end' : 'justify-start', isSelected && 'bg-indigo-50 dark:bg-indigo-500/10 -mx-4 px-4', esCoincidencia && coincidencias[indiceCoincidencia] === msg.id && 'bg-yellow-50 dark:bg-yellow-500/10 -mx-4 px-4', hasReacciones ? 'mb-4' : 'mb-1')}
               onContextMenu={(e) => { if (!modoSeleccion) { abrirMenuContextual(e, msg); } }}
               onClick={() => modoSeleccion && toggleSeleccion(msg.id)}
             >
@@ -982,7 +1125,7 @@ export default function ChatPanel() {
 
                     return (
                       <>
-                        {displayText && <p className="whitespace-pre-wrap break-words">{displayText}</p>}
+                        {displayText && <p className="whitespace-pre-wrap break-words">{terminoBusqueda ? resaltarTexto(displayText, msg.id) : displayText}</p>}
                         {urls.slice(0, 1).map((linkUrl) => (
                           <LinkPreview key={linkUrl} url={linkUrl} isOutgoing={isOut} />
                         ))}

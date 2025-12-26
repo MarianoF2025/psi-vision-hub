@@ -5,7 +5,7 @@ import { useCRMStore } from '@/stores/crm-store';
 import { supabase } from '@/lib/supabase';
 import { INBOXES, type Conversacion } from '@/types/crm';
 import { cn, timeAgo, getInitials, getWindowTimeLeft } from '@/lib/utils';
-import { Search, Plus, Clock, X, MessageSquarePlus, Phone, Users, GraduationCap, Building2, Calendar, ChevronDown } from 'lucide-react';
+import { Search, Plus, Clock, X, MessageSquarePlus, Phone, Users, GraduationCap, Building2, Calendar, ChevronDown, Pin } from 'lucide-react';
 
 interface Contacto {
   id: string;
@@ -73,23 +73,37 @@ export default function ConversacionesPanel() {
     }
   };
 
+  // Ordenar conversaciones: fijadas primero, luego por fecha
+  const ordenarConversaciones = (convs: Conversacion[]): Conversacion[] => {
+    return [...convs].sort((a, b) => {
+      // Primero por fijada (fijadas arriba)
+      if (a.fijada && !b.fijada) return -1;
+      if (!a.fijada && b.fijada) return 1;
+      // Luego por fecha (más reciente primero)
+      const fechaA = new Date(a.ts_ultimo_mensaje || 0).getTime();
+      const fechaB = new Date(b.ts_ultimo_mensaje || 0).getTime();
+      return fechaB - fechaA;
+    });
+  };
+
   useEffect(() => {
     const cargarConversaciones = async (inicial = false) => {
       if (inicial) setLoading(true);
       let query = supabase.from('conversaciones').select('*').order('ts_ultimo_mensaje', { ascending: false });
-      
+
       if (inboxActual !== 'wsp4') query = query.eq('area', inboxActual);
       if (filtroConversaciones === 'sin_asignar') query = query.is('agente_asignado_id', null);
       else if (filtroConversaciones === 'mias' && usuario?.id) query = query.eq('agente_asignado_id', usuario.id);
       if (busquedaConversaciones.trim()) query = query.or(`nombre.ilike.%${busquedaConversaciones}%,telefono.ilike.%${busquedaConversaciones}%`);
-      
+
       const fechaFiltro = calcularFechaFiltro(filtroFecha);
       if (fechaFiltro.desde) query = query.gte('ts_ultimo_mensaje', fechaFiltro.desde);
       if (fechaFiltro.hasta) query = query.lte('ts_ultimo_mensaje', fechaFiltro.hasta);
-      
+
       const { data } = await query;
       if (data) {
-        setConversaciones(data);
+        // Ordenar con fijadas primero
+        setConversaciones(ordenarConversaciones(data));
         setContador(inboxActual, data.filter(c => (c.mensajes_no_leidos || 0) > 0).length);
       }
       setLoading(false);
@@ -211,7 +225,7 @@ export default function ConversacionesPanel() {
           <input type="text" placeholder="Buscar..." value={busquedaConversaciones} onChange={(e) => setBusquedaConversaciones(e.target.value)}
             className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white placeholder-slate-400" />
         </div>
-        
+
         <div className="flex gap-1 mb-2">
           {(['todas', 'sin_asignar', 'mias'] as const).map((filtro) => (
             <button key={filtro} onClick={() => setFiltroConversaciones(filtro)}
@@ -227,8 +241,8 @@ export default function ConversacionesPanel() {
             onClick={() => setMostrarFiltroFecha(!mostrarFiltroFecha)}
             className={cn(
               'w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded-md border transition-colors',
-              filtroFecha !== 'todas' 
-                ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' 
+              filtroFecha !== 'todas'
+                ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
                 : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
             )}
           >
@@ -238,7 +252,7 @@ export default function ConversacionesPanel() {
             </div>
             <ChevronDown size={12} className={cn('transition-transform', mostrarFiltroFecha && 'rotate-180')} />
           </button>
-          
+
           {mostrarFiltroFecha && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 py-1">
               {FILTROS_FECHA.map((filtro) => (
@@ -275,14 +289,22 @@ export default function ConversacionesPanel() {
           return (
             <div key={conv.id} onClick={() => setConversacionActual(conv)}
               className={cn('p-2 border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-colors',
-                isSelected ? 'bg-indigo-50 dark:bg-indigo-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50')}>
+                isSelected ? 'bg-indigo-50 dark:bg-indigo-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50',
+                conv.fijada && 'bg-amber-50/50 dark:bg-amber-500/5')}>
               <div className="flex gap-2">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-[10px] font-medium flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-[10px] font-medium flex-shrink-0 relative">
                   {getInitials(conv.nombre || conv.telefono)}
+                  {conv.fijada && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-amber-400 rounded-full flex items-center justify-center shadow-sm">
+                      <Pin size={9} className="text-amber-900 fill-amber-900" />
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
-                    <span className="font-medium text-xs text-slate-800 dark:text-white truncate">{conv.nombre || conv.telefono}</span>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <span className="font-medium text-xs text-slate-800 dark:text-white truncate">{conv.nombre || conv.telefono}</span>
+                    </div>
                     <span className="text-[10px] text-slate-400 flex-shrink-0">{timeAgo(conv.ts_ultimo_mensaje)}</span>
                   </div>
                   <div className="flex items-center gap-1 mt-0.5 flex-wrap">
