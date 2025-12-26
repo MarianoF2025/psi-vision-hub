@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { type Mensaje } from '@/types/crm';
+import { type Mensaje, type InboxType, INBOXES } from '@/types/crm';
 import { cn, formatMessageTime, getInitials } from '@/lib/utils';
 import { LinkPreview, extractUrls } from './LinkPreview';
-import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus } from 'lucide-react';
+import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft } from 'lucide-react';
 
 interface RespuestaRapida { id: string; atajo: string; titulo: string; contenido: string; }
 interface ArchivoSeleccionado { file: File; preview: string | null; tipo: 'image' | 'video' | 'document' | 'audio'; }
@@ -94,6 +94,13 @@ export default function ChatPanel() {
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [menuMensaje, setMenuMensaje] = useState<MensajeCompleto | null>(null);
 
+  // Estados para derivación entre áreas
+  const [mostrarMenuAcciones, setMostrarMenuAcciones] = useState(false);
+  const [mostrarModalDerivar, setMostrarModalDerivar] = useState(false);
+  const [areaDestino, setAreaDestino] = useState<InboxType | null>(null);
+  const [motivoDerivacion, setMotivoDerivacion] = useState('');
+  const [derivando, setDerivando] = useState(false);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -103,6 +110,7 @@ export default function ChatPanel() {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiContainerRef = useRef<HTMLDivElement>(null);
+  const menuAccionesRef = useRef<HTMLDivElement>(null);
 
   // Desconectar del Router
   const desconectar = async () => {
@@ -138,6 +146,60 @@ export default function ChatPanel() {
     }
   };
 
+  // Derivar conversación a otra área (sin salir del Router WSP4)
+  const derivarConversacion = async () => {
+    if (!conversacionActual || !areaDestino || derivando) return;
+    
+    setDerivando(true);
+    try {
+      const areaOrigen = conversacionActual.area || 'wsp4';
+      const areaDestinoNombre = INBOXES.find(i => i.id === areaDestino)?.nombre || areaDestino;
+      const areaOrigenNombre = INBOXES.find(i => i.id === areaOrigen)?.nombre || areaOrigen;
+      
+      // 1. Actualizar área de la conversación
+      await supabase.from('conversaciones').update({
+        area: areaDestino,
+        estado: 'derivada'
+      }).eq('id', conversacionActual.id);
+      
+      // 2. Registrar la derivación
+      await supabase.from('derivaciones').insert({
+        conversacion_id: conversacionActual.id,
+        area_origen: areaOrigen,
+        area_destino: areaDestino,
+        motivo: motivoDerivacion || null,
+        derivado_por: user?.email,
+        status: 'completada'
+      });
+      
+      // 3. Insertar mensaje de sistema (visible para agentes)
+      await supabase.from('mensajes').insert({
+        conversacion_id: conversacionActual.id,
+        mensaje: `📋 Derivado de ${areaOrigenNombre} a ${areaDestinoNombre}${motivoDerivacion ? ` — ${motivoDerivacion}` : ''}`,
+        tipo: 'text',
+        direccion: 'entrante',
+        remitente_tipo: 'sistema',
+        remitente_nombre: 'Sistema'
+      });
+      
+      // 4. Actualizar estado local
+      setConversacionActual({
+        ...conversacionActual,
+        area: areaDestino,
+        estado: 'derivada'
+      });
+      
+      // Cerrar modales y limpiar
+      setMostrarModalDerivar(false);
+      setMostrarMenuAcciones(false);
+      setAreaDestino(null);
+      setMotivoDerivacion('');
+    } catch (error) {
+      console.error('Error al derivar:', error);
+      alert('Error al derivar la conversación');
+    }
+    setDerivando(false);
+  };
 
   const tomarConversacion = async () => {
     if (!conversacionActual || !user?.email) return;
@@ -169,7 +231,8 @@ export default function ChatPanel() {
       asignado_ts: undefined
     });
   };
-    const menuRef = useRef<HTMLDivElement>(null);
+
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const insertarEmoji = (emoji: string) => {
     const textarea = textareaRef.current;
@@ -279,6 +342,19 @@ export default function ChatPanel() {
     return () => { document.removeEventListener('click', cerrarMenu); };
   }, [menuVisible]);
 
+  // Cerrar menú de acciones al hacer click fuera
+  useEffect(() => {
+    const cerrarMenuAcciones = (e: MouseEvent) => {
+      if (mostrarMenuAcciones && menuAccionesRef.current && !menuAccionesRef.current.contains(e.target as Node)) {
+        setMostrarMenuAcciones(false);
+      }
+    };
+    if (mostrarMenuAcciones) {
+      setTimeout(() => { document.addEventListener('click', cerrarMenuAcciones); }, 10);
+    }
+    return () => { document.removeEventListener('click', cerrarMenuAcciones); };
+  }, [mostrarMenuAcciones]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (mostrarEmojis && emojiContainerRef.current && !emojiContainerRef.current.contains(e.target as Node)) {
@@ -337,31 +413,28 @@ export default function ChatPanel() {
   const abrirMenuContextual = (e: React.MouseEvent, msg: MensajeCompleto) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    const menuWidth = 208; // w-52 = 13rem = 208px
-    const menuHeight = 380; // altura aproximada del menú
-    
+
+    const menuWidth = 208;
+    const menuHeight = 380;
+
     let x = e.clientX;
     let y = e.clientY;
-    
-    // Si el menú se saldría por la derecha, posicionar a la izquierda del click
+
     if (x + menuWidth > window.innerWidth) {
       x = e.clientX - menuWidth;
     }
-    
-    // Si el menú se saldría por abajo, posicionar arriba
+
     if (y + menuHeight > window.innerHeight) {
       y = window.innerHeight - menuHeight - 10;
     }
-    
-    // Asegurar que no quede negativo
+
     if (x < 10) x = 10;
     if (y < 10) y = 10;
-    
+
     setMenuPosition({ x, y });
     setMenuMensaje(msg);
     setMenuVisible(true);
-  };  
+  };
 
   const cerrarMenu = () => {
     setMenuVisible(false);
@@ -488,9 +561,9 @@ export default function ChatPanel() {
         if (!mediaUrl) { alert('Error al subir el archivo. Intenta de nuevo.'); setEnviando(false); setSubiendoArchivo(false); return; }
         mediaType = archivoSeleccionado.tipo;
       }
-      
+
       const respuestaId = mensajeEnRespuesta?.id;
-      
+
       const response = await fetch('/api/mensajes/enviar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -508,16 +581,16 @@ export default function ChatPanel() {
           agente_nombre: usuario?.nombre || user?.email?.split("@")[0] || "Agente"
         }),
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         if (respuestaId && result.mensaje_id) {
-          await supabase.from('mensajes').update({ 
+          await supabase.from('mensajes').update({
             mensaje_citado_id: respuestaId
           }).eq('id', result.mensaje_id);
         }
       }
-      
+
       setTexto('');
       setMensajeEnRespuesta(null);
       cancelarArchivo();
@@ -666,6 +739,9 @@ export default function ChatPanel() {
     return null;
   };
 
+  // Obtener área actual para mostrar en header
+  const areaActualInfo = INBOXES.find(i => i.id === conversacionActual?.area);
+
   if (!conversacionActual) {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-950 h-full">
@@ -697,7 +773,14 @@ export default function ChatPanel() {
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-400 flex items-center justify-center text-white text-[10px] font-medium">{getInitials(conversacionActual.nombre || conversacionActual.telefono)}</div>
               <div>
-                <p className="font-medium text-[13px] text-slate-800 dark:text-white leading-tight">{conversacionActual.nombre || conversacionActual.telefono}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-medium text-[13px] text-slate-800 dark:text-white leading-tight">{conversacionActual.nombre || conversacionActual.telefono}</p>
+                  {areaActualInfo && (
+                    <span className={cn("text-[9px] px-1.5 py-0.5 rounded-full font-medium", areaActualInfo.colorLight)}>
+                      {areaActualInfo.icono} {areaActualInfo.nombre}
+                    </span>
+                  )}
+                </div>
                 <p className="text-[11px] text-slate-500 leading-tight">{conversacionActual.telefono}</p>
               </div>
             </div>
@@ -709,11 +792,142 @@ export default function ChatPanel() {
               {conversacionActual.asignado_a && conversacionActual.asignado_a !== user?.email && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] rounded-md">{conversacionActual.asignado_nombre}</span>}
               {!conversacionActual.desconectado_wsp4 && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
               {conversacionActual.desconectado_wsp4 && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
-              <button className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><MoreVertical size={16} /></button>
+              
+              {/* Botón de acciones con dropdown */}
+              <div className="relative" ref={menuAccionesRef}>
+                <button 
+                  onClick={() => setMostrarMenuAcciones(!mostrarMenuAcciones)} 
+                  className={cn("p-1.5 rounded-md transition-colors", mostrarMenuAcciones ? "bg-slate-100 dark:bg-slate-800 text-slate-700" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500")}
+                >
+                  <MoreVertical size={16} />
+                </button>
+                
+                {/* Dropdown de acciones */}
+                {mostrarMenuAcciones && (
+                  <div className="absolute right-0 top-full mt-1 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-50 w-48">
+                    <button 
+                      onClick={() => { setMostrarModalDerivar(true); setMostrarMenuAcciones(false); }}
+                      className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-200"
+                    >
+                      <ArrowRightLeft size={16} className="text-indigo-500" />
+                      Derivar a otra área
+                    </button>
+                    <div className="border-t border-slate-100 dark:border-slate-700" />
+                    <button 
+                      disabled
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-[13px] text-slate-400 cursor-not-allowed"
+                    >
+                      <Search size={16} />
+                      Buscar en chat
+                    </button>
+                    <button 
+                      disabled
+                      className="w-full px-3 py-2 text-left flex items-center gap-2 text-[13px] text-slate-400 cursor-not-allowed"
+                    >
+                      <Pin size={16} />
+                      Fijar conversación
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}
       </div>
+
+      {/* Modal de derivación */}
+      {mostrarModalDerivar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={() => setMostrarModalDerivar(false)}>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                <ArrowRightLeft size={18} className="text-indigo-500" />
+                Derivar conversación
+              </h3>
+              <button onClick={() => setMostrarModalDerivar(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md">
+                <X size={18} className="text-slate-500" />
+              </button>
+            </div>
+            
+            <div className="p-4">
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                Selecciona el área a la que deseas derivar esta conversación. El usuario seguirá en la línea WSP4.
+              </p>
+              
+              <div className="space-y-2 mb-4">
+                {INBOXES.filter(inbox => inbox.id !== conversacionActual.area && inbox.id !== 'wsp4').map(inbox => (
+                  <button
+                    key={inbox.id}
+                    onClick={() => setAreaDestino(inbox.id)}
+                    className={cn(
+                      "w-full px-3 py-2.5 rounded-lg border-2 flex items-center gap-3 transition-all text-left",
+                      areaDestino === inbox.id 
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10" 
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                    )}
+                  >
+                    <span className="text-xl">{inbox.icono}</span>
+                    <div>
+                      <p className={cn("font-medium text-sm", areaDestino === inbox.id ? "text-indigo-700 dark:text-indigo-300" : "text-slate-700 dark:text-slate-200")}>
+                        {inbox.nombre}
+                      </p>
+                    </div>
+                    {areaDestino === inbox.id && (
+                      <div className="ml-auto w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Motivo (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={motivoDerivacion}
+                  onChange={(e) => setMotivoDerivacion(e.target.value)}
+                  placeholder="Ej: Consulta sobre certificados"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-white text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMostrarModalDerivar(false)}
+                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={derivarConversacion}
+                  disabled={!areaDestino || derivando}
+                  className={cn(
+                    "flex-1 px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2",
+                    areaDestino && !derivando
+                      ? "bg-indigo-500 text-white hover:bg-indigo-600"
+                      : "bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  {derivando ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Derivando...
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRightLeft size={16} />
+                      Derivar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div ref={chatContainerRef} className="flex-1 overflow-y-auto px-4 py-2 min-h-0">
         {mensajes.map((msg) => {
@@ -721,7 +935,7 @@ export default function ChatPanel() {
           const isSelected = mensajesSeleccionados.has(msg.id);
           const hasReacciones = msg.reacciones && msg.reacciones.length > 0;
           const mensajeCitado = getMensajeCitado(msg);
-          
+
           return (
             <div
               key={msg.id}
@@ -752,11 +966,11 @@ export default function ChatPanel() {
                   {msg.mensaje && (() => {
                     const urls = extractUrls(msg.mensaje);
                     let displayText = msg.mensaje;
-                    
+
                     if (urls.length > 0) {
                       let textWithoutUrls = msg.mensaje;
                       urls.forEach(u => { textWithoutUrls = textWithoutUrls.replace(u, '').trim(); });
-                      
+
                       if (!textWithoutUrls) {
                         displayText = '';
                       } else if (textWithoutUrls.length > 100) {
@@ -765,7 +979,7 @@ export default function ChatPanel() {
                         displayText = textWithoutUrls;
                       }
                     }
-                    
+
                     return (
                       <>
                         {displayText && <p className="whitespace-pre-wrap break-words">{displayText}</p>}
