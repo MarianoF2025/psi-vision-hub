@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Search, Send, Clock, Pause, CheckCircle, Edit, Copy, Trash2, MoreVertical, Users, Mail, Eye, MessageSquare, Calendar, PlayCircle } from 'lucide-react';
+import { Plus, Search, Send, Clock, Pause, CheckCircle, Edit, Copy, Trash2, MoreVertical, Users, Mail, Eye, MessageSquare, Calendar, PlayCircle, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 interface Campana {
@@ -19,12 +19,20 @@ interface Campana {
   total_audiencia: number;
   total_excluidos: number;
   total_elegibles: number;
+  created_at: string;
+}
+
+interface CampanaStats {
+  campana_id: string;
   total_enviados: number;
   total_entregados: number;
   total_leidos: number;
   total_respondidos: number;
   total_fallidos: number;
-  created_at: string;
+}
+
+interface CampanaConStats extends Campana {
+  stats: CampanaStats | null;
 }
 
 const ESTADO_CONFIG: Record<string, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
@@ -36,29 +44,47 @@ const ESTADO_CONFIG: Record<string, { color: string; bg: string; icon: React.Rea
 };
 
 export default function RemarketingPage() {
-  const [campanas, setCampanas] = useState<Campana[]>([]);
+  const [campanas, setCampanas] = useState<CampanaConStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [menuAbierto, setMenuAbierto] = useState<string | null>(null);
-  
 
   useEffect(() => {
     cargarCampanas();
   }, []);
 
   const cargarCampanas = async () => {
-    const { data, error } = await supabase
+    // Cargar campañas
+    const { data: campanasData, error: campanasError } = await supabase
       .from('remarketing_campanas')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      setCampanas(data);
+    if (campanasError) {
+      console.error('Error cargando campañas:', campanasError);
+      setLoading(false);
+      return;
     }
+
+    // Cargar stats usando la función RPC
+    const { data: statsData, error: statsError } = await supabase
+      .rpc('get_remarketing_stats');
+
+    if (statsError) {
+      console.error('Error cargando stats:', statsError);
+    }
+
+    // Mergear campañas con stats
+    const campanasConStats: CampanaConStats[] = (campanasData || []).map(campana => ({
+      ...campana,
+      stats: statsData?.find((s: CampanaStats) => s.campana_id === campana.id) || null
+    }));
+
+    setCampanas(campanasConStats);
     setLoading(false);
   };
 
-  const duplicarCampana = async (campana: Campana) => {
+  const duplicarCampana = async (campana: CampanaConStats) => {
     const { data, error } = await supabase
       .from('remarketing_campanas')
       .insert({
@@ -76,14 +102,14 @@ export default function RemarketingPage() {
       .single();
 
     if (!error && data) {
-      setCampanas([data, ...campanas]);
+      setCampanas([{ ...data, stats: null }, ...campanas]);
     }
     setMenuAbierto(null);
   };
 
   const eliminarCampana = async (id: string) => {
     if (!confirm('¿Eliminar esta campaña?')) return;
-    
+
     const { error } = await supabase
       .from('remarketing_campanas')
       .delete()
@@ -157,9 +183,16 @@ export default function RemarketingPage() {
           <div className="grid gap-4">
             {campanasFiltradas.map((campana) => {
               const estadoConfig = ESTADO_CONFIG[campana.estado] || ESTADO_CONFIG.borrador;
-              const tasaEntrega = campana.total_enviados > 0 ? Math.round((campana.total_entregados / campana.total_enviados) * 100) : 0;
-              const tasaLectura = campana.total_entregados > 0 ? Math.round((campana.total_leidos / campana.total_entregados) * 100) : 0;
-              const tasaRespuesta = campana.total_leidos > 0 ? Math.round((campana.total_respondidos / campana.total_leidos) * 100) : 0;
+              const stats = campana.stats;
+              const totalEnviados = stats?.total_enviados || 0;
+              const totalEntregados = stats?.total_entregados || 0;
+              const totalLeidos = stats?.total_leidos || 0;
+              const totalRespondidos = stats?.total_respondidos || 0;
+              const totalFallidos = stats?.total_fallidos || 0;
+              
+              const tasaEntrega = totalEnviados > 0 ? Math.round((totalEntregados / totalEnviados) * 100) : 0;
+              const tasaLectura = totalEntregados > 0 ? Math.round((totalLeidos / totalEntregados) * 100) : 0;
+              const tasaRespuesta = totalLeidos > 0 ? Math.round((totalRespondidos / totalLeidos) * 100) : 0;
 
               return (
                 <div
@@ -169,7 +202,7 @@ export default function RemarketingPage() {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <Link 
+                        <Link
                           href={`/crm/remarketing/${campana.id}`}
                           className="text-base font-semibold text-slate-800 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400"
                         >
@@ -233,7 +266,7 @@ export default function RemarketingPage() {
                             <Copy size={14} />
                             Duplicar
                           </button>
-                          {campana.estado === 'borrador' && (
+                          {['borrador', 'pausada', 'programada'].includes(campana.estado) && (
                             <button
                               onClick={() => eliminarCampana(campana.id)}
                               className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
@@ -247,42 +280,66 @@ export default function RemarketingPage() {
                     </div>
                   </div>
 
-                  {/* Métricas */}
-                  {campana.total_enviados > 0 && (
-                    <div className="grid grid-cols-4 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800">
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-slate-400 mb-1">
-                          <Users size={12} />
-                          <span className="text-[10px] uppercase">Audiencia</span>
-                        </div>
-                        <p className="text-lg font-semibold text-slate-800 dark:text-white">{campana.total_elegibles.toLocaleString()}</p>
-                      </div>
-                      <div className="text-center">
+                  {/* Métricas - siempre mostrar si hay envíos */}
+                  {totalEnviados > 0 && (
+                    <div className="grid grid-cols-5 gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <div className="text-center p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
                         <div className="flex items-center justify-center gap-1 text-slate-400 mb-1">
                           <Send size={12} />
+                          <span className="text-[10px] uppercase">Enviados</span>
+                        </div>
+                        <p className="text-lg font-semibold text-slate-800 dark:text-white">{totalEnviados}</p>
+                      </div>
+                      <div className="text-center p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="flex items-center justify-center gap-1 text-green-600 mb-1">
+                          <CheckCircle size={12} />
                           <span className="text-[10px] uppercase">Entregados</span>
                         </div>
-                        <p className="text-lg font-semibold text-green-600">{tasaEntrega}%</p>
+                        <p className="text-lg font-semibold text-green-600">{totalEntregados}</p>
+                        <p className="text-[10px] text-green-500">{tasaEntrega}%</p>
                       </div>
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-slate-400 mb-1">
+                      <div className="text-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div className="flex items-center justify-center gap-1 text-blue-600 mb-1">
                           <Eye size={12} />
                           <span className="text-[10px] uppercase">Leídos</span>
                         </div>
-                        <p className="text-lg font-semibold text-blue-600">{tasaLectura}%</p>
+                        <p className="text-lg font-semibold text-blue-600">{totalLeidos}</p>
+                        <p className="text-[10px] text-blue-500">{tasaLectura}%</p>
                       </div>
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-1 text-slate-400 mb-1">
+                      <div className="text-center p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <div className="flex items-center justify-center gap-1 text-purple-600 mb-1">
                           <MessageSquare size={12} />
                           <span className="text-[10px] uppercase">Respuestas</span>
                         </div>
-                        <p className="text-lg font-semibold text-purple-600">{tasaRespuesta}%</p>
+                        <p className="text-lg font-semibold text-purple-600">{totalRespondidos}</p>
+                        <p className="text-[10px] text-purple-500">{tasaRespuesta}%</p>
+                      </div>
+                      {totalFallidos > 0 && (
+                        <div className="text-center p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                          <div className="flex items-center justify-center gap-1 text-red-600 mb-1">
+                            <AlertCircle size={12} />
+                            <span className="text-[10px] uppercase">Fallidos</span>
+                          </div>
+                          <p className="text-lg font-semibold text-red-600">{totalFallidos}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Audiencia si no hay envíos */}
+                  {totalEnviados === 0 && campana.total_elegibles > 0 && (
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                        <Users size={14} className="text-slate-500" />
+                        <span className="text-sm text-slate-600 dark:text-slate-400">
+                          {campana.total_elegibles.toLocaleString()} elegibles
+                        </span>
                       </div>
                     </div>
                   )}
 
                   {/* Botones de acción rápida */}
-                  {campana.estado === 'borrador' && (
+                  {['borrador', 'pausada', 'programada'].includes(campana.estado) && (
                     <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                       <Link
                         href={`/crm/remarketing/${campana.id}`}

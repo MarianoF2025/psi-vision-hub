@@ -3,20 +3,37 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Send, Clock, Users, Pause, Play, Copy, Trash2, Edit3, Check, X, Save, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Send, Clock, Users, Filter, Target, Trash2, Play, Pause, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+
+interface Curso {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
+interface Template {
+  id: string;
+  nombre: string;
+  categoria: string;
+}
 
 interface Campana {
   id: string;
   nombre: string;
-  descripcion: string;
-  curso_codigo: string;
-  curso_nombre: string;
-  template_nombre: string;
-  template_id: string;
-  audiencia_filtros: { etiquetas: string[] };
+  descripcion: string | null;
+  curso_codigo: string | null;
+  curso_nombre: string | null;
+  template_nombre: string | null;
+  template_id: string | null;
+  audiencia_filtros: {
+    curso_id?: string | null;
+    segmentos?: string[];
+    dias_antiguedad?: number | null;
+    excluir_inscriptos?: boolean;
+  } | null;
   estado: string;
-  programada_para: string;
+  programada_para: string | null;
   total_audiencia: number;
   total_excluidos: number;
   total_elegibles: number;
@@ -26,358 +43,387 @@ interface Campana {
   total_respondidos: number;
   total_fallidos: number;
   created_at: string;
-  updated_at: string;
 }
 
-interface Envio {
-  id: string;
-  telefono: string;
-  excluido: boolean;
-  motivo_exclusion: string;
-  estado: string;
-  error_mensaje: string;
-  enviado_at: string;
-  entregado_at: string;
-  leido_at: string;
-  respondido_at: string;
-}
+type Segmento = 'abandono_menu' | 'derivado_sin_cierre' | 'no_responde' | 'perdido_recuperable' | 'multi_interes';
 
-interface Etiqueta {
-  id: string;
-  nombre: string;
-  color: string;
-}
-
-interface Template {
-  id: string;
-  nombre: string;
-  categoria: string;
-  variables: number;
-}
-
-const cursosDisponibles = [
-  { codigo: 'AT', nombre: 'Acompañante Terapéutico' },
-  { codigo: 'APA', nombre: 'Aprendizaje y Psicología del Adulto' },
-  { codigo: 'PNIE', nombre: 'Psiconeuroinmunoendocrinología' },
-  { codigo: 'COACHING', nombre: 'Coaching Ontológico' },
-  { codigo: 'MINDFULNESS', nombre: 'Mindfulness' },
+const SEGMENTOS: { id: Segmento; nombre: string; descripcion: string; icono: string }[] = [
+  { id: 'abandono_menu', nombre: 'Abandonó menú', descripcion: 'Consultó el curso pero no pidió hablar con vendedora', icono: '🔴' },
+  { id: 'derivado_sin_cierre', nombre: 'Derivado sin cierre', descripcion: 'Habló con vendedora pero no se inscribió', icono: '🟡' },
+  { id: 'no_responde', nombre: 'No responde', descripcion: 'Intentamos contactar pero no contesta', icono: '⚫' },
+  { id: 'perdido_recuperable', nombre: 'Perdido recuperable', descripcion: 'Dijo que no, hace más de 30 días', icono: '🔵' },
+  { id: 'multi_interes', nombre: 'Multi-interés', descripcion: 'Consultó 2 o más cursos (indeciso)', icono: '🟣' },
 ];
 
-export default function DetalleCampanaPage() {
+const ESTADO_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
+  borrador: { color: 'text-slate-600', bg: 'bg-slate-100', label: 'Borrador' },
+  programada: { color: 'text-blue-600', bg: 'bg-blue-100', label: 'Programada' },
+  enviando: { color: 'text-amber-600', bg: 'bg-amber-100', label: 'Enviando' },
+  pausada: { color: 'text-orange-600', bg: 'bg-orange-100', label: 'Pausada' },
+  finalizada: { color: 'text-green-600', bg: 'bg-green-100', label: 'Finalizada' },
+};
+
+export default function EditarCampanaPage() {
   const router = useRouter();
   const params = useParams();
   const id = params.id as string;
 
-  const [campana, setCampana] = useState<Campana | null>(null);
-  const [envios, setEnvios] = useState<Envio[]>([]);
-  const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [tabActiva, setTabActiva] = useState<'resumen' | 'envios'>('resumen');
-  const [accionando, setAccionando] = useState(false);
-  
-  // Estados para edición
-  const [modoEdicion, setModoEdicion] = useState(false);
-  const [editNombre, setEditNombre] = useState('');
-  const [editDescripcion, setEditDescripcion] = useState('');
-  const [editTemplateId, setEditTemplateId] = useState('');
-  const [editCursoExcluir, setEditCursoExcluir] = useState('');
-  const [editEtiquetas, setEditEtiquetas] = useState<string[]>([]);
-  const [editTipoEnvio, setEditTipoEnvio] = useState<'manual' | 'programado'>('manual');
-  const [editFechaProgramada, setEditFechaProgramada] = useState('');
-  const [editHoraProgramada, setEditHoraProgramada] = useState('09:00');
   const [guardando, setGuardando] = useState(false);
+  const [cursos, setCursos] = useState<Curso[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [calculando, setCalculando] = useState(false);
+
+  const [campana, setCampana] = useState<Campana | null>(null);
+  const [nombre, setNombre] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [cursoId, setCursoId] = useState('');
+  const [segmentosSeleccionados, setSegmentosSeleccionados] = useState<Segmento[]>([]);
+  const [templateSeleccionado, setTemplateSeleccionado] = useState('');
+  const [diasAntiguedad, setDiasAntiguedad] = useState<number | null>(null);
+  const [excluirInscriptos, setExcluirInscriptos] = useState(true);
+  const [tipoEnvio, setTipoEnvio] = useState<'manual' | 'programado'>('manual');
+  const [fechaProgramada, setFechaProgramada] = useState('');
+  const [horaProgramada, setHoraProgramada] = useState('09:00');
+
+  const [totalAudiencia, setTotalAudiencia] = useState(0);
+  const [totalExcluidos, setTotalExcluidos] = useState(0);
+  const [totalElegibles, setTotalElegibles] = useState(0);
+  const [previewCalculado, setPreviewCalculado] = useState(false);
+  const [contactosElegibles, setContactosElegibles] = useState<string[]>([]);
 
   useEffect(() => {
-    if (id) {
-      cargarCampana();
-      cargarEtiquetas();
-      cargarTemplates();
-    }
+    if (id) cargarDatos();
   }, [id]);
 
-  const cargarCampana = async () => {
+  const cargarDatos = async () => {
     setCargando(true);
-    try {
-      const { data, error } = await supabase
-        .from('remarketing_campanas')
-        .select('*')
-        .eq('id', id)
-        .single();
 
-      if (error) throw error;
-      setCampana(data);
+    const { data: campanaData } = await supabase
+      .from('remarketing_campanas')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-      if (data.estado !== 'borrador') {
-        const { data: enviosData } = await supabase
-          .from('remarketing_envios')
-          .select('*')
-          .eq('campana_id', id)
-          .order('created_at', { ascending: false })
-          .limit(100);
-        if (enviosData) setEnvios(enviosData);
+    if (campanaData) {
+      setCampana(campanaData);
+      setNombre(campanaData.nombre);
+      setDescripcion(campanaData.descripcion || '');
+      setTemplateSeleccionado(campanaData.template_id || '');
+      setTotalAudiencia(campanaData.total_audiencia || 0);
+      setTotalExcluidos(campanaData.total_excluidos || 0);
+      setTotalElegibles(campanaData.total_elegibles || 0);
+
+      if (campanaData.audiencia_filtros) {
+        setCursoId(campanaData.audiencia_filtros.curso_id || '');
+        setSegmentosSeleccionados(campanaData.audiencia_filtros.segmentos || []);
+        setDiasAntiguedad(campanaData.audiencia_filtros.dias_antiguedad || null);
+        setExcluirInscriptos(campanaData.audiencia_filtros.excluir_inscriptos !== false);
       }
-    } catch (error) {
-      console.error('Error cargando campaña:', error);
-      alert('Error al cargar la campaña');
-      router.push('/crm/remarketing');
-    } finally {
-      setCargando(false);
+
+      if (campanaData.programada_para) {
+        setTipoEnvio('programado');
+        const fecha = new Date(campanaData.programada_para);
+        setFechaProgramada(fecha.toISOString().split('T')[0]);
+        setHoraProgramada(fecha.toTimeString().slice(0, 5));
+      }
+
+      if (campanaData.total_elegibles > 0) setPreviewCalculado(true);
     }
-  };
 
-  const cargarEtiquetas = async () => {
-    const { data } = await supabase.from('etiquetas').select('*').order('nombre');
-    if (data) setEtiquetas(data);
-  };
+    const { data: cursosData } = await supabase
+      .from('cursos')
+      .select('id, codigo, nombre')
+      .eq('activo', true)
+      .order('nombre');
+    if (cursosData) setCursos(cursosData);
 
-  const cargarTemplates = async () => {
-    const { data } = await supabase
+    const { data: templatesData } = await supabase
       .from('remarketing_templates')
       .select('*')
       .eq('estado', 'activo')
       .order('nombre');
-    if (data) setTemplates(data);
+    if (templatesData) setTemplates(templatesData);
+
+    setCargando(false);
   };
 
-  const iniciarEdicion = () => {
-    if (!campana) return;
-    setEditNombre(campana.nombre || '');
-    setEditDescripcion(campana.descripcion || '');
-    setEditTemplateId(campana.template_id || '');
-    setEditCursoExcluir(campana.curso_codigo || '');
-    setEditEtiquetas(campana.audiencia_filtros?.etiquetas || []);
-    setEditTipoEnvio(campana.programada_para ? 'programado' : 'manual');
-    if (campana.programada_para) {
-      const fecha = new Date(campana.programada_para);
-      setEditFechaProgramada(fecha.toISOString().split('T')[0]);
-      setEditHoraProgramada(fecha.toTimeString().slice(0, 5));
-    }
-    setModoEdicion(true);
-  };
-
-  const cancelarEdicion = () => {
-    setModoEdicion(false);
-  };
-
-  const toggleEtiqueta = (etiquetaId: string) => {
-    setEditEtiquetas(prev =>
-      prev.includes(etiquetaId) ? prev.filter(e => e !== etiquetaId) : [...prev, etiquetaId]
+  const toggleSegmento = (seg: Segmento) => {
+    setSegmentosSeleccionados(prev =>
+      prev.includes(seg)
+        ? prev.filter(s => s !== seg)
+        : [...prev, seg]
     );
   };
 
-  const guardarEdicion = async () => {
-    if (!campana) return;
-    if (!editNombre.trim()) {
-      alert('El nombre es obligatorio');
+  const obtenerTelefonosSegmento = async (seg: Segmento): Promise<string[]> => {
+    switch (seg) {
+      case 'abandono_menu': {
+        const { data } = await supabase
+          .from('menu_interacciones')
+          .select('telefono')
+          .eq('curso_id', cursoId)
+          .eq('derivado', false);
+        return [...new Set(data?.map(d => d.telefono) || [])];
+      }
+      case 'derivado_sin_cierre': {
+        const { data: derivados } = await supabase
+          .from('menu_interacciones')
+          .select('telefono')
+          .eq('curso_id', cursoId)
+          .eq('derivado', true);
+        const telefonosDerivados = [...new Set(derivados?.map(d => d.telefono) || [])];
+        if (telefonosDerivados.length === 0) return [];
+        const { data: contactos } = await supabase
+          .from('contactos')
+          .select('telefono, resultado')
+          .in('telefono', telefonosDerivados);
+        return contactos?.filter(c => c.resultado !== 'INS').map(c => c.telefono) || [];
+      }
+      case 'no_responde': {
+        const { data: interacciones } = await supabase
+          .from('menu_interacciones')
+          .select('telefono')
+          .eq('curso_id', cursoId);
+        const telefonosInteraccion = [...new Set(interacciones?.map(d => d.telefono) || [])];
+        if (telefonosInteraccion.length === 0) return [];
+        const { data: contactos } = await supabase
+          .from('contactos')
+          .select('telefono')
+          .in('telefono', telefonosInteraccion)
+          .eq('estado_lead', 'no_responde');
+        return contactos?.map(c => c.telefono) || [];
+      }
+      case 'perdido_recuperable': {
+        const hace30Dias = new Date();
+        hace30Dias.setDate(hace30Dias.getDate() - 30);
+        const { data: interacciones } = await supabase
+          .from('menu_interacciones')
+          .select('telefono')
+          .eq('curso_id', cursoId);
+        const telefonosInteraccion = [...new Set(interacciones?.map(d => d.telefono) || [])];
+        if (telefonosInteraccion.length === 0) return [];
+        const { data: contactos } = await supabase
+          .from('contactos')
+          .select('telefono')
+          .in('telefono', telefonosInteraccion)
+          .or('estado_lead.eq.perdido,resultado.eq.perdido')
+          .lt('resultado_ts', hace30Dias.toISOString());
+        return contactos?.map(c => c.telefono) || [];
+      }
+      case 'multi_interes': {
+        const { data } = await supabase
+          .from('menu_interacciones')
+          .select('telefono, curso_id');
+        const porTelefono: Record<string, Set<string>> = {};
+        data?.forEach(d => {
+          if (!porTelefono[d.telefono]) porTelefono[d.telefono] = new Set();
+          porTelefono[d.telefono].add(d.curso_id);
+        });
+        return Object.entries(porTelefono)
+          .filter(([_, cursos]) => cursos.size > 1)
+          .map(([telefono]) => telefono);
+      }
+      default:
+        return [];
+    }
+  };
+
+  const calcularElegibles = async () => {
+    const necesitaCurso = segmentosSeleccionados.some(s => s !== 'multi_interes');
+    if (necesitaCurso && !cursoId) {
+      alert('Seleccioná un curso objetivo');
       return;
     }
-    if (editEtiquetas.length === 0) {
-      alert('Seleccioná al menos una etiqueta');
+    if (segmentosSeleccionados.length === 0) {
+      alert('Seleccioná al menos un segmento de audiencia');
+      return;
+    }
+
+    setCalculando(true);
+    setPreviewCalculado(false);
+
+    try {
+      const telefonosPorSegmento = await Promise.all(
+        segmentosSeleccionados.map(seg => obtenerTelefonosSegmento(seg))
+      );
+
+      let telefonosAudiencia = [...new Set(telefonosPorSegmento.flat())];
+      let telefonosExcluir: string[] = [];
+
+      if (diasAntiguedad && telefonosAudiencia.length > 0) {
+        const fechaLimite = new Date();
+        fechaLimite.setDate(fechaLimite.getDate() - diasAntiguedad);
+        const { data: recientes } = await supabase
+          .from('menu_interacciones')
+          .select('telefono')
+          .in('telefono', telefonosAudiencia)
+          .gte('created_at', fechaLimite.toISOString());
+        telefonosAudiencia = [...new Set(recientes?.map(d => d.telefono) || [])];
+      }
+
+      if (excluirInscriptos && telefonosAudiencia.length > 0) {
+        const { data: inscriptos } = await supabase
+          .from('contactos')
+          .select('telefono')
+          .in('telefono', telefonosAudiencia)
+          .eq('resultado', 'INS');
+        telefonosExcluir = inscriptos?.map(c => c.telefono) || [];
+      }
+
+      const elegibles = telefonosAudiencia.filter(t => !telefonosExcluir.includes(t));
+      setTotalAudiencia(telefonosAudiencia.length);
+      setTotalExcluidos(telefonosExcluir.length);
+      setTotalElegibles(elegibles.length);
+      setContactosElegibles(elegibles);
+      setPreviewCalculado(true);
+    } catch (error) {
+      console.error('Error calculando elegibles:', error);
+      alert('Error al calcular audiencia');
+    } finally {
+      setCalculando(false);
+    }
+  };
+
+  const guardarCampana = async () => {
+    if (!nombre.trim()) {
+      alert('Ingresá un nombre para la campaña');
+      return;
+    }
+    if (segmentosSeleccionados.length === 0) {
+      alert('Seleccioná al menos un segmento');
       return;
     }
 
     setGuardando(true);
     try {
-      const cursoData = cursosDisponibles.find(c => c.codigo === editCursoExcluir);
-      const templateData = templates.find(t => t.id === editTemplateId);
-      
+      const cursoData = cursos.find(c => c.id === cursoId);
+      const templateData = templates.find(t => t.id === templateSeleccionado);
+
       let programadaPara = null;
-      let nuevoEstado = campana.estado;
-      
-      if (editTipoEnvio === 'programado' && editFechaProgramada) {
-        programadaPara = `${editFechaProgramada}T${editHoraProgramada}:00`;
-        if (campana.estado === 'borrador') {
-          nuevoEstado = 'programada';
-        }
-      } else if (editTipoEnvio === 'manual' && campana.estado === 'programada') {
-        nuevoEstado = 'borrador';
+      if (tipoEnvio === 'programado' && fechaProgramada) {
+        programadaPara = `${fechaProgramada}T${horaProgramada}:00`;
       }
 
       const { error } = await supabase
         .from('remarketing_campanas')
         .update({
-          nombre: editNombre.trim(),
-          descripcion: editDescripcion.trim(),
-          curso_codigo: editCursoExcluir || null,
+          nombre: nombre.trim(),
+          descripcion: descripcion.trim() || null,
+          curso_codigo: cursoData?.codigo || null,
           curso_nombre: cursoData?.nombre || null,
           template_nombre: templateData?.nombre || null,
-          template_id: editTemplateId || null,
-          audiencia_filtros: { etiquetas: editEtiquetas },
+          template_id: templateSeleccionado || null,
+          audiencia_filtros: {
+            curso_id: cursoId || null,
+            segmentos: segmentosSeleccionados,
+            dias_antiguedad: diasAntiguedad,
+            excluir_inscriptos: excluirInscriptos
+          },
           programada_para: programadaPara,
-          estado: nuevoEstado,
-          updated_at: new Date().toISOString(),
+          total_audiencia: totalAudiencia,
+          total_excluidos: totalExcluidos,
+          total_elegibles: totalElegibles,
+          updated_at: new Date().toISOString()
         })
         .eq('id', id);
 
       if (error) throw error;
-      
-      setModoEdicion(false);
-      cargarCampana();
+      alert('Campaña guardada');
+      cargarDatos();
     } catch (error) {
-      console.error('Error guardando:', error);
-      alert('Error al guardar los cambios');
+      console.error('Error guardando campaña:', error);
+      alert('Error al guardar la campaña');
     } finally {
       setGuardando(false);
     }
   };
 
-  const getNombreEtiqueta = (etiquetaId: string) => {
-    return etiquetas.find(e => e.id === etiquetaId)?.nombre || etiquetaId;
-  };
-
-  const getEstadoBadge = (estado: string) => {
-    const estilos: Record<string, string> = {
-      borrador: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-      programada: 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400',
-      enviando: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400',
-      pausada: 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400',
-      finalizada: 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400',
-    };
-    return estilos[estado] || estilos.borrador;
-  };
-
-  const getEstadoEnvioBadge = (estado: string) => {
-    const estilos: Record<string, string> = {
-      pendiente: 'bg-slate-100 text-slate-600',
-      enviado: 'bg-blue-100 text-blue-600',
-      entregado: 'bg-green-100 text-green-600',
-      leido: 'bg-emerald-100 text-emerald-600',
-      respondido: 'bg-indigo-100 text-indigo-600',
-      fallido: 'bg-red-100 text-red-600',
-    };
-    return estilos[estado] || estilos.pendiente;
-  };
-
-  const enviarAhora = async () => {
-    if (!campana) return;
-    if (!confirm(`¿Enviar campaña "${campana.nombre}" a ${campana.total_elegibles} contactos?`)) return;
-    
-    setAccionando(true);
-    try {
-      const { error } = await supabase
-        .from('remarketing_campanas')
-        .update({ estado: 'enviando', updated_at: new Date().toISOString() })
-        .eq('id', id);
-      if (error) throw error;
-      
-      alert('Campaña iniciada. Los mensajes se enviarán en segundo plano.');
-      cargarCampana();
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error al iniciar el envío');
-    } finally {
-      setAccionando(false);
+  const enviarCampana = async () => {
+    if (!previewCalculado || totalElegibles === 0) {
+      alert('Calculá los elegibles antes de enviar');
+      return;
     }
-  };
+    if (!confirm(`¿Enviar campaña "${nombre}" a ${totalElegibles} contactos?`)) return;
 
-  const pausarCampana = async () => {
-    if (!campana) return;
-    setAccionando(true);
+    setGuardando(true);
     try {
-      const { error } = await supabase
+      await guardarCampana();
+
+      if (contactosElegibles.length > 0) {
+        const { data: contactosData } = await supabase
+          .from('contactos')
+          .select('id, telefono')
+          .in('telefono', contactosElegibles);
+
+        const envios = contactosData?.map(c => ({
+          campana_id: id,
+          contacto_id: c.id,
+          telefono: c.telefono,
+          estado: 'pendiente'
+        })) || [];
+
+        if (envios.length > 0) {
+          await supabase.from('remarketing_envios').insert(envios);
+        }
+      }
+
+      await supabase
         .from('remarketing_campanas')
-        .update({ estado: 'pausada', updated_at: new Date().toISOString() })
+        .update({ estado: 'enviando' })
         .eq('id', id);
-      if (error) throw error;
-      cargarCampana();
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error al pausar');
-    } finally {
-      setAccionando(false);
-    }
-  };
 
-  const reanudarCampana = async () => {
-    if (!campana) return;
-    setAccionando(true);
-    try {
-      const { error } = await supabase
-        .from('remarketing_campanas')
-        .update({ estado: 'enviando', updated_at: new Date().toISOString() })
-        .eq('id', id);
-      if (error) throw error;
-      cargarCampana();
-    } catch (error) {
-      console.error('Error:', error);
-      alert('Error al reanudar');
-    } finally {
-      setAccionando(false);
-    }
-  };
-
-  const duplicarCampana = async () => {
-    if (!campana) return;
-    setAccionando(true);
-    try {
-      const { error } = await supabase
-        .from('remarketing_campanas')
-        .insert({
-          nombre: `${campana.nombre} (copia)`,
-          descripcion: campana.descripcion,
-          curso_codigo: campana.curso_codigo,
-          curso_nombre: campana.curso_nombre,
-          template_nombre: campana.template_nombre,
-          template_id: campana.template_id,
-          audiencia_filtros: campana.audiencia_filtros,
-          estado: 'borrador',
-          total_audiencia: 0,
-          total_excluidos: 0,
-          total_elegibles: 0,
-        });
-      if (error) throw error;
-      alert('Campaña duplicada');
+      alert(`Campaña enviándose a ${totalElegibles} contactos`);
       router.push('/crm/remarketing');
     } catch (error) {
-      console.error('Error:', error);
-      alert('Error al duplicar');
+      console.error('Error enviando:', error);
+      alert('Error al enviar campaña');
     } finally {
-      setAccionando(false);
+      setGuardando(false);
     }
   };
 
   const eliminarCampana = async () => {
-    if (!campana) return;
-    if (!confirm(`¿Eliminar campaña "${campana.nombre}"? Esta acción no se puede deshacer.`)) return;
-    
-    setAccionando(true);
+    if (!confirm('¿Eliminar esta campaña? Esta acción no se puede deshacer.')) return;
     try {
-      const { error } = await supabase
-        .from('remarketing_campanas')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
+      await supabase.from('remarketing_envios').delete().eq('campana_id', id);
+      await supabase.from('remarketing_campanas').delete().eq('id', id);
       router.push('/crm/remarketing');
     } catch (error) {
-      console.error('Error:', error);
-      alert('Error al eliminar');
-    } finally {
-      setAccionando(false);
+      console.error('Error eliminando:', error);
+      alert('Error al eliminar campaña');
     }
   };
 
-  const puedeEditar = campana?.estado === 'borrador' || campana?.estado === 'programada';
+  const pausarReanudar = async () => {
+    if (!campana) return;
+    const nuevoEstado = campana.estado === 'pausada' ? 'enviando' : 'pausada';
+    await supabase.from('remarketing_campanas').update({ estado: nuevoEstado }).eq('id', id);
+    cargarDatos();
+  };
+
+  useEffect(() => {
+    setPreviewCalculado(false);
+  }, [cursoId, segmentosSeleccionados, diasAntiguedad, excluirInscriptos]);
 
   if (cargando) {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
       </div>
     );
   }
 
-  if (!campana) return null;
+  if (!campana) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <p className="text-slate-500">Campaña no encontrada</p>
+      </div>
+    );
+  }
 
-  const tasaEntrega = campana.total_enviados > 0 
-    ? ((campana.total_entregados / campana.total_enviados) * 100).toFixed(1) 
-    : '0';
-  const tasaLectura = campana.total_entregados > 0 
-    ? ((campana.total_leidos / campana.total_entregados) * 100).toFixed(1) 
-    : '0';
-  const tasaRespuesta = campana.total_leidos > 0 
-    ? ((campana.total_respondidos / campana.total_leidos) * 100).toFixed(1) 
-    : '0';
+  const estadoConfig = ESTADO_CONFIG[campana.estado] || ESTADO_CONFIG.borrador;
+  const puedeEditar = ['borrador', 'pausada', 'programada'].includes(campana.estado);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-950">
@@ -390,447 +436,321 @@ export default function DetalleCampanaPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-semibold text-slate-800 dark:text-white">{campana.nombre}</h1>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getEstadoBadge(campana.estado)}`}>
-                {campana.estado}
+              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${estadoConfig.bg} ${estadoConfig.color}`}>
+                {estadoConfig.label}
               </span>
             </div>
-            <p className="text-xs text-slate-500">
-              Creada {new Date(campana.created_at).toLocaleDateString('es-AR')}
-            </p>
+            <p className="text-xs text-slate-500">Editar campaña</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {modoEdicion ? (
-            <>
-              <button
-                onClick={cancelarEdicion}
-                disabled={guardando}
-                className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                <X size={16} />
-                Cancelar
-              </button>
-              <button
-                onClick={guardarEdicion}
-                disabled={guardando}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
-              >
-                <Save size={16} />
-                {guardando ? 'Guardando...' : 'Guardar cambios'}
-              </button>
-            </>
-          ) : (
-            <>
-              {puedeEditar && (
-                <button
-                  onClick={iniciarEdicion}
-                  className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <Edit3 size={16} />
-                  Editar
-                </button>
-              )}
-              {campana.estado === 'borrador' && (
-                <button
-                  onClick={enviarAhora}
-                  disabled={accionando || campana.total_elegibles === 0}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
-                >
-                  <Send size={16} />
-                  Enviar ahora
-                </button>
-              )}
-              {campana.estado === 'enviando' && (
-                <button
-                  onClick={pausarCampana}
-                  disabled={accionando}
-                  className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
-                >
-                  <Pause size={16} />
-                  Pausar
-                </button>
-              )}
-              {campana.estado === 'pausada' && (
-                <button
-                  onClick={reanudarCampana}
-                  disabled={accionando}
-                  className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
-                >
-                  <Play size={16} />
-                  Reanudar
-                </button>
-              )}
-              <button
-                onClick={duplicarCampana}
-                disabled={accionando}
-                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400"
-                title="Duplicar"
-              >
-                <Copy size={18} />
-              </button>
-              {puedeEditar && (
-                <button
-                  onClick={eliminarCampana}
-                  disabled={accionando}
-                  className="p-2 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-lg text-red-600"
-                  title="Eliminar"
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
-            </>
+          {puedeEditar && (
+            <button onClick={eliminarCampana} className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 text-sm font-medium rounded-lg">
+              <Trash2 size={16} />
+              Eliminar
+            </button>
+          )}
+          {campana.estado === 'enviando' && (
+            <button onClick={pausarReanudar} className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg">
+              <Pause size={16} />
+              Pausar
+            </button>
+          )}
+          {campana.estado === 'pausada' && (
+            <button onClick={pausarReanudar} className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg">
+              <Play size={16} />
+              Reanudar
+            </button>
+          )}
+          {puedeEditar && (
+            <button onClick={guardarCampana} disabled={guardando} className="flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-sm font-medium rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
+              <Save size={16} />
+              Guardar
+            </button>
           )}
         </div>
       </div>
 
-      {/* Tabs */}
-      {!modoEdicion && (
-        <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6">
-          <div className="flex gap-6">
-            <button
-              onClick={() => setTabActiva('resumen')}
-              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
-                tabActiva === 'resumen'
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-              }`}
-            >
-              Resumen
-            </button>
-            <button
-              onClick={() => setTabActiva('envios')}
-              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
-                tabActiva === 'envios'
-                  ? 'border-indigo-600 text-indigo-600'
-                  : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
-              }`}
-            >
-              Envíos ({envios.length})
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
-        {modoEdicion ? (
-          /* MODO EDICIÓN */
-          <div className="max-w-4xl mx-auto space-y-6">
-            {/* Información básica */}
+        <div className="max-w-4xl mx-auto space-y-6">
+
+          {/* Métricas */}
+          {campana.total_enviados > 0 && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Información básica</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nombre *</label>
-                  <input
-                    type="text"
-                    value={editNombre}
-                    onChange={(e) => setEditNombre(e.target.value)}
-                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Métricas de envío</h2>
+              <div className="grid grid-cols-5 gap-4">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-slate-800 dark:text-white">{campana.total_enviados}</p>
+                  <p className="text-xs text-slate-500">Enviados</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Descripción</label>
-                  <textarea
-                    value={editDescripcion}
-                    onChange={(e) => setEditDescripcion(e.target.value)}
-                    rows={2}
-                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                  />
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-green-600">{campana.total_entregados}</p>
+                  <p className="text-xs text-slate-500">Entregados</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-blue-600">{campana.total_leidos}</p>
+                  <p className="text-xs text-slate-500">Leídos</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-purple-600">{campana.total_respondidos}</p>
+                  <p className="text-xs text-slate-500">Respondidos</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-red-600">{campana.total_fallidos}</p>
+                  <p className="text-xs text-slate-500">Fallidos</p>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Audiencia */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                <Users size={16} />
-                Audiencia
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Etiquetas *</label>
-                  <div className="flex flex-wrap gap-2">
-                    {etiquetas.map((etiqueta) => (
-                      <button
-                        key={etiqueta.id}
-                        onClick={() => toggleEtiqueta(etiqueta.id)}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                          editEtiquetas.includes(etiqueta.id)
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        {etiqueta.nombre}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Excluir inscriptos en curso</label>
-                  <select
-                    value={editCursoExcluir}
-                    onChange={(e) => setEditCursoExcluir(e.target.value)}
-                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="">No excluir ningún curso</option>
-                    {cursosDisponibles.map((curso) => (
-                      <option key={curso.codigo} value={curso.codigo}>{curso.nombre}</option>
-                    ))}
-                  </select>
-                </div>
+          {/* Información básica */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Información básica</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nombre *</label>
+                <input
+                  type="text"
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  disabled={!puedeEditar}
+                  className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white disabled:opacity-50"
+                />
               </div>
-            </div>
-
-            {/* Template */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Template de WhatsApp</h2>
-              <select
-                value={editTemplateId}
-                onChange={(e) => setEditTemplateId(e.target.value)}
-                className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">Seleccionar template...</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>{template.nombre}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Tipo de envío */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-              <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Tipo de envío</h2>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <button
-                  onClick={() => setEditTipoEnvio('manual')}
-                  className={`p-4 rounded-lg border-2 transition-colors ${
-                    editTipoEnvio === 'manual' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <Send size={24} className={editTipoEnvio === 'manual' ? 'text-indigo-600 mb-2' : 'text-slate-400 mb-2'} />
-                  <p className={`font-medium ${editTipoEnvio === 'manual' ? 'text-indigo-600' : 'text-slate-700 dark:text-slate-300'}`}>Envío manual</p>
-                  <p className="text-xs text-slate-500 mt-1">Enviás cuando quieras</p>
-                </button>
-                <button
-                  onClick={() => setEditTipoEnvio('programado')}
-                  className={`p-4 rounded-lg border-2 transition-colors ${
-                    editTipoEnvio === 'programado' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <Clock size={24} className={editTipoEnvio === 'programado' ? 'text-indigo-600 mb-2' : 'text-slate-400 mb-2'} />
-                  <p className={`font-medium ${editTipoEnvio === 'programado' ? 'text-indigo-600' : 'text-slate-700 dark:text-slate-300'}`}>Programar envío</p>
-                  <p className="text-xs text-slate-500 mt-1">Se envía automáticamente</p>
-                </button>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Descripción</label>
+                <textarea
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                  disabled={!puedeEditar}
+                  rows={2}
+                  className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white resize-none disabled:opacity-50"
+                />
               </div>
-              {editTipoEnvio === 'programado' && (
-                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fecha</label>
-                    <input
-                      type="date"
-                      value={editFechaProgramada}
-                      onChange={(e) => setEditFechaProgramada(e.target.value)}
-                      min={new Date().toISOString().split('T')[0]}
-                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hora</label>
-                    <input
-                      type="time"
-                      value={editHoraProgramada}
-                      onChange={(e) => setEditHoraProgramada(e.target.value)}
-                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
-        ) : tabActiva === 'resumen' ? (
-          /* TAB RESUMEN */
-          <div className="max-w-4xl mx-auto space-y-6">
-            {/* Métricas principales */}
-            <div className="grid grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-                <p className="text-2xl font-bold text-slate-800 dark:text-white">{campana.total_elegibles.toLocaleString()}</p>
-                <p className="text-sm text-slate-500">Elegibles</p>
-              </div>
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-                <p className="text-2xl font-bold text-blue-600">{campana.total_enviados.toLocaleString()}</p>
-                <p className="text-sm text-slate-500">Enviados</p>
-              </div>
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-                <p className="text-2xl font-bold text-green-600">{tasaEntrega}%</p>
-                <p className="text-sm text-slate-500">Entregados</p>
-              </div>
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
-                <p className="text-2xl font-bold text-emerald-600">{tasaLectura}%</p>
-                <p className="text-sm text-slate-500">Leídos</p>
-              </div>
-            </div>
 
-            {/* Detalles */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Configuración */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Configuración</h3>
-                <div className="space-y-3 text-sm">
-                  {campana.descripcion && (
-                    <div>
-                      <span className="text-slate-500">Descripción:</span>
-                      <p className="text-slate-800 dark:text-white">{campana.descripcion}</p>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Template:</span>
-                    <span className="text-slate-800 dark:text-white">{campana.template_nombre || 'No seleccionado'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Curso excluido:</span>
-                    <span className="text-slate-800 dark:text-white">{campana.curso_nombre || 'Ninguno'}</span>
-                  </div>
-                  {campana.programada_para && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Programada para:</span>
-                      <span className="text-slate-800 dark:text-white">
-                        {new Date(campana.programada_para).toLocaleString('es-AR')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
+          {/* Curso objetivo */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              <Target size={16} />
+              Curso objetivo
+            </h2>
+            <select
+              value={cursoId}
+              onChange={(e) => setCursoId(e.target.value)}
+              disabled={!puedeEditar}
+              className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white disabled:opacity-50"
+            >
+              <option value="">Seleccionar curso...</option>
+              {cursos.map((curso) => (
+                <option key={curso.id} value={curso.id}>{curso.nombre} ({curso.codigo})</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-2">No requerido si solo usás "Multi-interés"</p>
+          </div>
 
-              {/* Audiencia */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Audiencia</h3>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-sm text-slate-500">Etiquetas seleccionadas:</span>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {campana.audiencia_filtros?.etiquetas?.map((etId) => (
-                        <span
-                          key={etId}
-                          className="px-2 py-1 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 text-xs rounded-full"
-                        >
-                          {getNombreEtiqueta(etId)}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                    <div className="text-center">
-                      <p className="text-lg font-semibold text-slate-800 dark:text-white">{campana.total_audiencia}</p>
-                      <p className="text-xs text-slate-500">Total</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-semibold text-red-600">-{campana.total_excluidos}</p>
-                      <p className="text-xs text-slate-500">Excluidos</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-semibold text-green-600">{campana.total_elegibles}</p>
-                      <p className="text-xs text-slate-500">Elegibles</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Métricas detalladas */}
-            {campana.estado !== 'borrador' && (
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-slate-800 dark:text-white">Métricas de envío</h3>
+          {/* Segmentos - MÚLTIPLE */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              <Users size={16} />
+              Segmentos de audiencia *
+              <span className="text-xs font-normal text-slate-500">(podés seleccionar varios)</span>
+            </h2>
+            <div className="grid gap-3">
+              {SEGMENTOS.map((seg) => {
+                const isSelected = segmentosSeleccionados.includes(seg.id);
+                return (
                   <button
-                    onClick={cargarCampana}
-                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-500"
-                    title="Actualizar"
+                    key={seg.id}
+                    onClick={() => puedeEditar && toggleSegmento(seg.id)}
+                    disabled={!puedeEditar}
+                    className={`w-full p-4 rounded-lg border-2 text-left transition-all disabled:cursor-not-allowed ${
+                      isSelected
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-500/10'
+                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                    }`}
                   >
-                    <RefreshCw size={16} />
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">{seg.icono}</span>
+                      <div className="flex-1">
+                        <p className={`font-medium ${isSelected ? 'text-purple-700 dark:text-purple-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                          {seg.nombre}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">{seg.descripcion}</p>
+                      </div>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                        isSelected ? 'bg-purple-500 border-purple-500' : 'border-slate-300 dark:border-slate-600'
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
                   </button>
+                );
+              })}
+            </div>
+            {segmentosSeleccionados.length > 1 && (
+              <p className="text-xs text-purple-600 dark:text-purple-400 mt-3">
+                ✓ Se unirán los contactos de {segmentosSeleccionados.length} segmentos (sin duplicados)
+              </p>
+            )}
+          </div>
+
+          {/* Filtros */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              <Filter size={16} />
+              Filtros adicionales
+            </h2>
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={excluirInscriptos}
+                  onChange={(e) => setExcluirInscriptos(e.target.checked)}
+                  disabled={!puedeEditar}
+                  className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Excluir ya inscriptos</span>
+                  <p className="text-xs text-slate-500">No enviar a quienes ya tienen resultado = INS</p>
                 </div>
-                <div className="grid grid-cols-6 gap-4 text-center">
-                  <div>
-                    <p className="text-xl font-bold text-slate-800 dark:text-white">{campana.total_enviados}</p>
-                    <p className="text-xs text-slate-500">Enviados</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-green-600">{campana.total_entregados}</p>
-                    <p className="text-xs text-slate-500">Entregados</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-emerald-600">{campana.total_leidos}</p>
-                    <p className="text-xs text-slate-500">Leídos</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-indigo-600">{campana.total_respondidos}</p>
-                    <p className="text-xs text-slate-500">Respondidos</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-red-600">{campana.total_fallidos}</p>
-                    <p className="text-xs text-slate-500">Fallidos</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-slate-600">{tasaRespuesta}%</p>
-                    <p className="text-xs text-slate-500">Tasa respuesta</p>
-                  </div>
+              </label>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Solo últimos X días</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={diasAntiguedad || ''}
+                    onChange={(e) => setDiasAntiguedad(e.target.value ? parseInt(e.target.value) : null)}
+                    disabled={!puedeEditar}
+                    placeholder="Sin límite"
+                    min={1}
+                    className="w-32 px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white disabled:opacity-50"
+                  />
+                  <span className="text-sm text-slate-500">días</span>
+                </div>
+              </div>
+            </div>
+
+            {puedeEditar && (
+              <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={calcularElegibles}
+                  disabled={calculando || segmentosSeleccionados.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                >
+                  <RefreshCw size={16} className={calculando ? 'animate-spin' : ''} />
+                  {calculando ? 'Calculando...' : 'Recalcular audiencia'}
+                </button>
+              </div>
+            )}
+
+            {previewCalculado && (
+              <div className="mt-4 grid grid-cols-3 gap-4">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-slate-800 dark:text-white">{totalAudiencia}</p>
+                  <p className="text-xs text-slate-500">Audiencia base</p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-500/10 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-red-600">-{totalExcluidos}</p>
+                  <p className="text-xs text-slate-500">Excluidos</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-500/10 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-green-600">{totalElegibles}</p>
+                  <p className="text-xs text-slate-500">Elegibles</p>
                 </div>
               </div>
             )}
           </div>
-        ) : (
-          /* TAB ENVÍOS */
-          <div className="max-w-6xl mx-auto">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-slate-50 dark:bg-slate-800">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Teléfono</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Estado</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Enviado</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Entregado</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Leído</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Error</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {envios.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                        No hay envíos registrados
-                      </td>
-                    </tr>
-                  ) : (
-                    envios.map((envio) => (
-                      <tr key={envio.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="px-4 py-3 text-sm text-slate-800 dark:text-white font-mono">
-                          {envio.telefono}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getEstadoEnvioBadge(envio.estado)}`}>
-                            {envio.estado}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-500">
-                          {envio.enviado_at ? new Date(envio.enviado_at).toLocaleString('es-AR') : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-500">
-                          {envio.entregado_at ? new Date(envio.entregado_at).toLocaleString('es-AR') : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-500">
-                          {envio.leido_at ? new Date(envio.leido_at).toLocaleString('es-AR') : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-red-500 max-w-[200px] truncate">
-                          {envio.error_mensaje || '-'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+
+          {/* Template */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Template de WhatsApp</h2>
+            <select
+              value={templateSeleccionado}
+              onChange={(e) => setTemplateSeleccionado(e.target.value)}
+              disabled={!puedeEditar}
+              className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white disabled:opacity-50"
+            >
+              <option value="">Seleccionar template...</option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>{template.nombre}</option>
+              ))}
+            </select>
           </div>
-        )}
+
+          {/* Tipo envío */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Tipo de envío</h2>
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <button
+                onClick={() => puedeEditar && setTipoEnvio('manual')}
+                disabled={!puedeEditar}
+                className={`p-4 rounded-lg border-2 transition-colors disabled:cursor-not-allowed ${
+                  tipoEnvio === 'manual' ? 'border-purple-600 bg-purple-50 dark:bg-purple-500/10' : 'border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <Send size={24} className={tipoEnvio === 'manual' ? 'text-purple-600 mb-2' : 'text-slate-400 mb-2'} />
+                <p className={`font-medium ${tipoEnvio === 'manual' ? 'text-purple-600' : 'text-slate-700 dark:text-slate-300'}`}>Envío manual</p>
+              </button>
+              <button
+                onClick={() => puedeEditar && setTipoEnvio('programado')}
+                disabled={!puedeEditar}
+                className={`p-4 rounded-lg border-2 transition-colors disabled:cursor-not-allowed ${
+                  tipoEnvio === 'programado' ? 'border-purple-600 bg-purple-50 dark:bg-purple-500/10' : 'border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <Clock size={24} className={tipoEnvio === 'programado' ? 'text-purple-600 mb-2' : 'text-slate-400 mb-2'} />
+                <p className={`font-medium ${tipoEnvio === 'programado' ? 'text-purple-600' : 'text-slate-700 dark:text-slate-300'}`}>Programar</p>
+              </button>
+            </div>
+            {tipoEnvio === 'programado' && (
+              <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Fecha</label>
+                  <input
+                    type="date"
+                    value={fechaProgramada}
+                    onChange={(e) => setFechaProgramada(e.target.value)}
+                    disabled={!puedeEditar}
+                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 disabled:opacity-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Hora</label>
+                  <input
+                    type="time"
+                    value={horaProgramada}
+                    onChange={(e) => setHoraProgramada(e.target.value)}
+                    disabled={!puedeEditar}
+                    className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 disabled:opacity-50"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Botón enviar */}
+          {puedeEditar && campana.estado === 'borrador' && (
+            <div className="flex justify-end pb-6">
+              <button
+                onClick={enviarCampana}
+                disabled={guardando || !previewCalculado || totalElegibles === 0}
+                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+              >
+                <Send size={16} />
+                {guardando ? 'Enviando...' : `Enviar a ${totalElegibles} contactos`}
+              </button>
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );

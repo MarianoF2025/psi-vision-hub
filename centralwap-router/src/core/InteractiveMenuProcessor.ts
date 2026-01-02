@@ -1,6 +1,6 @@
 // ===========================================
 // PROCESADOR DE MENÚS INTERACTIVOS
-// Versión 1.0.0
+// Versión 1.1.0 - Con soporte cursos dinámicos
 // ===========================================
 
 import {
@@ -19,7 +19,7 @@ export interface ProcesarInteractivoInput {
 }
 
 export interface ProcesarInteractivoOutput {
-  accion: 'mostrar_menu' | 'derivar' | 'inscripciones';
+  accion: 'mostrar_menu' | 'derivar' | 'inscripciones' | 'mostrar_cursos';
   menu?: InteractiveList;
   menuId?: string;
   derivacion?: {
@@ -37,12 +37,12 @@ export class InteractiveMenuProcessor {
    */
   procesar(input: ProcesarInteractivoInput): ProcesarInteractivoOutput {
     const { listReplyId } = input;
-    
+
     console.log(`[InteractiveMenuProcessor] Procesando selección: ${listReplyId}`);
 
     // Obtener acción para este ID
     const accion = obtenerAccion(listReplyId);
-    
+
     if (!accion) {
       console.log(`[InteractiveMenuProcessor] ID no reconocido: ${listReplyId}, mostrando menú principal`);
       return this.mostrarMenuPrincipal();
@@ -58,14 +58,16 @@ export class InteractiveMenuProcessor {
     switch (accion.tipo) {
       case 'submenu':
         return this.mostrarSubmenu(accion.submenu!);
-      
+
       case 'derivar':
         return this.derivar(accion);
-      
-      
+
+      case 'cursos_dinamico':
+        return this.mostrarCursosDinamicos();
+
       case 'volver':
         return this.mostrarMenuPrincipal();
-      
+
       default:
         return this.mostrarMenuPrincipal();
     }
@@ -87,7 +89,7 @@ export class InteractiveMenuProcessor {
    */
   private mostrarSubmenu(submenuId: string): ProcesarInteractivoOutput {
     const menu = obtenerMenuInteractivo(submenuId);
-    
+
     if (!menu) {
       console.log(`[InteractiveMenuProcessor] Submenú no encontrado: ${submenuId}`);
       return this.mostrarMenuPrincipal();
@@ -121,6 +123,15 @@ export class InteractiveMenuProcessor {
         mensaje_contexto: accion.mensaje_contexto!
       },
       mensajeConfirmacion: `✅ Tu consulta sobre *${accion.mensaje_contexto}* fue derivada a *${areaLabel}*.\n\nEn breve te contactamos. Si necesitás otra cosa, escribí *MENU*.`
+    };
+  }
+
+  /**
+   * Señal para mostrar cursos dinámicos desde DB
+   */
+  private mostrarCursosDinamicos(): ProcesarInteractivoOutput {
+    return {
+      accion: 'mostrar_cursos'
     };
   }
 

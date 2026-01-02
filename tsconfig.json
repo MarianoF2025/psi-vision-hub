@@ -20,5 +20,5 @@
     "baseUrl": "."
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "router-psi", "centralwap-router", "**/centralwap-router/**/*"]
+  "exclude": ["node_modules", "router-psi", "centralwap-router", "**/centralwap-router/**/*", "vision-hub", "**/vision-hub/**/*"]
 }

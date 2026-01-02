@@ -6,7 +6,7 @@ import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
-import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
@@ -24,6 +24,7 @@ const PAGINAS_EXTRA = [
   { id: 'estadisticas', nombre: 'Estadísticas', href: '/crm/estadisticas', icono: BarChart3, soloAdmin: true },
   { id: 'automatizaciones', nombre: 'Automatizaciones', href: '/crm/automatizaciones', icono: Zap },
   { id: 'remarketing', nombre: 'Remarketing', href: '/crm/remarketing', icono: Send },
+  { id: 'grupos', nombre: 'Grupos WA', href: '/crm/grupos', icono: UsersRound },
 ];
 
 // Emails con acceso a estadísticas

@@ -143,7 +143,7 @@ export const SUBMENU_COMUNIDAD_INTERACTIVO: InteractiveList = {
 // MAPEO DE IDS A ACCIONES
 // ===========================================
 export interface AccionMenu {
-  tipo: 'submenu' | 'derivar' | 'volver';
+  tipo: 'submenu' | 'derivar' | 'volver' | 'cursos_dinamico';
   submenu?: string;
   area?: string;
   subetiqueta?: string;
@@ -154,7 +154,7 @@ export const ACCIONES_MENU: Record<string, AccionMenu> = {
   // Menú principal
   'area_admin': { tipo: 'submenu', submenu: 'admin' },
   'area_alumnos': { tipo: 'submenu', submenu: 'alumnos' },
-  'area_inscripciones': { tipo: 'submenu', submenu: 'inscripciones' },
+  'area_inscripciones': { tipo: 'cursos_dinamico' },
   'area_comunidad': { tipo: 'submenu', submenu: 'comunidad' },
   'area_otra': { tipo: 'derivar', area: 'admin', subetiqueta: 'otra_consulta', mensaje_contexto: 'Otra consulta' },
 

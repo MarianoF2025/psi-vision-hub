@@ -21,7 +21,7 @@ interface Contacto {
   ciudad: string | null;
   estado_lead: string | null;
   resultado: string | null;
-  curso_interes: string | null;
+  // curso_interes removido - ahora viene de v_contactos_cursos
   etiquetas: string[];
   notas: string | null;
 }
@@ -40,7 +40,7 @@ export default function InfoContactoPanel() {
   const [email, setEmail] = useState('');
   const [pais, setPais] = useState('');
   const [ciudad, setCiudad] = useState('');
-  const [cursoInteres, setCursoInteres] = useState('');
+  const [cursoInfo, setCursoInfo] = useState<{nombre: string; codigo: string; cantidad: number} | null>(null);
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [mostrarAgregarEtiqueta, setMostrarAgregarEtiqueta] = useState(false);
   
@@ -71,7 +71,7 @@ export default function InfoContactoPanel() {
         setEmail(data.email || '');
         setPais(data.pais || '');
         setCiudad(data.ciudad || '');
-        setCursoInteres(data.curso_interes || '');
+        // curso se carga desde v_contactos_cursos
       }
       setLoading(false);
     };
@@ -86,8 +86,26 @@ export default function InfoContactoPanel() {
       if (data) setNotas(data);
     };
 
+    const cargarCursoInteres = async () => {
+      const { data } = await supabase
+        .from('v_contactos_cursos')
+        .select('ultimo_curso_interes, ultimo_curso_codigo, cursos_consultados')
+        .eq('contacto_id', conversacionActual.contacto_id)
+        .single();
+      if (data && data.ultimo_curso_interes) {
+        setCursoInfo({
+          nombre: data.ultimo_curso_interes,
+          codigo: data.ultimo_curso_codigo,
+          cantidad: data.cursos_consultados
+        });
+      } else {
+        setCursoInfo(null);
+      }
+    };
+
     cargarContacto();
     cargarNotas();
+    cargarCursoInteres();
   }, [conversacionActual?.contacto_id, conversacionActual?.id]);
 
   if (!conversacionActual) return null;
@@ -324,31 +342,25 @@ export default function InfoContactoPanel() {
               </div>
             </div>
 
-            {/* Curso de interés */}
+            {/* Curso de interés - desde menu_interacciones */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Curso de Interés</p>
-              {editando === 'curso' ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="text"
-                    value={cursoInteres}
-                    onChange={(e) => setCursoInteres(e.target.value)}
-                    placeholder="Ej: Acompañante Terapéutico"
-                    className="flex-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0"
-                    autoFocus
-                  />
-                  <button onClick={() => actualizarContacto('curso_interes', cursoInteres || null)} className="p-1 text-green-500"><Check size={12} /></button>
-                  <button onClick={() => setEditando(null)} className="p-1 text-slate-400"><X size={12} /></button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setEditando('curso')}>
-                  <BookOpen size={12} className="text-slate-400" />
-                  <span className="text-xs text-slate-600 dark:text-slate-300 flex-1">
-                    {contacto?.curso_interes || 'Sin definir'}
-                  </span>
-                  <Edit2 size={10} className="text-slate-400 opacity-0 group-hover:opacity-100" />
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <BookOpen size={12} className="text-slate-400" />
+                {cursoInfo ? (
+                  <div className="flex-1">
+                    <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                      {cursoInfo.nombre}
+                    </span>
+                    <span className="text-[10px] text-slate-400 ml-1">({cursoInfo.codigo})</span>
+                    {cursoInfo.cantidad > 1 && (
+                      <span className="text-[10px] text-purple-500 ml-2">+{cursoInfo.cantidad - 1} más</span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-400 italic">Sin interacción aún</span>
+                )}
+              </div>
             </div>
 
             <hr className="border-slate-200 dark:border-slate-700" />
