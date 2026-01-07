@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { supabase } from '@/lib/supabase';
 import { cn, getInitials, getWindowTimeLeft, formatPhone } from '@/lib/utils';
-import { X, Clock, Plus, Unlink, Camera, Save, Edit2, Check, MapPin, Mail, User, BookOpen, Building } from 'lucide-react';
+import { X, Clock, Plus, Unlink, Camera, Save, Edit2, Check, MapPin, Mail, User, BookOpen, Building, ChevronDown, Tag } from 'lucide-react';
 
 const ESTADOS_CONV = ['nueva', 'activa', 'esperando', 'resuelta', 'cerrada'] as const;
 const ESTADOS_LEAD = ['nuevo', 'seguimiento', 'nr', 'silencioso', 'pend_pago', 'alumna'] as const;
@@ -21,9 +21,21 @@ interface Contacto {
   ciudad: string | null;
   estado_lead: string | null;
   resultado: string | null;
-  // curso_interes removido - ahora viene de v_contactos_cursos
   etiquetas: string[];
   notas: string | null;
+}
+
+interface EtiquetaGlobal {
+  id: string;
+  nombre: string;
+  color: string;
+}
+
+interface EtiquetaAsignada {
+  id: string;
+  etiqueta_id: string;
+  nombre: string;
+  color: string;
 }
 
 export default function InfoContactoPanel() {
@@ -34,17 +46,32 @@ export default function InfoContactoPanel() {
   const [editando, setEditando] = useState<string | null>(null);
   const [nota, setNota] = useState('');
   const [notas, setNotas] = useState<{id: string; contenido: string; created_at: string}[]>([]);
-  
+
   // Campos editables
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [pais, setPais] = useState('');
   const [ciudad, setCiudad] = useState('');
   const [cursoInfo, setCursoInfo] = useState<{nombre: string; codigo: string; cantidad: number} | null>(null);
-  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
-  const [mostrarAgregarEtiqueta, setMostrarAgregarEtiqueta] = useState(false);
   
+  // Sistema de etiquetas globales
+  const [etiquetasGlobales, setEtiquetasGlobales] = useState<EtiquetaGlobal[]>([]);
+  const [etiquetasAsignadas, setEtiquetasAsignadas] = useState<EtiquetaAsignada[]>([]);
+  const [mostrarDropdownEtiquetas, setMostrarDropdownEtiquetas] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Cerrar dropdown al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setMostrarDropdownEtiquetas(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Cargar datos del contacto
   useEffect(() => {
@@ -71,7 +98,6 @@ export default function InfoContactoPanel() {
         setEmail(data.email || '');
         setPais(data.pais || '');
         setCiudad(data.ciudad || '');
-        // curso se carga desde v_contactos_cursos
       }
       setLoading(false);
     };
@@ -103,9 +129,43 @@ export default function InfoContactoPanel() {
       }
     };
 
+    const cargarEtiquetasGlobales = async () => {
+      const { data } = await supabase
+        .from('etiquetas_globales')
+        .select('id, nombre, color')
+        .order('nombre');
+      if (data) setEtiquetasGlobales(data);
+    };
+
+    const cargarEtiquetasAsignadas = async () => {
+      const { data } = await supabase
+        .from('contacto_etiquetas')
+        .select(`
+          id,
+          etiqueta_id,
+          etiquetas_globales (
+            nombre,
+            color
+          )
+        `)
+        .eq('contacto_id', conversacionActual.contacto_id);
+      
+      if (data) {
+        const asignadas: EtiquetaAsignada[] = data.map((item: any) => ({
+          id: item.id,
+          etiqueta_id: item.etiqueta_id,
+          nombre: item.etiquetas_globales?.nombre || 'Sin nombre',
+          color: item.etiquetas_globales?.color || '#6b7280'
+        }));
+        setEtiquetasAsignadas(asignadas);
+      }
+    };
+
     cargarContacto();
     cargarNotas();
     cargarCursoInteres();
+    cargarEtiquetasGlobales();
+    cargarEtiquetasAsignadas();
   }, [conversacionActual?.contacto_id, conversacionActual?.id]);
 
   if (!conversacionActual) return null;
@@ -116,7 +176,7 @@ export default function InfoContactoPanel() {
   const actualizarContacto = async (campo: string, valor: string | string[] | null) => {
     if (!contacto) return;
     setGuardando(true);
-    
+
     const { error } = await supabase
       .from('contactos')
       .update({ [campo]: valor, updated_at: new Date().toISOString() })
@@ -124,8 +184,7 @@ export default function InfoContactoPanel() {
 
     if (!error) {
       setContacto({ ...contacto, [campo]: valor });
-      
-      // Si es el nombre, también actualizar en conversación
+
       if (campo === 'nombre') {
         await supabase
           .from('conversaciones')
@@ -134,7 +193,7 @@ export default function InfoContactoPanel() {
         setConversacionActual({ ...conversacionActual, nombre: valor as string });
       }
     }
-    
+
     setGuardando(false);
     setEditando(null);
   };
@@ -168,7 +227,7 @@ export default function InfoContactoPanel() {
 
     setGuardando(true);
     const fileName = `contactos/${contacto.id}/${Date.now()}.${file.name.split('.').pop()}`;
-    
+
     const { error: uploadError } = await supabase.storage
       .from('media')
       .upload(fileName, file, { cacheControl: '3600', upsert: true });
@@ -180,33 +239,61 @@ export default function InfoContactoPanel() {
     setGuardando(false);
   };
 
-  // Agregar etiqueta
-  const agregarEtiqueta = async () => {
-    if (!nuevaEtiqueta.trim() || !contacto) return;
-    const nuevasEtiquetas = [...(contacto.etiquetas || []), nuevaEtiqueta.trim()];
-    await actualizarContacto('etiquetas', nuevasEtiquetas);
-    setNuevaEtiqueta('');
-    setMostrarAgregarEtiqueta(false);
+  // Asignar etiqueta (nuevo sistema)
+  const asignarEtiqueta = async (etiquetaId: string) => {
+    if (!contacto) return;
+    
+    const etiqueta = etiquetasGlobales.find(e => e.id === etiquetaId);
+    if (!etiqueta) return;
+
+    const { data, error } = await supabase
+      .from('contacto_etiquetas')
+      .insert({
+        contacto_id: contacto.id,
+        etiqueta_id: etiquetaId
+      })
+      .select('id')
+      .single();
+
+    if (!error && data) {
+      setEtiquetasAsignadas([...etiquetasAsignadas, {
+        id: data.id,
+        etiqueta_id: etiquetaId,
+        nombre: etiqueta.nombre,
+        color: etiqueta.color
+      }]);
+    }
+    setMostrarDropdownEtiquetas(false);
   };
 
-  // Quitar etiqueta
-  const quitarEtiqueta = async (etiqueta: string) => {
-    if (!contacto) return;
-    const nuevasEtiquetas = (contacto.etiquetas || []).filter(e => e !== etiqueta);
-    await actualizarContacto('etiquetas', nuevasEtiquetas);
+  // Quitar etiqueta asignada (nuevo sistema)
+  const quitarEtiquetaAsignada = async (asignacionId: string) => {
+    const { error } = await supabase
+      .from('contacto_etiquetas')
+      .delete()
+      .eq('id', asignacionId);
+
+    if (!error) {
+      setEtiquetasAsignadas(etiquetasAsignadas.filter(e => e.id !== asignacionId));
+    }
   };
+
+  // Etiquetas disponibles (no asignadas)
+  const etiquetasDisponibles = etiquetasGlobales.filter(
+    eg => !etiquetasAsignadas.some(ea => ea.etiqueta_id === eg.id)
+  );
 
   // Desconectar router
   const desconectar = async () => {
     if (confirm('¿Desconectar del Router? El contacto ya no pasará por el menú automático.')) {
-      await supabase.from('conversaciones').update({ 
-        desconectado_wsp4: true, 
-        inbox_fijo: conversacionActual.area 
+      await supabase.from('conversaciones').update({
+        desconectado_wsp4: true,
+        inbox_fijo: conversacionActual.area
       }).eq('id', conversacionActual.id);
-      setConversacionActual({ 
-        ...conversacionActual, 
-        desconectado_wsp4: true, 
-        inbox_fijo: conversacionActual.area 
+      setConversacionActual({
+        ...conversacionActual,
+        desconectado_wsp4: true,
+        inbox_fijo: conversacionActual.area
       });
     }
   };
@@ -214,7 +301,7 @@ export default function InfoContactoPanel() {
   return (
     <div className="w-72 h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFotoChange} className="hidden" />
-      
+
       {/* Header */}
       <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
         <h3 className="font-semibold text-sm text-slate-800 dark:text-white">Info del Contacto</h3>
@@ -240,14 +327,14 @@ export default function InfoContactoPanel() {
                     {getInitials(contacto?.nombre || conversacionActual.telefono)}
                   </div>
                 )}
-                <button 
+                <button
                   onClick={() => fileInputRef.current?.click()}
                   className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white hover:bg-indigo-600 shadow-lg"
                 >
                   <Camera size={12} />
                 </button>
               </div>
-              
+
               {/* Nombre editable */}
               {editando === 'nombre' ? (
                 <div className="flex items-center gap-1 justify-center">
@@ -309,8 +396,8 @@ export default function InfoContactoPanel() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">País</p>
-                <select 
-                  value={contacto?.pais || ''} 
+                <select
+                  value={contacto?.pais || ''}
                   onChange={(e) => actualizarContacto('pais', e.target.value || null)}
                   className="w-full px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0"
                 >
@@ -391,8 +478,8 @@ export default function InfoContactoPanel() {
             {/* Estado Lead (en contacto) */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Estado del Lead</p>
-              <select 
-                value={contacto?.estado_lead || 'nuevo'} 
+              <select
+                value={contacto?.estado_lead || 'nuevo'}
                 onChange={(e) => actualizarContacto('estado_lead', e.target.value)}
                 className="w-full px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-slate-800 dark:text-white"
               >
@@ -409,8 +496,8 @@ export default function InfoContactoPanel() {
                 {RESULTADOS.map((r) => (
                   <button key={r} onClick={() => actualizarContacto('resultado', contacto?.resultado === r ? null : r)}
                     className={cn('flex-1 px-1 py-1 text-[10px] font-medium rounded-md border transition-colors',
-                      contacto?.resultado === r 
-                        ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' 
+                      contacto?.resultado === r
+                        ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600'
                         : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300'
                     )}>{r}</button>
                 ))}
@@ -419,9 +506,9 @@ export default function InfoContactoPanel() {
 
             {/* Ventana */}
             {windowTime && (
-              <div className={cn('p-2 rounded-lg border', 
-                windowTime.color.includes('emerald') ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10' : 
-                windowTime.color.includes('amber') ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/10' : 
+              <div className={cn('p-2 rounded-lg border',
+                windowTime.color.includes('emerald') ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10' :
+                windowTime.color.includes('amber') ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/10' :
                 'border-red-200 bg-red-50 dark:bg-red-500/10'
               )}>
                 <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
@@ -433,43 +520,72 @@ export default function InfoContactoPanel() {
               </div>
             )}
 
-            {/* Etiquetas */}
+            {/* Etiquetas - Nuevo sistema con dropdown */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase">Etiquetas</p>
-                <button 
-                  onClick={() => setMostrarAgregarEtiqueta(!mostrarAgregarEtiqueta)}
-                  className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"
-                >
-                  <Plus size={12} className="text-slate-400" />
-                </button>
-              </div>
-              {mostrarAgregarEtiqueta && (
-                <div className="flex items-center gap-1 mb-2">
-                  <input
-                    type="text"
-                    value={nuevaEtiqueta}
-                    onChange={(e) => setNuevaEtiqueta(e.target.value)}
-                    placeholder="Nueva etiqueta"
-                    className="flex-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0"
-                    onKeyDown={(e) => e.key === 'Enter' && agregarEtiqueta()}
-                    autoFocus
-                  />
-                  <button onClick={agregarEtiqueta} className="p-1 text-green-500"><Check size={12} /></button>
-                  <button onClick={() => setMostrarAgregarEtiqueta(false)} className="p-1 text-slate-400"><X size={12} /></button>
+                <div className="relative" ref={dropdownRef}>
+                  <button
+                    onClick={() => setMostrarDropdownEtiquetas(!mostrarDropdownEtiquetas)}
+                    className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded flex items-center gap-0.5"
+                    disabled={etiquetasDisponibles.length === 0}
+                  >
+                    <Plus size={12} className="text-slate-400" />
+                    <ChevronDown size={10} className="text-slate-400" />
+                  </button>
+                  
+                  {/* Dropdown de etiquetas */}
+                  {mostrarDropdownEtiquetas && etiquetasDisponibles.length > 0 && (
+                    <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1 max-h-48 overflow-y-auto">
+                      {etiquetasDisponibles.map((etiqueta) => (
+                        <button
+                          key={etiqueta.id}
+                          onClick={() => asignarEtiqueta(etiqueta.id)}
+                          className="w-full px-2 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
+                        >
+                          <span 
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: etiqueta.color }}
+                          />
+                          <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                            {etiqueta.nombre}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* Etiquetas asignadas */}
               <div className="flex flex-wrap gap-1">
-                {(contacto?.etiquetas || []).map((et) => (
-                  <span key={et} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] rounded flex items-center gap-1 group">
-                    {et}
-                    <button onClick={() => quitarEtiqueta(et)} className="opacity-0 group-hover:opacity-100 hover:text-red-500">
+                {etiquetasAsignadas.map((et) => (
+                  <span 
+                    key={et.id} 
+                    className="px-1.5 py-0.5 text-[10px] rounded flex items-center gap-1 group"
+                    style={{ 
+                      backgroundColor: `${et.color}20`,
+                      color: et.color,
+                      border: `1px solid ${et.color}40`
+                    }}
+                  >
+                    <span 
+                      className="w-1.5 h-1.5 rounded-full" 
+                      style={{ backgroundColor: et.color }}
+                    />
+                    {et.nombre}
+                    <button 
+                      onClick={() => quitarEtiquetaAsignada(et.id)} 
+                      className="opacity-0 group-hover:opacity-100 hover:text-red-500 ml-0.5"
+                    >
                       <X size={8} />
                     </button>
                   </span>
                 ))}
-                {(!contacto?.etiquetas || contacto.etiquetas.length === 0) && (
-                  <span className="text-[10px] text-slate-400">Sin etiquetas</span>
+                {etiquetasAsignadas.length === 0 && (
+                  <span className="text-[10px] text-slate-400 italic">
+                    {etiquetasGlobales.length > 0 ? 'Clic en + para agregar' : 'Sin etiquetas disponibles'}
+                  </span>
                 )}
               </div>
             </div>
@@ -477,21 +593,21 @@ export default function InfoContactoPanel() {
             {/* Notas */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Notas Internas</p>
-              <textarea 
-                value={nota} 
-                onChange={(e) => setNota(e.target.value)} 
-                placeholder="Agregar nota..." 
+              <textarea
+                value={nota}
+                onChange={(e) => setNota(e.target.value)}
+                placeholder="Agregar nota..."
                 rows={2}
-                className="w-full px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-slate-800 dark:text-white resize-none" 
+                className="w-full px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-slate-800 dark:text-white resize-none"
               />
-              <button 
-                onClick={guardarNota} 
+              <button
+                onClick={guardarNota}
                 disabled={guardando || !nota.trim()}
                 className="w-full mt-1 py-1 bg-indigo-500 text-white text-[10px] font-medium rounded-md disabled:opacity-50 hover:bg-indigo-600"
               >
                 {guardando ? 'Guardando...' : 'Guardar nota'}
               </button>
-              
+
               {/* Notas guardadas */}
               {notas.length > 0 && (
                 <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">

@@ -6,7 +6,7 @@ import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
-import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
@@ -19,15 +19,15 @@ const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
 
 const PAGINAS_EXTRA = [
   { id: 'contactos', nombre: 'Contactos', href: '/crm/contactos', icono: Contact },
+  { id: 'pagos', nombre: 'Pagos', href: '/crm/pagos', icono: CreditCard },
   { id: 'etiquetas', nombre: 'Etiquetas', href: '/crm/etiquetas', icono: Tag },
   { id: 'respuestas', nombre: 'Respuestas', href: '/crm/respuestas', icono: MessageSquare },
-  { id: 'estadisticas', nombre: 'Estadísticas', href: '/crm/estadisticas', icono: BarChart3, soloAdmin: true },
+  { id: 'estadisticas', nombre: 'Estadisticas', href: '/crm/estadisticas', icono: BarChart3, soloAdmin: true },
   { id: 'automatizaciones', nombre: 'Automatizaciones', href: '/crm/automatizaciones', icono: Zap },
   { id: 'remarketing', nombre: 'Remarketing', href: '/crm/remarketing', icono: Send },
   { id: 'grupos', nombre: 'Grupos WA', href: '/crm/grupos', icono: UsersRound },
 ];
 
-// Emails con acceso a estadísticas
 const EMAILS_ADMIN = [
   'ninadulcich@gmail.com',
   'asociacionpsi.gestion@gmail.com',
@@ -40,7 +40,6 @@ export default function Sidebar() {
   const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, sidebarExpandido, toggleSidebar } = useCRMStore();
   const isMainChat = pathname === '/crm';
 
-  // Obtener nombre y email del usuario autenticado
   const userName = user?.user_metadata?.nombre || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuario';
   const userEmail = user?.email || 'Sin email';
 
@@ -120,10 +119,10 @@ export default function Sidebar() {
         <div className="my-2 mx-3 border-t border-slate-200 dark:border-slate-800" />
 
         {sidebarExpandido && (
-          <p className="px-3 text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Gestión</p>
+          <p className="px-3 text-[9px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Gestion</p>
         )}
         {PAGINAS_EXTRA.filter(p => !p.soloAdmin || EMAILS_ADMIN.includes(userEmail)).map((pagina) => {
-          const isActive = pathname === pagina.href;
+          const isActive = pathname === pagina.href || pathname.startsWith(pagina.href + '/');
           return (
             <Link
               key={pagina.id}
@@ -174,8 +173,7 @@ export default function Sidebar() {
           <Settings size={16} />
           {sidebarExpandido && <span className="text-xs">Ajustes</span>}
         </Link>
-        
-        {/* Botón de Cerrar Sesión */}
+
         <button
           onClick={handleLogout}
           className={cn(
@@ -184,10 +182,10 @@ export default function Sidebar() {
           )}
         >
           <LogOut size={16} />
-          {sidebarExpandido && <span className="text-xs">Cerrar sesión</span>}
+          {sidebarExpandido && <span className="text-xs">Cerrar sesion</span>}
           {!sidebarExpandido && (
             <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-slate-900 dark:bg-slate-700 text-white text-[10px] rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
-              Cerrar sesión
+              Cerrar sesion
             </div>
           )}
         </button>
