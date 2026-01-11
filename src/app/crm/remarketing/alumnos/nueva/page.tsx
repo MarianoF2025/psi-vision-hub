@@ -3,13 +3,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Send, Clock, Users, Filter, Target, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Save, Send, Clock, Users, Filter, GraduationCap, RefreshCw, Calendar } from 'lucide-react';
 import Link from 'next/link';
 
-interface Curso {
-  id: string;
-  codigo: string;
-  nombre: string;
+interface CursoAlumno {
+  curso_codigo: string;
+  curso_nombre: string;
+  total: number;
 }
 
 interface Template {
@@ -18,54 +18,54 @@ interface Template {
   categoria: string;
 }
 
-type Segmento = 'abandono_menu' | 'derivado_sin_cierre' | 'no_responde' | 'perdido_recuperable' | 'multi_interes';
+type EstadoAlumno = 'activo' | 'finalizado' | 'baja';
 
-const SEGMENTOS: { id: Segmento; nombre: string; descripcion: string; icono: string }[] = [
-  { id: 'abandono_menu', nombre: 'Abandonó menú', descripcion: 'Consultó el curso pero no pidió hablar con vendedora', icono: '🔴' },
-  { id: 'derivado_sin_cierre', nombre: 'Derivado sin cierre', descripcion: 'Habló con vendedora pero no se inscribió', icono: '🟡' },
-  { id: 'no_responde', nombre: 'No responde', descripcion: 'Intentamos contactar pero no contesta', icono: '⚫' },
-  { id: 'perdido_recuperable', nombre: 'Perdido recuperable', descripcion: 'Dijo que no, hace más de 30 días', icono: '🔵' },
-  { id: 'multi_interes', nombre: 'Multi-interés', descripcion: 'Consultó 2 o más cursos (indeciso)', icono: '🟣' },
+const ESTADOS_ALUMNO: { id: EstadoAlumno; nombre: string; descripcion: string; icono: string; color: string }[] = [
+  { id: 'finalizado', nombre: 'Egresados', descripcion: 'Completaron el curso (estado: finalizado)', icono: '🎓', color: 'green' },
+  { id: 'activo', nombre: 'Cursando', descripcion: 'Actualmente cursando (estado: activo)', icono: '📚', color: 'blue' },
+  { id: 'baja', nombre: 'Bajas', descripcion: 'Abandonaron o se dieron de baja', icono: '⚠️', color: 'amber' },
 ];
 
-export default function NuevaCampanaPage() {
+export default function NuevaCampanaAlumnosPage() {
   const router = useRouter();
   const [guardando, setGuardando] = useState(false);
-  const [cursos, setCursos] = useState<Curso[]>([]);
+  const [cursosAlumnos, setCursosAlumnos] = useState<CursoAlumno[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [calculando, setCalculando] = useState(false);
 
   // Form state
   const [nombre, setNombre] = useState('');
   const [descripcion, setDescripcion] = useState('');
-  const [cursoId, setCursoId] = useState('');
-  const [segmentosSeleccionados, setSegmentosSeleccionados] = useState<Segmento[]>([]);
+  const [cursoCodigo, setCursoCodigo] = useState('');
+  const [estadosSeleccionados, setEstadosSeleccionados] = useState<EstadoAlumno[]>([]);
   const [templateSeleccionado, setTemplateSeleccionado] = useState('');
-  const [diasAntiguedad, setDiasAntiguedad] = useState<number | null>(null);
-  const [excluirInscriptos, setExcluirInscriptos] = useState(true);
+  const [fechaInscripcionDesde, setFechaInscripcionDesde] = useState('');
+  const [fechaInscripcionHasta, setFechaInscripcionHasta] = useState('');
+  const [cuotasMinPagadas, setCuotasMinPagadas] = useState<number | null>(null);
+  const [cuotasMaxPagadas, setCuotasMaxPagadas] = useState<number | null>(null);
+  const [soloMorosos, setSoloMorosos] = useState(false);
   const [tipoEnvio, setTipoEnvio] = useState<'manual' | 'programado'>('manual');
   const [fechaProgramada, setFechaProgramada] = useState('');
   const [horaProgramada, setHoraProgramada] = useState('09:00');
 
   // Resultados
   const [totalAudiencia, setTotalAudiencia] = useState(0);
-  const [totalExcluidos, setTotalExcluidos] = useState(0);
   const [totalElegibles, setTotalElegibles] = useState(0);
   const [previewCalculado, setPreviewCalculado] = useState(false);
-  const [contactosElegibles, setContactosElegibles] = useState<string[]>([]);
+  const [telefonosElegibles, setTelefonosElegibles] = useState<string[]>([]);
 
   useEffect(() => {
     cargarDatos();
   }, []);
 
   const cargarDatos = async () => {
-    const { data: cursosData } = await supabase
-      .from('cursos')
-      .select('id, codigo, nombre')
-      .eq('activo', true)
-      .order('nombre');
-    if (cursosData) setCursos(cursosData);
+    // Cargar cursos usando función RPC (GROUP BY en SQL, más eficiente)
+    const { data: cursosData } = await supabase.rpc('get_cursos_inscripciones');
+    if (cursosData) {
+      setCursosAlumnos(cursosData);
+    }
 
+    // Cargar templates
     const { data: templatesData } = await supabase
       .from('remarketing_templates')
       .select('*')
@@ -74,95 +74,17 @@ export default function NuevaCampanaPage() {
     if (templatesData) setTemplates(templatesData);
   };
 
-  const toggleSegmento = (seg: Segmento) => {
-    setSegmentosSeleccionados(prev =>
-      prev.includes(seg)
-        ? prev.filter(s => s !== seg)
-        : [...prev, seg]
+  const toggleEstado = (estado: EstadoAlumno) => {
+    setEstadosSeleccionados(prev =>
+      prev.includes(estado)
+        ? prev.filter(e => e !== estado)
+        : [...prev, estado]
     );
   };
 
-  const obtenerTelefonosSegmento = async (seg: Segmento): Promise<string[]> => {
-    switch (seg) {
-      case 'abandono_menu': {
-        const { data } = await supabase
-          .from('menu_interacciones')
-          .select('telefono')
-          .eq('curso_id', cursoId)
-          .eq('derivado', false);
-        return [...new Set(data?.map(d => d.telefono) || [])];
-      }
-      case 'derivado_sin_cierre': {
-        const { data: derivados } = await supabase
-          .from('menu_interacciones')
-          .select('telefono')
-          .eq('curso_id', cursoId)
-          .eq('derivado', true);
-        const telefonosDerivados = [...new Set(derivados?.map(d => d.telefono) || [])];
-        if (telefonosDerivados.length === 0) return [];
-        const { data: contactos } = await supabase
-          .from('contactos')
-          .select('telefono, resultado')
-          .in('telefono', telefonosDerivados);
-        return contactos?.filter(c => c.resultado !== 'INS').map(c => c.telefono) || [];
-      }
-      case 'no_responde': {
-        const { data: interacciones } = await supabase
-          .from('menu_interacciones')
-          .select('telefono')
-          .eq('curso_id', cursoId);
-        const telefonosInteraccion = [...new Set(interacciones?.map(d => d.telefono) || [])];
-        if (telefonosInteraccion.length === 0) return [];
-        const { data: contactos } = await supabase
-          .from('contactos')
-          .select('telefono')
-          .in('telefono', telefonosInteraccion)
-          .eq('estado_lead', 'no_responde');
-        return contactos?.map(c => c.telefono) || [];
-      }
-      case 'perdido_recuperable': {
-        const hace30Dias = new Date();
-        hace30Dias.setDate(hace30Dias.getDate() - 30);
-        const { data: interacciones } = await supabase
-          .from('menu_interacciones')
-          .select('telefono')
-          .eq('curso_id', cursoId);
-        const telefonosInteraccion = [...new Set(interacciones?.map(d => d.telefono) || [])];
-        if (telefonosInteraccion.length === 0) return [];
-        const { data: contactos } = await supabase
-          .from('contactos')
-          .select('telefono')
-          .in('telefono', telefonosInteraccion)
-          .or('estado_lead.eq.perdido,resultado.eq.perdido')
-          .lt('resultado_ts', hace30Dias.toISOString());
-        return contactos?.map(c => c.telefono) || [];
-      }
-      case 'multi_interes': {
-        const { data } = await supabase
-          .from('menu_interacciones')
-          .select('telefono, curso_id');
-        const porTelefono: Record<string, Set<string>> = {};
-        data?.forEach(d => {
-          if (!porTelefono[d.telefono]) porTelefono[d.telefono] = new Set();
-          porTelefono[d.telefono].add(d.curso_id);
-        });
-        return Object.entries(porTelefono)
-          .filter(([_, cursos]) => cursos.size > 1)
-          .map(([telefono]) => telefono);
-      }
-      default:
-        return [];
-    }
-  };
-
   const calcularElegibles = async () => {
-    const necesitaCurso = segmentosSeleccionados.some(s => s !== 'multi_interes');
-    if (necesitaCurso && !cursoId) {
-      alert('Seleccioná un curso objetivo');
-      return;
-    }
-    if (segmentosSeleccionados.length === 0) {
-      alert('Seleccioná al menos un segmento de audiencia');
+    if (estadosSeleccionados.length === 0) {
+      alert('Seleccioná al menos un estado de alumno');
       return;
     }
 
@@ -170,39 +92,58 @@ export default function NuevaCampanaPage() {
     setPreviewCalculado(false);
 
     try {
-      const telefonosPorSegmento = await Promise.all(
-        segmentosSeleccionados.map(seg => obtenerTelefonosSegmento(seg))
-      );
+      let query = supabase
+        .from('inscripciones_psi')
+        .select('telefono, estado, cuotas_total, cuotas_pagadas')
+        .range(0, 50000);
 
-      let telefonosAudiencia = [...new Set(telefonosPorSegmento.flat())];
-      let telefonosExcluir: string[] = [];
+      // Filtrar por estados seleccionados
+      query = query.in('estado', estadosSeleccionados);
 
-      if (diasAntiguedad && telefonosAudiencia.length > 0) {
-        const fechaLimite = new Date();
-        fechaLimite.setDate(fechaLimite.getDate() - diasAntiguedad);
-        const { data: recientes } = await supabase
-          .from('menu_interacciones')
-          .select('telefono')
-          .in('telefono', telefonosAudiencia)
-          .gte('created_at', fechaLimite.toISOString());
-        telefonosAudiencia = [...new Set(recientes?.map(d => d.telefono) || [])];
+      // Filtrar por curso si se seleccionó
+      if (cursoCodigo) {
+        query = query.eq('curso_codigo', cursoCodigo);
       }
 
-      if (excluirInscriptos && telefonosAudiencia.length > 0 && cursoId) {
-        const { data: inscriptos } = await supabase
-          .from('inscripciones_psi')
-          .select('telefono')
-          .eq('curso_id', cursoId)
-          .in('telefono', telefonosAudiencia);
-        telefonosExcluir = inscriptos?.map(c => c.telefono) || [];
+      // Filtrar por fecha de inscripción
+      if (fechaInscripcionDesde) {
+        query = query.gte('fecha_inscripcion', fechaInscripcionDesde);
+      }
+      if (fechaInscripcionHasta) {
+        query = query.lte('fecha_inscripcion', fechaInscripcionHasta);
       }
 
-      const elegibles = telefonosAudiencia.filter(t => !telefonosExcluir.includes(t));
+      const { data: inscripciones, error } = await query;
 
-      setTotalAudiencia(telefonosAudiencia.length);
-      setTotalExcluidos(telefonosExcluir.length);
-      setTotalElegibles(elegibles.length);
-      setContactosElegibles(elegibles);
+      if (error) {
+        console.error('Error consultando inscripciones:', error);
+        alert('Error al calcular audiencia');
+        return;
+      }
+
+      let resultados = inscripciones || [];
+
+      // Filtrar por cuotas pagadas (porcentaje)
+      if (cuotasMinPagadas !== null || cuotasMaxPagadas !== null || soloMorosos) {
+        resultados = resultados.filter(row => {
+          if (!row.cuotas_total || row.cuotas_total === 0) return false;
+          const porcentaje = Math.round((row.cuotas_pagadas / row.cuotas_total) * 100);
+
+          if (soloMorosos) {
+            return row.cuotas_pagadas > 0 && row.cuotas_pagadas < row.cuotas_total;
+          }
+
+          if (cuotasMinPagadas !== null && porcentaje < cuotasMinPagadas) return false;
+          if (cuotasMaxPagadas !== null && porcentaje > cuotasMaxPagadas) return false;
+          return true;
+        });
+      }
+
+      const telefonosUnicos = [...new Set(resultados.map(r => r.telefono).filter(Boolean))];
+
+      setTotalAudiencia(resultados.length);
+      setTotalElegibles(telefonosUnicos.length);
+      setTelefonosElegibles(telefonosUnicos);
       setPreviewCalculado(true);
     } catch (error) {
       console.error('Error calculando elegibles:', error);
@@ -217,8 +158,8 @@ export default function NuevaCampanaPage() {
       alert('Ingresá un nombre para la campaña');
       return;
     }
-    if (segmentosSeleccionados.length === 0) {
-      alert('Seleccioná al menos un segmento de audiencia');
+    if (estadosSeleccionados.length === 0) {
+      alert('Seleccioná al menos un estado de alumno');
       return;
     }
     if (enviar && (!previewCalculado || totalElegibles === 0)) {
@@ -228,8 +169,7 @@ export default function NuevaCampanaPage() {
 
     setGuardando(true);
     try {
-      const cursoData = cursos.find(c => c.id === cursoId);
-      const templateData = templates.find(t => t.id === templateSeleccionado);
+      const cursoData = cursosAlumnos.find(c => c.curso_codigo === cursoCodigo);
 
       let programadaPara = null;
       if (tipoEnvio === 'programado' && fechaProgramada) {
@@ -240,22 +180,25 @@ export default function NuevaCampanaPage() {
         .from('remarketing_campanas')
         .insert({
           nombre: nombre.trim(),
-          tipo: 'leads',
           descripcion: descripcion.trim() || null,
-          curso_codigo: cursoData?.codigo || null,
-          curso_nombre: cursoData?.nombre || null,
-          template_nombre: templateData?.nombre || null,
+          tipo: 'alumnos',
+          curso_codigo: cursoData?.curso_codigo || null,
+          curso_nombre: cursoData?.curso_nombre || null,
+          template_nombre: templates.find(t => t.id === templateSeleccionado)?.nombre || null,
           template_id: templateSeleccionado || null,
           audiencia_filtros: {
-            curso_id: cursoId || null,
-            segmentos: segmentosSeleccionados,
-            dias_antiguedad: diasAntiguedad,
-            excluir_inscriptos: excluirInscriptos
+            estados: estadosSeleccionados,
+            curso_codigo: cursoCodigo || null,
+            fecha_inscripcion_desde: fechaInscripcionDesde || null,
+            fecha_inscripcion_hasta: fechaInscripcionHasta || null,
+            cuotas_min_pagadas: cuotasMinPagadas,
+            cuotas_max_pagadas: cuotasMaxPagadas,
+            solo_morosos: soloMorosos
           },
           estado: enviar ? 'enviando' : 'borrador',
           programada_para: programadaPara,
           total_audiencia: totalAudiencia,
-          total_excluidos: totalExcluidos,
+          total_excluidos: 0,
           total_elegibles: totalElegibles
         })
         .select()
@@ -263,13 +206,41 @@ export default function NuevaCampanaPage() {
 
       if (error) throw error;
 
-      if (enviar && campana && contactosElegibles.length > 0) {
-        const { data: contactosData } = await supabase
+      if (enviar && campana && telefonosElegibles.length > 0) {
+        const { data: contactosExistentes } = await supabase
           .from('contactos')
           .select('id, telefono')
-          .in('telefono', contactosElegibles);
+          .in('telefono', telefonosElegibles);
 
-        const envios = contactosData?.map(c => ({
+        const telefonosExistentes = new Set(contactosExistentes?.map(c => c.telefono) || []);
+        const telefonosNuevos = telefonosElegibles.filter(t => !telefonosExistentes.has(t));
+
+        if (telefonosNuevos.length > 0) {
+          const { data: inscripcionesData } = await supabase
+            .from('inscripciones_psi')
+            .select('telefono, nombre, email')
+            .in('telefono', telefonosNuevos)
+            .range(0, 50000);
+
+          const contactosNuevos = inscripcionesData?.map(i => ({
+            telefono: i.telefono,
+            nombre: i.nombre,
+            email: i.email,
+            origen: 'psi_api',
+            tipo: 'alumno'
+          })) || [];
+
+          if (contactosNuevos.length > 0) {
+            await supabase.from('contactos').upsert(contactosNuevos, { onConflict: 'telefono' });
+          }
+        }
+
+        const { data: todosContactos } = await supabase
+          .from('contactos')
+          .select('id, telefono')
+          .in('telefono', telefonosElegibles);
+
+        const envios = todosContactos?.map(c => ({
           campana_id: campana.id,
           contacto_id: c.id,
           telefono: c.telefono,
@@ -278,8 +249,7 @@ export default function NuevaCampanaPage() {
 
         if (envios.length > 0) {
           await supabase.from('remarketing_envios').insert(envios);
-          
-          // Disparar workflow n8n para enviar mensajes
+
           try {
             await fetch('https://webhookn8n.psivisionhub.com/webhook/remarketing/enviar', {
               method: 'POST',
@@ -303,19 +273,18 @@ export default function NuevaCampanaPage() {
 
   useEffect(() => {
     setPreviewCalculado(false);
-  }, [cursoId, segmentosSeleccionados, diasAntiguedad, excluirInscriptos]);
+  }, [cursoCodigo, estadosSeleccionados, fechaInscripcionDesde, fechaInscripcionHasta, cuotasMinPagadas, cuotasMaxPagadas, soloMorosos]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-950">
-      {/* Header */}
       <div className="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-6">
         <div className="flex items-center gap-4">
           <Link href="/crm/remarketing" className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
             <ArrowLeft size={20} className="text-slate-600 dark:text-slate-400" />
           </Link>
           <div>
-            <h1 className="text-lg font-semibold text-slate-800 dark:text-white">Nueva Campaña</h1>
-            <p className="text-xs text-slate-500">Remarketing inteligente</p>
+            <h1 className="text-lg font-semibold text-slate-800 dark:text-white">Nueva Campaña - Alumnos</h1>
+            <p className="text-xs text-slate-500">Remarketing para alumnos de PSI</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -330,11 +299,22 @@ export default function NuevaCampanaPage() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
 
-          {/* Información básica */}
+          <div className="bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <GraduationCap className="text-purple-600 mt-0.5" size={20} />
+              <div>
+                <p className="text-sm font-medium text-purple-800 dark:text-purple-300">Remarketing para Alumnos</p>
+                <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                  Esta campaña usa datos de <strong>API PSI</strong> (inscripciones_psi).
+                  Podés segmentar por estado del alumno, curso, fechas y cuotas pagadas.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Información básica</h2>
             <div className="space-y-4">
@@ -344,7 +324,7 @@ export default function NuevaCampanaPage() {
                   type="text"
                   value={nombre}
                   onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Ej: Recuperación AT Enero 2026"
+                  placeholder="Ej: Egresados AT - Nuevo curso avanzado"
                   className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
@@ -361,41 +341,19 @@ export default function NuevaCampanaPage() {
             </div>
           </div>
 
-          {/* Curso objetivo */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-              <Target size={16} />
-              Curso objetivo
-            </h2>
-            <select
-              value={cursoId}
-              onChange={(e) => setCursoId(e.target.value)}
-              className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-            >
-              <option value="">Seleccionar curso...</option>
-              {cursos.map((curso) => (
-                <option key={curso.id} value={curso.id}>
-                  {curso.nombre} ({curso.codigo})
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-500 mt-2">No requerido si solo usás "Multi-interés"</p>
-          </div>
-
-          {/* Segmentos - MÚLTIPLE */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
               <Users size={16} />
-              Segmentos de audiencia *
+              Estado del alumno *
               <span className="text-xs font-normal text-slate-500">(podés seleccionar varios)</span>
             </h2>
             <div className="grid gap-3">
-              {SEGMENTOS.map((seg) => {
-                const isSelected = segmentosSeleccionados.includes(seg.id);
+              {ESTADOS_ALUMNO.map((estado) => {
+                const isSelected = estadosSeleccionados.includes(estado.id);
                 return (
                   <button
-                    key={seg.id}
-                    onClick={() => toggleSegmento(seg.id)}
+                    key={estado.id}
+                    onClick={() => toggleEstado(estado.id)}
                     className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
                       isSelected
                         ? 'border-purple-500 bg-purple-50 dark:bg-purple-500/10'
@@ -403,17 +361,15 @@ export default function NuevaCampanaPage() {
                     }`}
                   >
                     <div className="flex items-start gap-3">
-                      <span className="text-xl">{seg.icono}</span>
+                      <span className="text-xl">{estado.icono}</span>
                       <div className="flex-1">
                         <p className={`font-medium ${isSelected ? 'text-purple-700 dark:text-purple-300' : 'text-slate-700 dark:text-slate-300'}`}>
-                          {seg.nombre}
+                          {estado.nombre}
                         </p>
-                        <p className="text-xs text-slate-500 mt-0.5">{seg.descripcion}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{estado.descripcion}</p>
                       </div>
                       <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                        isSelected
-                          ? 'bg-purple-500 border-purple-500'
-                          : 'border-slate-300 dark:border-slate-600'
+                        isSelected ? 'bg-purple-500 border-purple-500' : 'border-slate-300 dark:border-slate-600'
                       }`}>
                         {isSelected && (
                           <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
@@ -426,55 +382,118 @@ export default function NuevaCampanaPage() {
                 );
               })}
             </div>
-            {segmentosSeleccionados.length > 1 && (
-              <p className="text-xs text-purple-600 dark:text-purple-400 mt-3">
-                ✓ Se unirán los contactos de {segmentosSeleccionados.length} segmentos (sin duplicados)
-              </p>
-            )}
           </div>
 
-          {/* Filtros adicionales */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
+            <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+              <GraduationCap size={16} />
+              Filtrar por curso
+            </h2>
+            <select
+              value={cursoCodigo}
+              onChange={(e) => setCursoCodigo(e.target.value)}
+              className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+            >
+              <option value="">Todos los cursos</option>
+              {cursosAlumnos.map((curso) => (
+                <option key={curso.curso_codigo} value={curso.curso_codigo}>
+                  {curso.curso_nombre} ({curso.total.toLocaleString()} inscripciones)
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-2">Dejá vacío para incluir alumnos de todos los cursos</p>
+          </div>
+
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
               <Filter size={16} />
               Filtros adicionales
             </h2>
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={excluirInscriptos}
-                  onChange={(e) => setExcluirInscriptos(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
-                />
-                <div>
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Excluir ya inscriptos</span>
-                  <p className="text-xs text-slate-500">No enviar a quienes ya están inscriptos en este curso</p>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2">
+                  <Calendar size={14} />
+                  Fecha de inscripción
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Desde</label>
+                    <input
+                      type="date"
+                      value={fechaInscripcionDesde}
+                      onChange={(e) => setFechaInscripcionDesde(e.target.value)}
+                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Hasta</label>
+                    <input
+                      type="date"
+                      value={fechaInscripcionHasta}
+                      onChange={(e) => setFechaInscripcionHasta(e.target.value)}
+                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                    />
+                  </div>
                 </div>
-              </label>
+              </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Solo contactos de los últimos X días
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Porcentaje de cuotas pagadas
                 </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={diasAntiguedad || ''}
-                    onChange={(e) => setDiasAntiguedad(e.target.value ? parseInt(e.target.value) : null)}
-                    placeholder="Sin límite"
-                    min={1}
-                    className="w-32 px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
-                  />
-                  <span className="text-sm text-slate-500">días</span>
+                <div className="grid grid-cols-2 gap-4 mb-3">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Mínimo %</label>
+                    <input
+                      type="number"
+                      value={cuotasMinPagadas ?? ''}
+                      onChange={(e) => setCuotasMinPagadas(e.target.value ? parseInt(e.target.value) : null)}
+                      placeholder="0"
+                      min={0}
+                      max={100}
+                      disabled={soloMorosos}
+                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Máximo %</label>
+                    <input
+                      type="number"
+                      value={cuotasMaxPagadas ?? ''}
+                      onChange={(e) => setCuotasMaxPagadas(e.target.value ? parseInt(e.target.value) : null)}
+                      placeholder="100"
+                      min={0}
+                      max={100}
+                      disabled={soloMorosos}
+                      className="w-full px-4 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white disabled:opacity-50"
+                    />
+                  </div>
                 </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={soloMorosos}
+                    onChange={(e) => {
+                      setSoloMorosos(e.target.checked);
+                      if (e.target.checked) {
+                        setCuotasMinPagadas(null);
+                        setCuotasMaxPagadas(null);
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">💰 Solo morosos</span>
+                    <p className="text-xs text-slate-500">Pagaron algo pero no completaron (cuotas_pagadas {'>'} 0 y {'<'} total)</p>
+                  </div>
+                </label>
               </div>
             </div>
 
             <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={calcularElegibles}
-                disabled={calculando || segmentosSeleccionados.length === 0}
+                disabled={calculando || estadosSeleccionados.length === 0}
                 className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RefreshCw size={16} className={calculando ? 'animate-spin' : ''} />
@@ -483,24 +502,19 @@ export default function NuevaCampanaPage() {
             </div>
 
             {previewCalculado && (
-              <div className="mt-4 grid grid-cols-3 gap-4">
+              <div className="mt-4 grid grid-cols-2 gap-4">
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-slate-800 dark:text-white">{totalAudiencia}</p>
-                  <p className="text-xs text-slate-500">Audiencia base</p>
-                </div>
-                <div className="bg-red-50 dark:bg-red-500/10 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-red-600">-{totalExcluidos}</p>
-                  <p className="text-xs text-slate-500">Excluidos</p>
+                  <p className="text-2xl font-bold text-slate-800 dark:text-white">{totalAudiencia.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">Inscripciones encontradas</p>
                 </div>
                 <div className="bg-green-50 dark:bg-green-500/10 rounded-lg p-4 text-center">
-                  <p className="text-2xl font-bold text-green-600">{totalElegibles}</p>
-                  <p className="text-xs text-slate-500">Elegibles</p>
+                  <p className="text-2xl font-bold text-green-600">{totalElegibles.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">Teléfonos únicos</p>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Template */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Template de WhatsApp</h2>
             <select
@@ -517,7 +531,6 @@ export default function NuevaCampanaPage() {
             </select>
           </div>
 
-          {/* Tipo de envío */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-white mb-4">Tipo de envío</h2>
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -575,7 +588,6 @@ export default function NuevaCampanaPage() {
             )}
           </div>
 
-          {/* Botón enviar */}
           <div className="flex justify-end pb-6">
             <button
               onClick={() => crearCampana(true)}
@@ -583,7 +595,7 @@ export default function NuevaCampanaPage() {
               className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Send size={16} />
-              {guardando ? 'Creando...' : `Crear y enviar a ${totalElegibles} contactos`}
+              {guardando ? 'Creando...' : `Crear y enviar a ${totalElegibles.toLocaleString()} contactos`}
             </button>
           </div>
 

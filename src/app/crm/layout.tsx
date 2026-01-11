@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import Sidebar from '@/components/crm/Sidebar';
+import ChatbotAsistente from '@/components/crm/ChatbotAsistente';
 
 export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const { darkMode } = useCRMStore();
@@ -21,6 +22,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 flex overflow-hidden">
         {children}
       </main>
+      <ChatbotAsistente />
     </div>
   );
 }

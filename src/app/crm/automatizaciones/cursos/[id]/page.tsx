@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Save, BookOpen, List, Megaphone, BarChart3, Plus, Trash2, Eye, X, Link2, Award, HeartHandshake, TrendingUp, Baby, Puzzle, GraduationCap, User, Brain, ChevronDown, Circle, DollarSign, Calendar, Clock, Medal, Briefcase, Home, FileText, ClipboardList, Users, MousePointerClick, Target, UserX, RefreshCw, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -91,6 +90,10 @@ interface StatsData {
     inscripciones: number;
     tasa_inscripcion: number;
   }>;
+  periodo?: {
+    desde: string;
+    hasta: string;
+  };
 }
 
 const API_URL = '/api/automatizaciones';
@@ -116,6 +119,17 @@ const CATEGORIAS = [
   { value: 'psicologia_salud_mental', label: 'Psicología y Salud Mental', icon: Brain, color: 'text-rose-500', bg: 'bg-rose-50' },
 ];
 
+const PERIODOS = [
+  { value: 'hoy', label: 'Hoy' },
+  { value: 'ayer', label: 'Ayer' },
+  { value: 'semana', label: 'Esta semana' },
+  { value: 'mes', label: 'Este mes' },
+  { value: 'mes_anterior', label: 'Mes anterior' },
+  { value: 'trimestre', label: 'Últimos 3 meses' },
+  { value: 'todo', label: 'Todo el tiempo' },
+  { value: 'custom', label: 'Personalizado' },
+];
+
 export default function CursoDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -135,6 +149,12 @@ export default function CursoDetailPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
+  // Filtros de fecha para stats
+  const [periodo, setPeriodo] = useState('mes');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const [showPeriodoDropdown, setShowPeriodoDropdown] = useState(false);
+
   const [openCatDropdown, setOpenCatDropdown] = useState(false);
   const catDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -149,7 +169,19 @@ export default function CursoDetailPage() {
     info_salida_laboral: '', info_modalidad: '',
   });
 
-  const mesActual = new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  function buildQueryParams(): string {
+    if (periodo === 'custom' && fechaDesde) {
+      let params = `desde=${fechaDesde}`;
+      if (fechaHasta) params += `&hasta=${fechaHasta}`;
+      return params;
+    }
+    return `periodo=${periodo}`;
+  }
+
+  const periodoActual = PERIODOS.find(p => p.value === periodo);
+  const periodoLabel = periodo === 'custom' && fechaDesde 
+    ? `${fechaDesde}${fechaHasta ? ` - ${fechaHasta}` : ''}`
+    : periodoActual?.label || 'Este mes';
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -166,10 +198,10 @@ export default function CursoDetailPage() {
   }, [cursoId]);
 
   useEffect(() => {
-    if (activeTab === 'stats' && !stats && !isNew) {
+    if (activeTab === 'stats' && !isNew) {
       cargarStats();
     }
-  }, [activeTab]);
+  }, [activeTab, periodo, fechaDesde, fechaHasta]);
 
   async function cargarCurso() {
     try {
@@ -193,7 +225,8 @@ export default function CursoDetailPage() {
   async function cargarStats() {
     setLoadingStats(true);
     try {
-      const res = await fetch(`${API_URL}?path=stats/cursos/${cursoId}/detalle`);
+      const queryParams = buildQueryParams();
+      const res = await fetch(`${API_URL}?path=stats/cursos/${cursoId}/detalle&${queryParams}`);
       const data = await res.json();
       if (data.success) {
         setStats(data.data);
@@ -318,18 +351,17 @@ export default function CursoDetailPage() {
     } catch (err) { console.error(err); }
   }
 
-  // === FUNCIONES DE EXPORTACIÓN ===
   function exportarExcel() {
     if (!stats) return;
     const wb = XLSX.utils.book_new();
-    
+
     const resumenData = [
       ['Estadísticas del Curso', formData.nombre || ''],
-      ['Período', mesActual],
+      ['Período', periodoLabel],
       [''],
       ['Métrica', 'Valor'],
-      ['Leads (mes actual)', stats.resumen.leads_mes_actual],
-      ['Leads (mes anterior)', stats.resumen.leads_mes_anterior],
+      ['Leads (período)', stats.resumen.leads_mes_actual],
+      ['Leads (período anterior)', stats.resumen.leads_mes_anterior],
       ['Variación', `${stats.resumen.variacion_leads}%`],
       ['Tasa Engagement', `${stats.resumen.tasa_engagement}%`],
       ['Tasa Inscripción', `${stats.resumen.tasa_inscripcion}%`],
@@ -340,7 +372,7 @@ export default function CursoDetailPage() {
     ];
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
-    
+
     if (stats.opciones.length > 0) {
       const opcionesData = [
         ['Emoji', 'Título', 'Tipo', 'Veces Elegida', 'CTR (%)'],
@@ -349,7 +381,7 @@ export default function CursoDetailPage() {
       const wsOpciones = XLSX.utils.aoa_to_sheet(opcionesData);
       XLSX.utils.book_append_sheet(wb, wsOpciones, 'Menú');
     }
-    
+
     if (stats.anuncios.length > 0) {
       const anunciosData = [
         ['Nombre', 'Ad ID', 'Leads', 'Engagement (%)', 'Inscripciones', 'Tasa Inscripción (%)'],
@@ -358,7 +390,7 @@ export default function CursoDetailPage() {
       const wsAnuncios = XLSX.utils.aoa_to_sheet(anunciosData);
       XLSX.utils.book_append_sheet(wb, wsAnuncios, 'Anuncios');
     }
-    
+
     const filename = `estadisticas_${formData.codigo || 'curso'}_${new Date().toISOString().slice(0,10)}.xlsx`;
     XLSX.writeFile(wb, filename);
   }
@@ -367,20 +399,20 @@ export default function CursoDetailPage() {
     if (!stats) return;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    
+
     doc.setFontSize(18);
     doc.text(`Estadísticas: ${formData.nombre || 'Curso'}`, pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(11);
-    doc.text(mesActual, pageWidth / 2, 28, { align: 'center' });
-    
+    doc.text(periodoLabel, pageWidth / 2, 28, { align: 'center' });
+
     doc.setFontSize(14);
     doc.text('Resumen', 14, 40);
     autoTable(doc, {
       startY: 45,
       head: [['Métrica', 'Valor']],
       body: [
-        ['Leads (mes actual)', stats.resumen.leads_mes_actual.toString()],
-        ['Variación vs mes anterior', `${stats.resumen.variacion_leads}%`],
+        ['Leads (período)', stats.resumen.leads_mes_actual.toString()],
+        ['Variación vs período anterior', `${stats.resumen.variacion_leads}%`],
         ['Tasa Engagement', `${stats.resumen.tasa_engagement}%`],
         ['Tasa Inscripción', `${stats.resumen.tasa_inscripcion}%`],
         ['Tasa Abandono', `${stats.resumen.tasa_abandono}%`],
@@ -424,7 +456,7 @@ export default function CursoDetailPage() {
         headStyles: { fillColor: [168, 85, 247] },
       });
     }
-    
+
     const filename = `estadisticas_${formData.codigo || 'curso'}_${new Date().toISOString().slice(0,10)}.pdf`;
     doc.save(filename);
   }
@@ -666,11 +698,66 @@ export default function CursoDetailPage() {
         {/* STATS TAB */}
         {activeTab === 'stats' && (
           <div>
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="font-semibold text-lg">Estadísticas del Curso</h3>
-                <p className="text-sm text-gray-500 capitalize">{mesActual}</p>
+            {/* Filtro de período */}
+            <div className="flex items-center justify-between mb-6 pb-4 border-b">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Calendar className="w-5 h-5" />
+                  <span className="font-medium">Período:</span>
+                </div>
+                
+                <div className="relative">
+                  <button
+                    onClick={() => setShowPeriodoDropdown(!showPeriodoDropdown)}
+                    className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 min-w-[180px] justify-between"
+                  >
+                    <span>{periodoLabel}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${showPeriodoDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {showPeriodoDropdown && (
+                    <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-20 min-w-[180px]">
+                      {PERIODOS.map(p => (
+                        <button
+                          key={p.value}
+                          onClick={() => {
+                            setPeriodo(p.value);
+                            if (p.value !== 'custom') {
+                              setFechaDesde('');
+                              setFechaHasta('');
+                            }
+                            setShowPeriodoDropdown(false);
+                          }}
+                          className={`w-full text-left px-4 py-2 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${
+                            periodo === p.value ? 'bg-blue-50 text-blue-600' : ''
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {periodo === 'custom' && (
+                  <>
+                    <input
+                      type="date"
+                      value={fechaDesde}
+                      onChange={(e) => setFechaDesde(e.target.value)}
+                      className="px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <span className="text-gray-400">hasta</span>
+                    <input
+                      type="date"
+                      value={fechaHasta}
+                      onChange={(e) => setFechaHasta(e.target.value)}
+                      className="px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </>
+                )}
               </div>
+
               <div className="flex items-center gap-2">
                 {stats && (
                   <>
@@ -683,7 +770,7 @@ export default function CursoDetailPage() {
                   </>
                 )}
                 <button onClick={cargarStats} disabled={loadingStats} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 px-3 py-2">
-                  <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} /> Actualizar
+                  <RefreshCw className={`w-4 h-4 ${loadingStats ? 'animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
@@ -700,7 +787,7 @@ export default function CursoDetailPage() {
                     <div className="flex items-center gap-2 text-blue-600 mb-2"><Users className="w-5 h-5" /><span className="text-sm font-medium">Leads</span></div>
                     <div className="text-3xl font-bold text-blue-700">{stats.resumen.leads_mes_actual}</div>
                     <div className={`text-sm mt-1 ${stats.resumen.variacion_leads >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {stats.resumen.variacion_leads >= 0 ? '↑' : '↓'} {Math.abs(stats.resumen.variacion_leads)}% vs mes anterior
+                      {stats.resumen.variacion_leads >= 0 ? '↑' : '↓'} {Math.abs(stats.resumen.variacion_leads)}% vs período anterior
                     </div>
                   </div>
                   <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4">

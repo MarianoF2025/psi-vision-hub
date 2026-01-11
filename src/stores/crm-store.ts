@@ -24,6 +24,10 @@ interface CRMState {
   setBusquedaConversaciones: (texto: string) => void;
   mensajeEnRespuesta: Mensaje | null;
   setMensajeEnRespuesta: (msg: Mensaje | null) => void;
+  // Chatbot Asistente
+  chatbotAbierto: boolean;
+  setChatbotAbierto: (open: boolean) => void;
+  toggleChatbot: () => void;
 }
 
 export const useCRMStore = create<CRMState>()(
@@ -52,6 +56,10 @@ export const useCRMStore = create<CRMState>()(
       setBusquedaConversaciones: (texto) => set({ busquedaConversaciones: texto }),
       mensajeEnRespuesta: null,
       setMensajeEnRespuesta: (msg) => set({ mensajeEnRespuesta: msg }),
+      // Chatbot Asistente
+      chatbotAbierto: false,
+      setChatbotAbierto: (open) => set({ chatbotAbierto: open }),
+      toggleChatbot: () => set((state) => ({ chatbotAbierto: !state.chatbotAbierto })),
     }),
     {
       name: 'crm-storage',

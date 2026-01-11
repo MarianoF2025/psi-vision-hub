@@ -6,7 +6,7 @@ import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
-import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard, Bot } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
@@ -37,7 +37,7 @@ const EMAILS_ADMIN = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
-  const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, sidebarExpandido, toggleSidebar } = useCRMStore();
+  const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, sidebarExpandido, toggleSidebar, chatbotAbierto, toggleChatbot } = useCRMStore();
   const isMainChat = pathname === '/crm';
 
   const userName = user?.user_metadata?.nombre || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuario';
@@ -150,6 +150,38 @@ export default function Sidebar() {
 
       {/* Acciones inferiores */}
       <div className="py-2 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-0.5">
+        {/* Botón Asistente con gradiente destacado */}
+        <button
+          onClick={toggleChatbot}
+          className={cn(
+            'mx-1 px-2 py-1.5 rounded-lg transition-all flex items-center gap-2 group',
+            chatbotAbierto
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+              : 'bg-gradient-to-r from-blue-500/10 to-indigo-500/10 hover:from-blue-500/20 hover:to-indigo-500/20',
+            !sidebarExpandido && 'justify-center'
+          )}
+        >
+          <div className={cn(
+            'flex items-center justify-center rounded-md p-0.5',
+            !chatbotAbierto && 'bg-gradient-to-r from-blue-600 to-indigo-600'
+          )}>
+            <Bot size={14} className={chatbotAbierto ? 'text-white' : 'text-white'} />
+          </div>
+          {sidebarExpandido && (
+            <span className={cn(
+              'text-xs font-medium',
+              chatbotAbierto ? 'text-white' : 'text-blue-600 dark:text-blue-400'
+            )}>
+              Asistente
+            </span>
+          )}
+          {!sidebarExpandido && (
+            <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+              Asistente IA
+            </div>
+          )}
+        </button>
+
         <button
           onClick={toggleDarkMode}
           className={cn(
