@@ -4,8 +4,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { cn, formatPhone, getInitials, timeAgo } from '@/lib/utils';
-import { 
-  Search, Plus, Filter, Download, MoreHorizontal, 
+import {
+  Search, Plus, Filter, Download, MoreHorizontal,
   Pencil, Trash2, MessageSquare, X, User, Phone, Mail, Tag,
   AlertTriangle, Check
 } from 'lucide-react';
@@ -17,20 +17,17 @@ interface Contacto {
   email?: string;
   pais?: string;
   created_at: string;
-  estado_lead?: string;
   resultado?: string;
   etiquetas?: string[];
   notas?: string;
 }
 
-const ESTADOS_LEAD = [
-  { value: 'nuevo', label: 'Nuevo', color: 'bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400' },
-  { value: 'contactado', label: 'Contactado', color: 'bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-400' },
-  { value: 'interesado', label: 'Interesado', color: 'bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-400' },
-  { value: 'negociando', label: 'Negociando', color: 'bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' },
-  { value: 'ganado', label: 'Ganado', color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' },
-  { value: 'perdido', label: 'Perdido', color: 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400' },
-  { value: 'no_responde', label: 'No responde', color: 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400' },
+const RESULTADOS = [
+  { value: '', label: 'En proceso', color: 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400' },
+  { value: 'INS', label: 'Inscripto/Alumno', color: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' },
+  { value: 'NOINT', label: 'No interesado', color: 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400' },
+  { value: 'NOCONT', label: 'No contactado', color: 'bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400' },
+  { value: 'NR+', label: 'No responde plus', color: 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400' },
 ];
 
 export default function ContactosPage() {
@@ -166,12 +163,12 @@ export default function ContactosPage() {
   };
 
   const exportarCSV = () => {
-    const headers = ['Nombre', 'Teléfono', 'Email', 'Estado', 'Creado'];
+    const headers = ['Nombre', 'Teléfono', 'Email', 'Resultado', 'Creado'];
     const rows = filtrados.map(c => [
       c.nombre || '',
       c.telefono,
       c.email || '',
-      c.estado_lead || '',
+      c.resultado || 'En proceso',
       new Date(c.created_at).toLocaleDateString()
     ]);
     const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
@@ -183,8 +180,8 @@ export default function ContactosPage() {
     a.click();
   };
 
-  const getEstadoColor = (estado?: string) => {
-    const found = ESTADOS_LEAD.find(e => e.value === estado);
+  const getResultadoColor = (resultado?: string) => {
+    const found = RESULTADOS.find(r => r.value === resultado);
     return found?.color || 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400';
   };
 
@@ -204,13 +201,13 @@ export default function ContactosPage() {
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-bold text-slate-800 dark:text-white">Contactos</h1>
           <div className="flex gap-2">
-            <button 
+            <button
               onClick={exportarCSV}
               className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-slate-200 dark:hover:bg-slate-700"
             >
               <Download size={16} /> Exportar
             </button>
-            <button 
+            <button
               onClick={() => setModalNuevo(true)}
               className="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-indigo-600"
             >
@@ -242,7 +239,7 @@ export default function ContactosPage() {
               <tr>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Contacto</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Teléfono</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Estado</th>
+                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Resultado</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Etiquetas</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-slate-500 uppercase">Creado</th>
                 <th className="px-4 py-3"></th>
@@ -268,11 +265,9 @@ export default function ContactosPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{formatPhone(c.telefono)}</td>
                   <td className="px-4 py-3">
-                    {c.estado_lead && (
-                      <span className={cn("px-2 py-1 text-xs font-medium rounded-full", getEstadoColor(c.estado_lead))}>
-                        {ESTADOS_LEAD.find(e => e.value === c.estado_lead)?.label || c.estado_lead}
-                      </span>
-                    )}
+                    <span className={cn("px-2 py-1 text-xs font-medium rounded-full", getResultadoColor(c.resultado))}>
+                      {RESULTADOS.find(r => r.value === c.resultado)?.label || 'En proceso'}
+                    </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
@@ -285,37 +280,36 @@ export default function ContactosPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-500">{timeAgo(c.created_at)}</td>
                   <td className="px-4 py-3 relative" ref={menuAbierto === c.id ? menuRef : null}>
-                    <button 
+                    <button
                       onClick={() => setMenuAbierto(menuAbierto === c.id ? null : c.id)}
                       className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded"
                     >
                       <MoreHorizontal size={16} className="text-slate-400" />
                     </button>
-                     {menuAbierto === c.id && (
-  <div className="fixed right-8 mt-8 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-[100]">
-    <button
-      onClick={() => { setModalEditar(c); setMenuAbierto(null); }}
-      className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-    >
-      <Pencil size={14} /> Editar contacto
-    </button>
-    <button
-      onClick={() => verConversaciones(c.telefono)}
-      className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-    >
-      <MessageSquare size={14} /> Ver conversaciones
-    </button>
-    <hr className="my-1 border-slate-200 dark:border-slate-700" />
-    <button
-      onClick={() => { setModalEliminar(c); setMenuAbierto(null); }}
-      className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2"
-    >
-      <Trash2 size={14} /> Eliminar contacto
-    </button>
-  </div>
-)}                  
-
-                 </td>
+                    {menuAbierto === c.id && (
+                      <div className="fixed right-8 mt-8 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-[100]">
+                        <button
+                          onClick={() => { setModalEditar(c); setMenuAbierto(null); }}
+                          className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
+                        >
+                          <Pencil size={14} /> Editar contacto
+                        </button>
+                        <button
+                          onClick={() => verConversaciones(c.telefono)}
+                          className="w-full px-4 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
+                        >
+                          <MessageSquare size={14} /> Ver conversaciones
+                        </button>
+                        <hr className="my-1 border-slate-200 dark:border-slate-700" />
+                        <button
+                          onClick={() => { setModalEliminar(c); setMenuAbierto(null); }}
+                          className="w-full px-4 py-2 text-left text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2"
+                        >
+                          <Trash2 size={14} /> Eliminar contacto
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -345,7 +339,7 @@ export default function ContactosPage() {
               <h2 className="text-lg font-semibold text-slate-800 dark:text-white">Eliminar contacto</h2>
             </div>
             <p className="text-slate-600 dark:text-slate-400 mb-6">
-              ¿Estás seguro de que querés eliminar a <strong>{modalEliminar.nombre || modalEliminar.telefono}</strong>? 
+              ¿Estás seguro de que querés eliminar a <strong>{modalEliminar.nombre || modalEliminar.telefono}</strong>?
               Esta acción no se puede deshacer.
             </p>
             <div className="flex gap-3 justify-end">
@@ -370,14 +364,14 @@ export default function ContactosPage() {
   );
 }
 
-function ModalContacto({ 
-  contacto, 
-  onClose, 
-  onSave, 
-  guardando 
-}: { 
-  contacto?: Contacto; 
-  onClose: () => void; 
+function ModalContacto({
+  contacto,
+  onClose,
+  onSave,
+  guardando
+}: {
+  contacto?: Contacto;
+  onClose: () => void;
   onSave: (c: Partial<Contacto>) => void;
   guardando: boolean;
 }) {
@@ -386,7 +380,7 @@ function ModalContacto({
     nombre: contacto?.nombre || '',
     telefono: contacto?.telefono || '',
     email: contacto?.email || '',
-    estado_lead: contacto?.estado_lead || 'nuevo',
+    resultado: contacto?.resultado || '',
     notas: contacto?.notas || '',
   });
 
@@ -455,16 +449,16 @@ function ModalContacto({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Estado del Lead</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Resultado</label>
             <div className="relative">
               <Tag size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <select
-                value={form.estado_lead}
-                onChange={(e) => setForm({ ...form, estado_lead: e.target.value })}
+                value={form.resultado}
+                onChange={(e) => setForm({ ...form, resultado: e.target.value })}
                 className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg text-sm text-slate-800 dark:text-white appearance-none"
               >
-                {ESTADOS_LEAD.map(e => (
-                  <option key={e.value} value={e.value}>{e.label}</option>
+                {RESULTADOS.map(r => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>
             </div>

@@ -7,7 +7,6 @@ import { cn, getInitials, getWindowTimeLeft, formatPhone } from '@/lib/utils';
 import { X, Clock, Plus, Unlink, Camera, Save, Edit2, Check, MapPin, Mail, User, BookOpen, Building, ChevronDown, Tag } from 'lucide-react';
 
 const ESTADOS_CONV = ['nueva', 'activa', 'esperando', 'resuelta', 'cerrada'] as const;
-const ESTADOS_LEAD = ['nuevo', 'seguimiento', 'nr', 'silencioso', 'pend_pago', 'alumna'] as const;
 const RESULTADOS = ['INS', 'NOINT', 'NOCONT', 'NR+'] as const;
 const PAISES = ['AR', 'MX', 'CO', 'CL', 'PE', 'EC', 'UY', 'PY', 'BO', 'VE', 'ES', 'US', 'Otro'];
 
@@ -19,7 +18,6 @@ interface Contacto {
   foto_url: string | null;
   pais: string | null;
   ciudad: string | null;
-  estado_lead: string | null;
   resultado: string | null;
   etiquetas: string[];
   notas: string | null;
@@ -53,7 +51,7 @@ export default function InfoContactoPanel() {
   const [pais, setPais] = useState('');
   const [ciudad, setCiudad] = useState('');
   const [cursoInfo, setCursoInfo] = useState<{nombre: string; codigo: string; cantidad: number} | null>(null);
-  
+
   // Sistema de etiquetas globales
   const [etiquetasGlobales, setEtiquetasGlobales] = useState<EtiquetaGlobal[]>([]);
   const [etiquetasAsignadas, setEtiquetasAsignadas] = useState<EtiquetaAsignada[]>([]);
@@ -149,7 +147,7 @@ export default function InfoContactoPanel() {
           )
         `)
         .eq('contacto_id', conversacionActual.contacto_id);
-      
+
       if (data) {
         const asignadas: EtiquetaAsignada[] = data.map((item: any) => ({
           id: item.id,
@@ -242,7 +240,7 @@ export default function InfoContactoPanel() {
   // Asignar etiqueta (nuevo sistema)
   const asignarEtiqueta = async (etiquetaId: string) => {
     if (!contacto) return;
-    
+
     const etiqueta = etiquetasGlobales.find(e => e.id === etiquetaId);
     if (!etiqueta) return;
 
@@ -475,20 +473,6 @@ export default function InfoContactoPanel() {
               </div>
             </div>
 
-            {/* Estado Lead (en contacto) */}
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Estado del Lead</p>
-              <select
-                value={contacto?.estado_lead || 'nuevo'}
-                onChange={(e) => actualizarContacto('estado_lead', e.target.value)}
-                className="w-full px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-slate-800 dark:text-white"
-              >
-                {ESTADOS_LEAD.map(e => (
-                  <option key={e} value={e}>{e.charAt(0).toUpperCase() + e.slice(1).replace('_', ' ')}</option>
-                ))}
-              </select>
-            </div>
-
             {/* Resultado (en contacto) */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Resultado</p>
@@ -533,7 +517,7 @@ export default function InfoContactoPanel() {
                     <Plus size={12} className="text-slate-400" />
                     <ChevronDown size={10} className="text-slate-400" />
                   </button>
-                  
+
                   {/* Dropdown de etiquetas */}
                   {mostrarDropdownEtiquetas && etiquetasDisponibles.length > 0 && (
                     <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1 max-h-48 overflow-y-auto">
@@ -543,8 +527,8 @@ export default function InfoContactoPanel() {
                           onClick={() => asignarEtiqueta(etiqueta.id)}
                           className="w-full px-2 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
                         >
-                          <span 
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                          <span
+                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                             style={{ backgroundColor: etiqueta.color }}
                           />
                           <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
@@ -560,22 +544,22 @@ export default function InfoContactoPanel() {
               {/* Etiquetas asignadas */}
               <div className="flex flex-wrap gap-1">
                 {etiquetasAsignadas.map((et) => (
-                  <span 
-                    key={et.id} 
+                  <span
+                    key={et.id}
                     className="px-1.5 py-0.5 text-[10px] rounded flex items-center gap-1 group"
-                    style={{ 
+                    style={{
                       backgroundColor: `${et.color}20`,
                       color: et.color,
                       border: `1px solid ${et.color}40`
                     }}
                   >
-                    <span 
-                      className="w-1.5 h-1.5 rounded-full" 
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
                       style={{ backgroundColor: et.color }}
                     />
                     {et.nombre}
-                    <button 
-                      onClick={() => quitarEtiquetaAsignada(et.id)} 
+                    <button
+                      onClick={() => quitarEtiquetaAsignada(et.id)}
                       className="opacity-0 group-hover:opacity-100 hover:text-red-500 ml-0.5"
                     >
                       <X size={8} />

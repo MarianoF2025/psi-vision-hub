@@ -5,6 +5,8 @@ import { useCRMStore } from '@/stores/crm-store';
 import { supabase } from '@/lib/supabase';
 import { INBOXES, type Conversacion } from '@/types/crm';
 import { cn, timeAgo, getInitials, getWindowTimeLeft } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUserPermissions, canAccessInbox } from '@/lib/permissions';
 import { Search, Plus, Clock, X, MessageSquarePlus, Phone, Users, GraduationCap, Building2, Calendar, ChevronDown, Pin } from 'lucide-react';
 
 interface Contacto {
@@ -38,6 +40,10 @@ export default function ConversacionesPanel() {
     setContador, usuario
   } = useCRMStore();
 
+  // Hooks de autenticación y permisos
+  const { user } = useAuth();
+  const { permissions } = useUserPermissions(user?.email);
+
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [mostrarNuevoChat, setMostrarNuevoChat] = useState(false);
@@ -46,7 +52,11 @@ export default function ConversacionesPanel() {
   const [buscandoContactos, setBuscandoContactos] = useState(false);
   const [creandoChat, setCreandoChat] = useState(false);
   const [numeroNuevo, setNumeroNuevo] = useState('');
-  const [lineaSeleccionada, setLineaSeleccionada] = useState('administracion');
+  
+  // Filtrar líneas de salida según permisos del usuario
+  const lineasFiltradas = LINEAS_SALIDA.filter(linea => canAccessInbox(permissions, linea.id));
+  const [lineaSeleccionada, setLineaSeleccionada] = useState(lineasFiltradas[0]?.id || 'administracion');
+  
   const [filtroFecha, setFiltroFecha] = useState('todas');
   const [mostrarFiltroFecha, setMostrarFiltroFecha] = useState(false);
 
@@ -85,6 +95,13 @@ export default function ConversacionesPanel() {
       return fechaB - fechaA;
     });
   };
+
+  // Actualizar línea seleccionada cuando cambian los permisos
+  useEffect(() => {
+    if (lineasFiltradas.length > 0 && !lineasFiltradas.find(l => l.id === lineaSeleccionada)) {
+      setLineaSeleccionada(lineasFiltradas[0].id);
+    }
+  }, [lineasFiltradas, lineaSeleccionada]);
 
   useEffect(() => {
     const cargarConversaciones = async (inicial = false) => {
@@ -351,25 +368,33 @@ export default function ConversacionesPanel() {
             <div className="p-4 flex-1 overflow-y-auto">
               <div className="mb-4">
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2 block">Enviar desde</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {LINEAS_SALIDA.map((linea) => {
-                    const Icon = linea.icon;
-                    const isSelected = lineaSeleccionada === linea.id;
-                    return (
-                      <button key={linea.id} onClick={() => setLineaSeleccionada(linea.id)}
-                        className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all',
-                          isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300')}>
-                        <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white', linea.color)}>
-                          <Icon size={18} />
-                        </div>
-                        <span className={cn('text-[11px] font-medium', isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400')}>
-                          {linea.nombre}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-green-600 mt-2 text-center">✓ Evolution API (sin costo)</p>
+                {lineasFiltradas.length === 0 ? (
+                  <div className="text-center py-4 text-sm text-slate-500">
+                    No tienes permisos para enviar mensajes
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {lineasFiltradas.map((linea) => {
+                      const Icon = linea.icon;
+                      const isSelected = lineaSeleccionada === linea.id;
+                      return (
+                        <button key={linea.id} onClick={() => setLineaSeleccionada(linea.id)}
+                          className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all',
+                            isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300')}>
+                          <div className={cn('w-9 h-9 rounded-full flex items-center justify-center text-white', linea.color)}>
+                            <Icon size={18} />
+                          </div>
+                          <span className={cn('text-[11px] font-medium', isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400')}>
+                            {linea.nombre}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {lineasFiltradas.length > 0 && (
+                  <p className="text-[10px] text-green-600 mt-2 text-center">✓ Evolution API (sin costo)</p>
+                )}
               </div>
 
               <div className="flex items-center gap-3 my-3">
@@ -424,7 +449,7 @@ export default function ConversacionesPanel() {
                       placeholder="Ej: 1155667788" className="w-full pl-9 pr-3 py-2 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg text-sm"
                       onKeyDown={(e) => e.key === 'Enter' && iniciarChatConNumero()} />
                   </div>
-                  <button onClick={iniciarChatConNumero} disabled={!numeroNuevo.trim() || creandoChat}
+                  <button onClick={iniciarChatConNumero} disabled={!numeroNuevo.trim() || creandoChat || lineasFiltradas.length === 0}
                     className="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed">
                     {creandoChat ? '...' : 'Iniciar'}
                   </button>

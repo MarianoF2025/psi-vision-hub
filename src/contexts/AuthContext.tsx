@@ -39,10 +39,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadProfile = useCallback(async (authUser: User) => {
     const nombreFromMetadata = authUser.user_metadata?.nombre;
+    const rolFromMetadata = authUser.user_metadata?.rol;
     const profileData = {
       id: authUser.id,
       email: authUser.email || '',
       nombre: nombreFromMetadata || authUser.email?.split('@')[0] || 'Usuario',
+      rol: rolFromMetadata || 'agente',
     };
     setProfile(profileData);
     setUsuario(profileData);

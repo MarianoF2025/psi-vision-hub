@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { usePermissions } from '@/hooks/usePermissions';
 import { cn } from '@/lib/utils';
 import {
   MessageSquare, Users, Clock, TrendingUp, TrendingDown,
@@ -66,9 +67,10 @@ interface StatsAgente {
 // COMPONENTE PRINCIPAL
 // ============================================
 export default function EstadisticasPage() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const emailUsuario = user?.email || '';
-  const tieneAcceso = EMAILS_ADMIN.includes(emailUsuario);
+  const esAdmin = profile?.rol === 'admin';
+  const tieneAcceso = esAdmin || EMAILS_ADMIN.includes(emailUsuario);
 
   const [tab, setTab] = useState<TabType>('wsp4');
   const [periodoAgentes, setPeriodoAgentes] = useState<PeriodoType>('semana');
@@ -100,6 +102,10 @@ export default function EstadisticasPage() {
   });
 
   const [statsAgentes, setStatsAgentes] = useState<StatsAgente[]>([]);
+
+  // Hook de permisos y emails del grupo
+  const { permisos, loading: permisosLoading } = usePermissions();
+  const [emailsGrupo, setEmailsGrupo] = useState<string[]>([]);
 
   // ============================================
   // FECHAS
@@ -254,7 +260,7 @@ export default function EstadisticasPage() {
       const { count: conversiones } = await supabase
         .from('contactos')
         .select('*', { count: 'exact', head: true })
-        .or('resultado.eq.ganado,estado_lead.eq.ganado');
+        .eq('resultado', 'INS');
 
       setStatsVentas({
         leadsHoy: leadsHoy || 0,
@@ -320,7 +326,7 @@ export default function EstadisticasPage() {
         .from('contactos')
         .select('id')
         .in('id', contactoIds.length > 0 ? contactoIds : ['none'])
-        .or('resultado.eq.ganado,estado_lead.eq.ganado');
+        .eq('resultado', 'INS');
 
       const contactosGanadosSet = new Set(contactosGanados?.map(c => c.id) || []);
 
@@ -446,7 +452,9 @@ export default function EstadisticasPage() {
       });
 
       agentesStats.sort((a, b) => b.mensajesEnviados - a.mensajesEnviados);
-      setStatsAgentes(agentesStats);
+      // Filtrar según rol: admin ve todos, agente ve solo sus métricas
+      const statsFiltradas = esAdmin ? agentesStats : agentesStats.filter(a => a.id === emailUsuario);
+      setStatsAgentes(statsFiltradas);
     } catch (error) {
       console.error('Error cargando stats Agentes:', error);
     }
