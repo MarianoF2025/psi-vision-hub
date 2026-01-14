@@ -1,18 +1,12 @@
 // ===========================================
 // PROCESADOR DE MENÚS INTERACTIVOS
-// Versión 1.1.0 - Con soporte cursos dinámicos
+// Versión 2.1.0 - Con base de datos
 // ===========================================
-
-import {
-  obtenerMenuInteractivo,
-  obtenerAccion,
-  AccionMenu,
-  InteractiveList,
-  MENU_PRINCIPAL_INTERACTIVO
-} from '../config/interactive-menus';
+import { supabase } from '../config/supabase';
+import { InteractiveList } from '../config/interactive-menus';
 
 export interface ProcesarInteractivoInput {
-  listReplyId: string;  // ID de la opción seleccionada
+  listReplyId: string;
   telefono: string;
   conversacionId?: string;
   menuActual?: string;
@@ -30,56 +24,183 @@ export interface ProcesarInteractivoOutput {
   mensajeConfirmacion?: string;
 }
 
+interface MenuConfig {
+  id: string;
+  nombre: string;
+  header: string;
+  body: string;
+  footer: string;
+  button_text: string;
+  tipo_menu: string;
+  activo: boolean;
+}
+
+interface MenuOpcion {
+  id: string;
+  menu_config_id: string;
+  orden: number;
+  opcion_id: string;
+  emoji: string;
+  titulo: string;
+  descripcion: string;
+  tipo_accion: string;
+  submenu_id?: string;
+  area_destino?: string;
+  subetiqueta?: string;
+  mensaje_contexto?: string;
+  activo: boolean;
+}
+
 export class InteractiveMenuProcessor {
+  private menuCache: Map<string, MenuConfig> = new Map();
+  private opcionesCache: Map<string, MenuOpcion[]> = new Map();
+  private lastCacheUpdate: Date = new Date(0);
+  private readonly CACHE_DURATION = 60000; // 1 minuto
+
+  constructor() {
+    // Cargar cache inicial
+    this.cargarMenusEnCache();
+  }
 
   /**
    * Procesar respuesta de lista interactiva
    */
-  procesar(input: ProcesarInteractivoInput): ProcesarInteractivoOutput {
+  async procesar(input: ProcesarInteractivoInput): Promise<ProcesarInteractivoOutput> {
     const { listReplyId } = input;
-
     console.log(`[InteractiveMenuProcessor] Procesando selección: ${listReplyId}`);
-
+    
+    // Actualizar cache si es necesario
+    await this.actualizarCacheSiNecesario();
+    
     // Obtener acción para este ID
-    const accion = obtenerAccion(listReplyId);
-
+    const accion = await this.obtenerAccion(listReplyId);
+    
     if (!accion) {
       console.log(`[InteractiveMenuProcessor] ID no reconocido: ${listReplyId}, mostrando menú principal`);
-      return this.mostrarMenuPrincipal();
+      return await this.mostrarMenuPrincipal();
+    }
+    
+    return await this.ejecutarAccion(accion, listReplyId);
+  }
+
+  /**
+   * Actualizar cache si ha pasado el tiempo
+   */
+  private async actualizarCacheSiNecesario(): Promise<void> {
+    const ahora = new Date();
+    if (ahora.getTime() - this.lastCacheUpdate.getTime() > this.CACHE_DURATION) {
+      await this.cargarMenusEnCache();
+      this.lastCacheUpdate = ahora;
+    }
+  }
+
+  /**
+   * Cargar menús en cache
+   */
+  private async cargarMenusEnCache(): Promise<void> {
+    try {
+      const { data: menus, error: menuError } = await supabase
+        .from('router_menu_config')
+        .select('*')
+        .eq('activo', true);
+
+      if (menuError) {
+        console.error('[InteractiveMenuProcessor] Error cargando menús:', menuError);
+        return;
+      }
+
+      this.menuCache.clear();
+      this.opcionesCache.clear();
+
+      for (const menu of menus || []) {
+        this.menuCache.set(menu.tipo_menu, menu);
+        
+        const { data: opciones, error: opcionesError } = await supabase
+          .from('router_menu_opciones')
+          .select('*')
+          .eq('menu_config_id', menu.id)
+          .eq('activo', true)
+          .order('orden');
+
+        if (!opcionesError && opciones) {
+          this.opcionesCache.set(menu.tipo_menu, opciones);
+        }
+      }
+
+      console.log(`[InteractiveMenuProcessor] Cache actualizado: ${this.menuCache.size} menús, ${this.opcionesCache.size} grupos de opciones`);
+    } catch (error) {
+      console.error('[InteractiveMenuProcessor] Error actualizando cache:', error);
+    }
+  }
+
+  /**
+   * Obtener acción desde cache o DB
+   */
+  private async obtenerAccion(listReplyId: string): Promise<MenuOpcion | null> {
+    // Buscar en todas las opciones cacheadas
+    for (const [_, opciones] of this.opcionesCache) {
+      const opcion = opciones.find(o => o.opcion_id === listReplyId);
+      if (opcion) {
+        return opcion;
+      }
     }
 
-    return this.ejecutarAccion(accion, listReplyId);
+    // Si no está en cache, buscar en DB directamente
+    const { data, error } = await supabase
+      .from('router_menu_opciones')
+      .select('*')
+      .eq('opcion_id', listReplyId)
+      .eq('activo', true)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return data;
   }
 
   /**
    * Ejecutar acción según tipo
    */
-  private ejecutarAccion(accion: AccionMenu, seleccionId: string): ProcesarInteractivoOutput {
-    switch (accion.tipo) {
+  private async ejecutarAccion(accion: MenuOpcion, seleccionId: string): Promise<ProcesarInteractivoOutput> {
+    switch (accion.tipo_accion) {
       case 'submenu':
-        return this.mostrarSubmenu(accion.submenu!);
-
+        return await this.mostrarSubmenu(accion);
+      
       case 'derivar':
         return this.derivar(accion);
-
+      
       case 'cursos_dinamico':
         return this.mostrarCursosDinamicos();
-
+      
       case 'volver':
-        return this.mostrarMenuPrincipal();
-
+        return await this.mostrarMenuPrincipal();
+      
       default:
-        return this.mostrarMenuPrincipal();
+        return await this.mostrarMenuPrincipal();
     }
   }
 
   /**
    * Mostrar menú principal
    */
-  mostrarMenuPrincipal(): ProcesarInteractivoOutput {
+  async mostrarMenuPrincipal(): Promise<ProcesarInteractivoOutput> {
+    const menu = await this.obtenerMenuInteractivo('principal');
+    
+    if (!menu) {
+      console.error('[InteractiveMenuProcessor] No se pudo cargar el menú principal de la DB, usando fallback');
+      // Fallback al menú hardcodeado si falla la DB
+      return {
+        accion: 'mostrar_menu',
+        menu: this.getMenuPrincipalFallback(),
+        menuId: 'principal'
+      };
+    }
+
     return {
       accion: 'mostrar_menu',
-      menu: MENU_PRINCIPAL_INTERACTIVO,
+      menu: menu,
       menuId: 'principal'
     };
   }
@@ -87,47 +208,96 @@ export class InteractiveMenuProcessor {
   /**
    * Mostrar submenú
    */
-  private mostrarSubmenu(submenuId: string): ProcesarInteractivoOutput {
-    const menu = obtenerMenuInteractivo(submenuId);
+  private async mostrarSubmenu(opcion: MenuOpcion): Promise<ProcesarInteractivoOutput> {
+    if (!opcion.submenu_id) {
+      return await this.mostrarMenuPrincipal();
+    }
 
+    // Obtener el tipo de menú del submenu_id
+    const { data: submenuConfig, error } = await supabase
+      .from('router_menu_config')
+      .select('tipo_menu')
+      .eq('id', opcion.submenu_id)
+      .single();
+
+    if (error || !submenuConfig) {
+      console.log(`[InteractiveMenuProcessor] Submenú no encontrado: ${opcion.submenu_id}`);
+      return await this.mostrarMenuPrincipal();
+    }
+
+    const menu = await this.obtenerMenuInteractivo(submenuConfig.tipo_menu);
+    
     if (!menu) {
-      console.log(`[InteractiveMenuProcessor] Submenú no encontrado: ${submenuId}`);
-      return this.mostrarMenuPrincipal();
+      console.log(`[InteractiveMenuProcessor] Submenú no encontrado: ${submenuConfig.tipo_menu}`);
+      return await this.mostrarMenuPrincipal();
     }
 
     return {
       accion: 'mostrar_menu',
       menu: menu,
-      menuId: submenuId
+      menuId: submenuConfig.tipo_menu
     };
   }
 
   /**
-   * Derivar a área
+   * Obtener menú interactivo desde cache/DB
    */
-  private derivar(accion: AccionMenu): ProcesarInteractivoOutput {
-    const areaLabels: Record<string, string> = {
-      'admin': 'Administración',
-      'alumnos': 'Alumnos',
-      'comunidad': 'Comunidad PSI',
-      'ventas': 'Inscripciones'
+  private async obtenerMenuInteractivo(tipoMenu: string): Promise<InteractiveList | null> {
+    await this.actualizarCacheSiNecesario();
+    
+    const menuConfig = this.menuCache.get(tipoMenu);
+    const opciones = this.opcionesCache.get(tipoMenu);
+
+    if (!menuConfig || !opciones || opciones.length === 0) {
+      console.error(`[InteractiveMenuProcessor] Menú no encontrado o sin opciones: ${tipoMenu}`);
+      return null;
+    }
+
+    // Construir lista interactiva
+    const rows = opciones.map(opcion => {
+      let titulo = opcion.titulo;
+      if (opcion.emoji) {
+        titulo = `${opcion.emoji} ${titulo}`;
+      }
+      
+      return {
+        id: opcion.opcion_id,
+        title: titulo,
+        description: opcion.descripcion || undefined
+      };
+    });
+
+    return {
+      header: menuConfig.header || menuConfig.nombre,
+      body: menuConfig.body,
+      footer: menuConfig.footer || 'Elegí una opción',
+      buttonText: menuConfig.button_text || 'Ver opciones',
+      sections: [{
+        title: 'Opciones disponibles',
+        rows: rows
+      }]
     };
+  }
 
-    const areaLabel = areaLabels[accion.area!] || accion.area;
-
+  /**
+   * Derivar a área específica
+   */
+  private derivar(opcion: MenuOpcion): ProcesarInteractivoOutput {
     return {
       accion: 'derivar',
       derivacion: {
-        area: accion.area!,
-        subetiqueta: accion.subetiqueta!,
-        mensaje_contexto: accion.mensaje_contexto!
+        area: opcion.area_destino || 'admin',
+        subetiqueta: opcion.subetiqueta || '',
+        mensaje_contexto: opcion.mensaje_contexto || ''
       },
-      mensajeConfirmacion: `✅ Tu consulta sobre *${accion.mensaje_contexto}* fue derivada a *${areaLabel}*.\n\nEn breve te contactamos. Si necesitás otra cosa, escribí *MENU*.`
+      mensajeConfirmacion: `✅ Te derivé al área de *${this.getNombreArea(opcion.area_destino || 'admin')}*` +
+        (opcion.mensaje_contexto ? ` por *${opcion.mensaje_contexto}*` : '') +
+        '.\n\nEn breve te van a responder. ¡Gracias por tu paciencia!'
     };
   }
 
   /**
-   * Señal para mostrar cursos dinámicos desde DB
+   * Mostrar cursos dinámicos
    */
   private mostrarCursosDinamicos(): ProcesarInteractivoOutput {
     return {
@@ -136,41 +306,81 @@ export class InteractiveMenuProcessor {
   }
 
   /**
-   * Redirigir a flujo de inscripciones (psi-automations)
+   * Obtener nombre legible del área
    */
-  private redirigirInscripciones(): ProcesarInteractivoOutput {
+  private getNombreArea(area: string): string {
+    const nombres: Record<string, string> = {
+      'admin': 'Administración',
+      'alumnos': 'Alumnos',
+      'ventas': 'Ventas/Inscripciones',
+      'comunidad': 'Comunidad PSI'
+    };
+    return nombres[area] || area;
+  }
+
+  /**
+   * Menú principal de fallback (hardcodeado)
+   */
+  private getMenuPrincipalFallback(): InteractiveList {
     return {
-      accion: 'inscripciones',
-      mensajeConfirmacion: '' // psi-automations manejará el mensaje
+      header: '¡Hola! 👋',
+      body: '¡Bienvenidos a Asociación PSI!\n\n¿En qué podemos ayudarte hoy?',
+      footer: 'Elegí una opción del menú',
+      buttonText: 'Ver áreas',
+      sections: [{
+        title: 'Áreas de atención',
+        rows: [
+          { id: 'area_admin', title: '🏛️ Administración', description: 'Pagos, facturas, certificados' },
+          { id: 'area_alumnos', title: '🎓 Alumnos', description: 'Campus, clases, recursos' },
+          { id: 'area_inscripciones', title: '📝 Inscripciones', description: 'Cursos, precios, promos' },
+          { id: 'area_comunidad', title: '👥 Comunidad PSI', description: 'Vivos, grabaciones, eventos' },
+          { id: 'area_otra', title: '💬 Otra consulta', description: 'Hablar con una persona' }
+        ]
+      }]
     };
   }
 
   /**
-   * Generar menú inicial para nueva conversación
+   * Verificar si es selección de curso
    */
-  generarMenuInicial(): ProcesarInteractivoOutput {
-    return this.mostrarMenuPrincipal();
+  esCurso(listReplyId: string): boolean {
+    return listReplyId.startsWith('curso_');
   }
 
   /**
-   * Verificar si es comando especial (MENU, VOLVER)
+   * Procesar selección de curso
    */
-  esComandoEspecial(mensaje: string): 'MENU' | 'VOLVER' | null {
-    const limpio = mensaje.trim().toUpperCase();
-    if (limpio === 'MENU') return 'MENU';
-    if (limpio === 'VOLVER') return 'VOLVER';
-    return null;
+  procesarCurso(listReplyId: string): ProcesarInteractivoOutput {
+    const codigoCurso = listReplyId.replace('curso_', '').toUpperCase();
+    
+    return {
+      accion: 'derivar',
+      derivacion: {
+        area: 'ventas',
+        subetiqueta: 'info_curso',
+        mensaje_contexto: `Info sobre curso ${codigoCurso}`
+      },
+      mensajeConfirmacion: `✅ Te derivé a *Inscripciones* para brindarte información sobre el curso *${codigoCurso}*.\n\nEn breve te van a responder. ¡Gracias por tu paciencia!`
+    };
   }
 
   /**
-   * Procesar comando especial
+   * Verificar si es comando especial
    */
-  procesarComando(comando: 'MENU' | 'VOLVER', menuActual?: string): ProcesarInteractivoOutput {
-    if (comando === 'MENU' || comando === 'VOLVER') {
-      return this.mostrarMenuPrincipal();
+  esComandoEspecial(mensaje: string): string | null {
+    const mensajeUpper = mensaje.toUpperCase().trim();
+    
+    // Comandos reconocidos
+    if (mensajeUpper === 'MENU' || mensajeUpper === 'MENÚ' || mensajeUpper === '0') {
+      return 'MENU';
     }
-    return this.mostrarMenuPrincipal();
+    if (mensajeUpper === 'VOLVER' || mensajeUpper === 'ATRAS' || mensajeUpper === 'ATRÁS') {
+      return 'VOLVER';
+    }
+    
+    return null;
   }
 }
 
+// Crear instancia singleton para compatibilidad
 export const interactiveMenuProcessor = new InteractiveMenuProcessor();

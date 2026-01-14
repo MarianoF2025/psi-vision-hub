@@ -574,7 +574,7 @@ async function procesarMenuInteractivo(
       return await procesarSeleccionCurso(telefono, cursoId, nombreContacto);
     }
 
-    const resultado = interactiveMenuProcessor.procesar({
+    const resultado = await interactiveMenuProcessor.procesar({
       listReplyId,
       telefono,
     });

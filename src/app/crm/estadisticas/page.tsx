@@ -68,9 +68,14 @@ interface StatsAgente {
 // ============================================
 export default function EstadisticasPage() {
   const { user, profile } = useAuth();
+  const { permisos, cargando: permisosLoading } = usePermissions();
+  
   const emailUsuario = user?.email || '';
   const esAdmin = profile?.rol === 'admin';
-  const tieneAcceso = esAdmin || EMAILS_ADMIN.includes(emailUsuario);
+  
+  // Acceso: admin, emails especiales, o usuarios con inboxes asignados
+  const tieneInboxes = permisos?.inboxes && permisos.inboxes.length > 0;
+  const tieneAcceso = esAdmin || EMAILS_ADMIN.includes(emailUsuario) || tieneInboxes;
 
   const [tab, setTab] = useState<TabType>('wsp4');
   const [periodoAgentes, setPeriodoAgentes] = useState<PeriodoType>('semana');
@@ -102,9 +107,6 @@ export default function EstadisticasPage() {
   });
 
   const [statsAgentes, setStatsAgentes] = useState<StatsAgente[]>([]);
-
-  // Hook de permisos y emails del grupo
-  const { permisos, loading: permisosLoading } = usePermissions();
   const [emailsGrupo, setEmailsGrupo] = useState<string[]>([]);
 
   // ============================================
@@ -210,7 +212,6 @@ export default function EstadisticasPage() {
 
   const cargarStatsVentas = async () => {
     try {
-      // Usar menu_sesiones como fuente (igual que Automatizaciones)
       const { count: leadsHoy } = await supabase
         .from('menu_sesiones')
         .select('*', { count: 'exact', head: true })
@@ -226,14 +227,13 @@ export default function EstadisticasPage() {
         .select('*', { count: 'exact', head: true })
         .gte('created_at', inicioMes);
 
-      // Top anuncios: contar sesiones por anuncio
       const { data: anunciosConfig } = await supabase
         .from('config_cursos_ctwa')
         .select('id, nombre, ad_id, meta_headline, curso_id')
         .eq('activo', true);
 
       const topAnuncios: { nombre: string; ad_id: string; leads: number }[] = [];
-      
+
       if (anunciosConfig) {
         for (const anuncio of anunciosConfig) {
           const { count } = await supabase
@@ -241,7 +241,7 @@ export default function EstadisticasPage() {
             .select('*', { count: 'exact', head: true })
             .eq('curso_id', anuncio.curso_id)
             .eq('origen', 'ctwa');
-          
+
           topAnuncios.push({
             nombre: anuncio.meta_headline || anuncio.nombre || 'Sin nombre',
             ad_id: anuncio.ad_id || '',
@@ -309,14 +309,27 @@ export default function EstadisticasPage() {
       }
 
       const convIds = [...new Set(mensajesActual?.map(m => m.conversacion_id) || [])];
-      const { data: conversaciones } = await supabase
+      
+      // Obtener conversaciones, filtrando por área si no es admin
+      const misInboxes = permisos?.inboxes || [];
+      let convQuery = supabase
         .from('conversaciones')
-        .select('id, linea_origen, contacto_id')
+        .select('id, linea_origen, contacto_id, area')
         .in('id', convIds.length > 0 ? convIds : ['none']);
+      
+      const { data: conversaciones } = await convQuery;
+      
+      // Filtrar conversaciones por área si no es admin
+      const convsFiltradas = esAdmin 
+        ? conversaciones 
+        : conversaciones?.filter(c => misInboxes.includes(c.area) || misInboxes.includes(c.linea_origen));
+      
+      // Solo procesar mensajes de conversaciones filtradas
+      const convIdsFiltrados = new Set(convsFiltradas?.map(c => c.id) || []);
 
       const convLineaMap: Record<string, string> = {};
       const convContactoMap: Record<string, string> = {};
-      conversaciones?.forEach(c => {
+      convsFiltradas?.forEach(c => {
         convLineaMap[c.id] = c.linea_origen || 'wsp4';
         if (c.contacto_id) convContactoMap[c.id] = c.contacto_id;
       });
@@ -330,7 +343,6 @@ export default function EstadisticasPage() {
 
       const contactosGanadosSet = new Set(contactosGanados?.map(c => c.id) || []);
 
-      // NUEVO: Obtener conversaciones ASIGNADAS a cada agente
       const { data: convsAsignadas } = await supabase
         .from('conversaciones')
         .select('id, asignado_a')
@@ -364,6 +376,11 @@ export default function EstadisticasPage() {
         setStatsAgentes([]);
         return;
       }
+      
+      // Filtrar mensajes para solo incluir los de conversaciones permitidas (si no es admin)
+      const mensajesFiltrados = esAdmin 
+        ? mensajesActual 
+        : mensajesActual.filter(m => convIdsFiltrados.has(m.conversacion_id));
 
       const agentesMap: Record<string, {
         nombre: string;
@@ -375,7 +392,7 @@ export default function EstadisticasPage() {
         primerRespuestaPorConv: Record<string, string>;
       }> = {};
 
-      mensajesActual.forEach(m => {
+      mensajesFiltrados.forEach(m => {
         if (m.remitente_id) {
           if (!agentesMap[m.remitente_id]) {
             agentesMap[m.remitente_id] = {
@@ -452,11 +469,59 @@ export default function EstadisticasPage() {
       });
 
       agentesStats.sort((a, b) => b.mensajesEnviados - a.mensajesEnviados);
-      // Filtrar según rol: admin ve todos, agente ve solo sus métricas
-      const statsFiltradas = esAdmin ? agentesStats : agentesStats.filter(a => a.id === emailUsuario);
+      
+      // Filtrar según rol: admin ve todos, agente ve solo usuarios con inboxes compartidos
+      const statsFiltradas = esAdmin ? agentesStats : agentesStats.filter(a => emailsGrupo.includes(a.id));
       setStatsAgentes(statsFiltradas);
     } catch (error) {
       console.error('Error cargando stats Agentes:', error);
+    }
+  };
+
+  // Cargar emails de usuarios que comparten al menos un inbox
+  const cargarEmailsGrupo = async () => {
+    if (esAdmin) {
+      return;
+    }
+
+    if (!permisos || !user?.email) {
+      setEmailsGrupo([user?.email || '']);
+      return;
+    }
+
+    try {
+      const misInboxes = permisos.inboxes || [];
+      if (misInboxes.length === 0) {
+        setEmailsGrupo([user.email]);
+        return;
+      }
+
+      const { data: usuarios, error } = await supabase
+        .from('user')
+        .select('email, permisos')
+        .not('permisos', 'is', null);
+
+      if (error || !usuarios) {
+        console.error('Error cargando usuarios para filtro:', error);
+        setEmailsGrupo([user.email]);
+        return;
+      }
+
+      const emailsConInboxCompartido = usuarios
+        .filter(u => {
+          const inboxesUsuario = u.permisos?.inboxes || [];
+          return inboxesUsuario.some((inbox: string) => misInboxes.includes(inbox));
+        })
+        .map(u => u.email);
+
+      if (!emailsConInboxCompartido.includes(user.email)) {
+        emailsConInboxCompartido.push(user.email);
+      }
+
+      setEmailsGrupo(emailsConInboxCompartido);
+    } catch (err) {
+      console.error('Error en cargarEmailsGrupo:', err);
+      setEmailsGrupo([user?.email || '']);
     }
   };
 
@@ -472,19 +537,41 @@ export default function EstadisticasPage() {
     setRefreshing(false);
   };
 
+  // Cargar emails del grupo cuando cambien los permisos
   useEffect(() => {
-    if (tieneAcceso) {
-      cargarTodo();
-    } else {
-      setLoading(false);
+    if (!permisosLoading && permisos) {
+      cargarEmailsGrupo();
     }
-  }, [tieneAcceso]);
+  }, [permisos, permisosLoading]);
+
+  // Ajustar tab inicial si el usuario no tiene acceso al tab actual
+  useEffect(() => {
+    if (!permisosLoading) {
+      const misInboxes = permisos?.inboxes || [];
+      const puedeVerWsp4 = esAdmin;
+      const puedeVerVentas = esAdmin || misInboxes.includes('ventas') || misInboxes.includes('ventas_api');
+      
+      if (tab === 'wsp4' && !puedeVerWsp4) {
+        setTab(puedeVerVentas ? 'ventas_api' : 'agentes');
+      } else if (tab === 'ventas_api' && !puedeVerVentas) {
+        setTab('agentes');
+      }
+    }
+  }, [permisosLoading, esAdmin, permisos]);
 
   useEffect(() => {
-    if (tieneAcceso && periodoAgentes !== 'personalizado') {
+    if (tieneAcceso && !permisosLoading) {
+      cargarTodo();
+    } else if (!permisosLoading) {
+      setLoading(false);
+    }
+  }, [tieneAcceso, permisosLoading]);
+
+  useEffect(() => {
+    if (tieneAcceso && !permisosLoading && periodoAgentes !== 'personalizado') {
       cargarStatsAgentes();
     }
-  }, [periodoAgentes]);
+  }, [periodoAgentes, permisos, permisosLoading]);
 
   const aplicarFechasPersonalizadas = () => {
     if (fechaDesde && fechaHasta) {
@@ -792,9 +879,16 @@ export default function EstadisticasPage() {
     return colores[linea] || 'bg-slate-400';
   };
 
+  // Tabs filtrados según permisos
+  const misInboxes = permisos?.inboxes || [];
+  const puedeVerVentas = esAdmin || misInboxes.includes('ventas') || misInboxes.includes('ventas_api');
+  
   const TABS = [
-    { id: 'wsp4' as TabType, nombre: 'WSP4 Router', icono: Phone },
-    { id: 'ventas_api' as TabType, nombre: 'Ventas API', icono: Megaphone },
+    // WSP4 Router solo para admins
+    ...(esAdmin ? [{ id: 'wsp4' as TabType, nombre: 'WSP4 Router', icono: Phone }] : []),
+    // Ventas API para admins o usuarios con inbox ventas
+    ...(puedeVerVentas ? [{ id: 'ventas_api' as TabType, nombre: 'Ventas API', icono: Megaphone }] : []),
+    // Por Agente para todos
     { id: 'agentes' as TabType, nombre: 'Por Agente', icono: UserCheck },
   ];
 
@@ -808,6 +902,14 @@ export default function EstadisticasPage() {
   // ============================================
   // VERIFICACIÓN DE ACCESO
   // ============================================
+  if (permisosLoading) {
+    return (
+      <div className="flex-1 bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">
+        <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   if (!tieneAcceso) {
     return (
       <div className="flex-1 bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-6">

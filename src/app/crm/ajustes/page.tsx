@@ -7,11 +7,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNotificationContext } from '@/providers/NotificationProvider';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import { User, Bell, MessageSquare, Shield, Database, ChevronRight, Clock, Loader2, Phone, Eye, EyeOff, Check, ExternalLink } from 'lucide-react';
+import { 
+  User, Bell, MessageSquare, Shield, Database, ChevronRight, Clock, 
+  Loader2, Phone, Eye, EyeOff, Check, ExternalLink, Menu, Plus, 
+  ChevronUp, ChevronDown, Edit2, Trash2, Save, X
+} from 'lucide-react';
 
 const SECCIONES = [
   { id: 'perfil', nombre: 'Mi Perfil', icono: User, descripcion: 'Nombre y preferencias' },
   { id: 'notificaciones', nombre: 'Notificaciones', icono: Bell, descripcion: 'Sonidos y alertas' },
+  { id: 'menu-router', nombre: 'Menú Router WSP4', icono: Menu, descripcion: 'Configurar menú interactivo' },
   { id: 'autorespuestas', nombre: 'Autorespuestas', icono: Clock, descripcion: 'Mensajes automáticos por horario' },
   { id: 'respuestas', nombre: 'Respuestas Rápidas', icono: MessageSquare, descripcion: 'Plantillas de mensajes' },
   { id: 'seguridad', nombre: 'Seguridad', icono: Shield, descripcion: 'Cambiar contraseña' },
@@ -36,6 +41,34 @@ interface ConfigAutorespuesta {
   corte_activo: boolean;
   corte_timestamp: string | null;
   corte_usuario_nombre: string | null;
+}
+
+interface MenuConfig {
+  id: string;
+  nombre: string;
+  header: string;
+  body: string;
+  footer: string;
+  button_text: string;
+  tipo_menu: string;
+  activo: boolean;
+  parent_menu_id?: string;
+}
+
+interface MenuOpcion {
+  id: string;
+  menu_config_id: string;
+  orden: number;
+  opcion_id: string;
+  emoji: string;
+  titulo: string;
+  descripcion: string;
+  tipo_accion: string;
+  submenu_id?: string;
+  area_destino?: string;
+  subetiqueta?: string;
+  mensaje_contexto?: string;
+  activo: boolean;
 }
 
 export default function AjustesPage() {
@@ -71,6 +104,16 @@ export default function AjustesPage() {
   const [savingAuto, setSavingAuto] = useState(false);
   const [cortando, setCortando] = useState(false);
 
+  // Estados para menú router
+  const [menus, setMenus] = useState<MenuConfig[]>([]);
+  const [opciones, setOpciones] = useState<MenuOpcion[]>([]);
+  const [menuSeleccionado, setMenuSeleccionado] = useState<string>('');
+  const [loadingMenus, setLoadingMenus] = useState(false);
+  const [savingMenu, setSavingMenu] = useState(false);
+  const [editandoMenu, setEditandoMenu] = useState<MenuConfig | null>(null);
+  const [editandoOpcion, setEditandoOpcion] = useState<MenuOpcion | null>(null);
+  const [nuevaOpcion, setNuevaOpcion] = useState(false);
+
   // Cargar nombre del perfil
   useEffect(() => {
     if (usuario?.nombre) {
@@ -101,6 +144,20 @@ export default function AjustesPage() {
     }
   }, [seccionActiva, lineaSeleccionada]);
 
+  // Cargar menús cuando se selecciona la sección
+  useEffect(() => {
+    if (seccionActiva === 'menu-router') {
+      cargarMenus();
+    }
+  }, [seccionActiva]);
+
+  // Cargar opciones cuando cambia el menú seleccionado
+  useEffect(() => {
+    if (menuSeleccionado) {
+      cargarOpciones(menuSeleccionado);
+    }
+  }, [menuSeleccionado]);
+
   // Redirigir a respuestas rápidas
   useEffect(() => {
     if (seccionActiva === 'respuestas') {
@@ -113,14 +170,12 @@ export default function AjustesPage() {
     if (!nombrePerfil.trim()) return;
     setGuardandoPerfil(true);
     try {
-      // Actualizar user_metadata en Supabase Auth
       const { error } = await supabase.auth.updateUser({
         data: { nombre: nombrePerfil.trim() }
       });
 
       if (error) throw error;
 
-      // Actualizar el store local
       if (usuario) {
         setUsuario({ ...usuario, nombre: nombrePerfil.trim() });
       }
@@ -258,6 +313,178 @@ export default function AjustesPage() {
     }
   };
 
+  // Funciones para menú router
+  const cargarMenus = async () => {
+    setLoadingMenus(true);
+    try {
+      const { data, error } = await supabase
+        .from('router_menu_config')
+        .select('*')
+        .order('tipo_menu');
+
+      if (error) throw error;
+      setMenus(data || []);
+      
+      // Seleccionar el menú principal por defecto
+      const menuPrincipal = data?.find(m => m.tipo_menu === 'principal');
+      if (menuPrincipal && !menuSeleccionado) {
+        setMenuSeleccionado(menuPrincipal.id);
+      }
+    } catch (error) {
+      console.error('Error cargando menús:', error);
+    } finally {
+      setLoadingMenus(false);
+    }
+  };
+
+  const cargarOpciones = async (menuId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('router_menu_opciones')
+        .select('*')
+        .eq('menu_config_id', menuId)
+        .order('orden');
+
+      if (error) throw error;
+      setOpciones(data || []);
+    } catch (error) {
+      console.error('Error cargando opciones:', error);
+    }
+  };
+
+  const guardarMenu = async () => {
+    if (!editandoMenu) return;
+    setSavingMenu(true);
+    try {
+      const { error } = await supabase
+        .from('router_menu_config')
+        .update({
+          header: editandoMenu.header,
+          body: editandoMenu.body,
+          footer: editandoMenu.footer,
+          button_text: editandoMenu.button_text,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editandoMenu.id);
+
+      if (error) throw error;
+      await cargarMenus();
+      setEditandoMenu(null);
+      alert('Menú actualizado correctamente');
+    } catch (error) {
+      console.error('Error guardando menú:', error);
+      alert('Error al guardar el menú');
+    } finally {
+      setSavingMenu(false);
+    }
+  };
+
+  const guardarOpcion = async () => {
+    if (!editandoOpcion) return;
+    try {
+      if (editandoOpcion.id === 'new') {
+        // Nueva opción
+        const { error } = await supabase
+          .from('router_menu_opciones')
+          .insert({
+            menu_config_id: menuSeleccionado,
+            orden: opciones.length + 1,
+            opcion_id: editandoOpcion.opcion_id,
+            emoji: editandoOpcion.emoji,
+            titulo: editandoOpcion.titulo,
+            descripcion: editandoOpcion.descripcion,
+            tipo_accion: editandoOpcion.tipo_accion,
+            area_destino: editandoOpcion.area_destino,
+            subetiqueta: editandoOpcion.subetiqueta,
+            mensaje_contexto: editandoOpcion.mensaje_contexto,
+            activo: true,
+          });
+        if (error) throw error;
+      } else {
+        // Actualizar opción existente
+        const { error } = await supabase
+          .from('router_menu_opciones')
+          .update({
+            emoji: editandoOpcion.emoji,
+            titulo: editandoOpcion.titulo,
+            descripcion: editandoOpcion.descripcion,
+            tipo_accion: editandoOpcion.tipo_accion,
+            area_destino: editandoOpcion.area_destino,
+            subetiqueta: editandoOpcion.subetiqueta,
+            mensaje_contexto: editandoOpcion.mensaje_contexto,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', editandoOpcion.id);
+        if (error) throw error;
+      }
+      
+      await cargarOpciones(menuSeleccionado);
+      setEditandoOpcion(null);
+      setNuevaOpcion(false);
+      alert('Opción guardada correctamente');
+    } catch (error) {
+      console.error('Error guardando opción:', error);
+      alert('Error al guardar la opción');
+    }
+  };
+
+  const toggleOpcionActiva = async (opcion: MenuOpcion) => {
+    try {
+      const { error } = await supabase
+        .from('router_menu_opciones')
+        .update({ activo: !opcion.activo })
+        .eq('id', opcion.id);
+
+      if (error) throw error;
+      await cargarOpciones(menuSeleccionado);
+    } catch (error) {
+      console.error('Error cambiando estado:', error);
+    }
+  };
+
+  const moverOpcion = async (opcion: MenuOpcion, direccion: 'up' | 'down') => {
+    const index = opciones.findIndex(o => o.id === opcion.id);
+    if ((direccion === 'up' && index === 0) || (direccion === 'down' && index === opciones.length - 1)) {
+      return;
+    }
+
+    const newIndex = direccion === 'up' ? index - 1 : index + 1;
+    const opcionIntercambio = opciones[newIndex];
+
+    try {
+      await supabase
+        .from('router_menu_opciones')
+        .update({ orden: opcion.orden })
+        .eq('id', opcionIntercambio.id);
+
+      await supabase
+        .from('router_menu_opciones')
+        .update({ orden: opcionIntercambio.orden })
+        .eq('id', opcion.id);
+
+      await cargarOpciones(menuSeleccionado);
+    } catch (error) {
+      console.error('Error moviendo opción:', error);
+    }
+  };
+
+  const eliminarOpcion = async (opcionId: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta opción?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('router_menu_opciones')
+        .delete()
+        .eq('id', opcionId);
+
+      if (error) throw error;
+      await cargarOpciones(menuSeleccionado);
+    } catch (error) {
+      console.error('Error eliminando opción:', error);
+      alert('Error al eliminar la opción');
+    }
+  };
+
   const getFranjaActual = (): { numero: number; nombre: string; color: string } => {
     const ahora = new Date();
     const hora = ahora.getHours();
@@ -313,6 +540,7 @@ export default function AjustesPage() {
 
   const franja = getFranjaActual();
   const lineaActual = LINEAS_AUTORESPUESTA.find(l => l.id === lineaSeleccionada);
+  const menuActual = menus.find(m => m.id === menuSeleccionado);
 
   return (
     <div className="flex-1 flex bg-slate-50 dark:bg-slate-950 overflow-hidden">
@@ -421,6 +649,518 @@ export default function AjustesPage() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* MENÚ ROUTER WSP4 */}
+        {seccionActiva === 'menu-router' && (
+          <div className="max-w-5xl">
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-6">Menú Router WSP4</h2>
+            
+            {loadingMenus ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+              </div>
+            ) : (
+              <>
+                {/* Selector de menú */}
+                <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 shadow-sm border border-slate-200 dark:border-slate-800 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Menu size={18} className="text-slate-500" />
+                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400 mr-4">Menú:</span>
+                    <div className="flex gap-2 flex-wrap">
+                      {menus.map((menu) => (
+                        <button
+                          key={menu.id}
+                          onClick={() => setMenuSeleccionado(menu.id)}
+                          className={cn(
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                            menuSeleccionado === menu.id
+                              ? 'bg-indigo-500 text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          )}
+                        >
+                          {menu.nombre}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {menuActual && (
+                  <>
+                    {/* Configuración del menú */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800 mb-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-medium text-slate-800 dark:text-white">Configuración del Menú</h3>
+                        {editandoMenu?.id === menuActual.id ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={guardarMenu}
+                              disabled={savingMenu}
+                              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                            >
+                              {savingMenu ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save size={16} />}
+                              Guardar
+                            </button>
+                            <button
+                              onClick={() => setEditandoMenu(null)}
+                              className="px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditandoMenu(menuActual)}
+                            className="p-2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                        )}
+                      </div>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Header (opcional)
+                          </label>
+                          <input
+                            type="text"
+                            value={editandoMenu?.id === menuActual.id ? editandoMenu.header : menuActual.header}
+                            onChange={(e) => editandoMenu && setEditandoMenu({ ...editandoMenu, header: e.target.value })}
+                            disabled={editandoMenu?.id !== menuActual.id}
+                            className="w-full px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border-0 text-slate-800 dark:text-white disabled:opacity-60"
+                            placeholder="Ej: ¡Hola! 👋"
+                          />
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            Cuerpo del mensaje
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={editandoMenu?.id === menuActual.id ? editandoMenu.body : menuActual.body}
+                            onChange={(e) => editandoMenu && setEditandoMenu({ ...editandoMenu, body: e.target.value })}
+                            disabled={editandoMenu?.id !== menuActual.id}
+                            className="w-full px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border-0 text-slate-800 dark:text-white disabled:opacity-60 resize-none"
+                            placeholder="Mensaje principal del menú"
+                          />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                              Footer (opcional)
+                            </label>
+                            <input
+                              type="text"
+                              value={editandoMenu?.id === menuActual.id ? editandoMenu.footer : menuActual.footer}
+                              onChange={(e) => editandoMenu && setEditandoMenu({ ...editandoMenu, footer: e.target.value })}
+                              disabled={editandoMenu?.id !== menuActual.id}
+                              className="w-full px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border-0 text-slate-800 dark:text-white disabled:opacity-60"
+                              placeholder="Ej: Elegí una opción"
+                            />
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                              Texto del botón
+                            </label>
+                            <input
+                              type="text"
+                              value={editandoMenu?.id === menuActual.id ? editandoMenu.button_text : menuActual.button_text}
+                              onChange={(e) => editandoMenu && setEditandoMenu({ ...editandoMenu, button_text: e.target.value })}
+                              disabled={editandoMenu?.id !== menuActual.id}
+                              className="w-full px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border-0 text-slate-800 dark:text-white disabled:opacity-60"
+                              placeholder="Ej: Ver opciones"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Opciones del menú */}
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-medium text-slate-800 dark:text-white">Opciones del Menú</h3>
+                        {!nuevaOpcion && (
+                          <button
+                            onClick={() => {
+                              setNuevaOpcion(true);
+                              setEditandoOpcion({
+                                id: 'new',
+                                menu_config_id: menuSeleccionado,
+                                orden: opciones.length + 1,
+                                opcion_id: '',
+                                emoji: '',
+                                titulo: '',
+                                descripcion: '',
+                                tipo_accion: 'derivar',
+                                activo: true,
+                              });
+                            }}
+                            className="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 flex items-center gap-2"
+                          >
+                            <Plus size={16} />
+                            Nueva Opción
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Formulario de nueva opción */}
+                      {nuevaOpcion && editandoOpcion?.id === 'new' && (
+                        <div className="mb-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                          <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                ID de opción *
+                              </label>
+                              <input
+                                type="text"
+                                value={editandoOpcion.opcion_id}
+                                onChange={(e) => setEditandoOpcion({ ...editandoOpcion, opcion_id: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                placeholder="Ej: admin_nueva"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                Tipo de acción *
+                              </label>
+                              <select
+                                value={editandoOpcion.tipo_accion}
+                                onChange={(e) => setEditandoOpcion({ ...editandoOpcion, tipo_accion: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                              >
+                                <option value="derivar">Derivar</option>
+                                <option value="submenu">Submenú</option>
+                                <option value="volver">Volver</option>
+                                <option value="cursos_dinamico">Cursos Dinámico</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-4 mb-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                Emoji
+                              </label>
+                              <input
+                                type="text"
+                                value={editandoOpcion.emoji}
+                                onChange={(e) => setEditandoOpcion({ ...editandoOpcion, emoji: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                placeholder="🎯"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                Título *
+                              </label>
+                              <input
+                                type="text"
+                                value={editandoOpcion.titulo}
+                                onChange={(e) => setEditandoOpcion({ ...editandoOpcion, titulo: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                placeholder="Título de la opción"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                Descripción
+                              </label>
+                              <input
+                                type="text"
+                                value={editandoOpcion.descripcion}
+                                onChange={(e) => setEditandoOpcion({ ...editandoOpcion, descripcion: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                placeholder="Descripción breve"
+                              />
+                            </div>
+                          </div>
+
+                          {editandoOpcion.tipo_accion === 'derivar' && (
+                            <div className="grid grid-cols-3 gap-4 mb-4">
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                  Área destino
+                                </label>
+                                <select
+                                  value={editandoOpcion.area_destino || ''}
+                                  onChange={(e) => setEditandoOpcion({ ...editandoOpcion, area_destino: e.target.value })}
+                                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                >
+                                  <option value="">Seleccionar...</option>
+                                  <option value="admin">Administración</option>
+                                  <option value="alumnos">Alumnos</option>
+                                  <option value="ventas">Ventas</option>
+                                  <option value="comunidad">Comunidad</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                  Subetiqueta
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editandoOpcion.subetiqueta || ''}
+                                  onChange={(e) => setEditandoOpcion({ ...editandoOpcion, subetiqueta: e.target.value })}
+                                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                  placeholder="Ej: pagos"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                  Contexto
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editandoOpcion.mensaje_contexto || ''}
+                                  onChange={(e) => setEditandoOpcion({ ...editandoOpcion, mensaje_contexto: e.target.value })}
+                                  className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                  placeholder="Mensaje de contexto"
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setNuevaOpcion(false);
+                                setEditandoOpcion(null);
+                              }}
+                              className="px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600"
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={guardarOpcion}
+                              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                            >
+                              <Save size={16} />
+                              Guardar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Lista de opciones */}
+                      <div className="space-y-2">
+                        {opciones.map((opcion, index) => (
+                          <div
+                            key={opcion.id}
+                            className={cn(
+                              'flex items-center gap-3 p-3 rounded-lg',
+                              opcion.activo 
+                                ? 'bg-slate-50 dark:bg-slate-800' 
+                                : 'bg-slate-100 dark:bg-slate-700 opacity-60'
+                            )}
+                          >
+                            <div className="flex flex-col gap-1">
+                              <button
+                                onClick={() => moverOpcion(opcion, 'up')}
+                                disabled={index === 0}
+                                className="p-1 text-slate-400 hover:text-slate-600 disabled:opacity-30"
+                              >
+                                <ChevronUp size={14} />
+                              </button>
+                              <button
+                                onClick={() => moverOpcion(opcion, 'down')}
+                                disabled={index === opciones.length - 1}
+                                className="p-1 text-slate-400 hover:text-slate-600 disabled:opacity-30"
+                              >
+                                <ChevronDown size={14} />
+                              </button>
+                            </div>
+
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">{opcion.emoji}</span>
+                                <span className="font-medium text-slate-800 dark:text-white">{opcion.titulo}</span>
+                                <span className="text-xs px-2 py-1 bg-slate-200 dark:bg-slate-600 rounded">
+                                  {opcion.tipo_accion}
+                                </span>
+                                {opcion.area_destino && (
+                                  <span className="text-xs text-slate-500">→ {opcion.area_destino}</span>
+                                )}
+                              </div>
+                              {opcion.descripcion && (
+                                <p className="text-sm text-slate-500 mt-1">{opcion.descripcion}</p>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => toggleOpcionActiva(opcion)}
+                                className={cn(
+                                  'w-10 h-5 rounded-full relative transition-colors',
+                                  opcion.activo ? 'bg-green-500' : 'bg-slate-300'
+                                )}
+                              >
+                                <div className={cn(
+                                  'w-4 h-4 rounded-full bg-white shadow absolute top-0.5 transition-transform',
+                                  opcion.activo ? 'translate-x-5' : 'translate-x-0.5'
+                                )} />
+                              </button>
+
+                              <button
+                                onClick={() => setEditandoOpcion(opcion)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+
+                              <button
+                                onClick={() => eliminarOpcion(opcion.id)}
+                                className="p-1.5 text-red-400 hover:text-red-600"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+
+                        {opciones.length === 0 && !nuevaOpcion && (
+                          <p className="text-center py-8 text-slate-500">
+                            No hay opciones configuradas para este menú
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Modal de edición de opción */}
+                      {editandoOpcion && editandoOpcion.id !== 'new' && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 max-w-2xl w-full mx-4">
+                            <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-4">
+                              Editar Opción
+                            </h3>
+
+                            <div className="space-y-4">
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Emoji
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editandoOpcion.emoji}
+                                    onChange={(e) => setEditandoOpcion({ ...editandoOpcion, emoji: e.target.value })}
+                                    className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Título
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editandoOpcion.titulo}
+                                    onChange={(e) => setEditandoOpcion({ ...editandoOpcion, titulo: e.target.value })}
+                                    className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                  Descripción
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editandoOpcion.descripcion}
+                                  onChange={(e) => setEditandoOpcion({ ...editandoOpcion, descripcion: e.target.value })}
+                                  className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                  Tipo de acción
+                                </label>
+                                <select
+                                  value={editandoOpcion.tipo_accion}
+                                  onChange={(e) => setEditandoOpcion({ ...editandoOpcion, tipo_accion: e.target.value })}
+                                  className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                >
+                                  <option value="derivar">Derivar</option>
+                                  <option value="submenu">Submenú</option>
+                                  <option value="volver">Volver</option>
+                                  <option value="cursos_dinamico">Cursos Dinámico</option>
+                                </select>
+                              </div>
+
+                              {editandoOpcion.tipo_accion === 'derivar' && (
+                                <>
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                        Área destino
+                                      </label>
+                                      <select
+                                        value={editandoOpcion.area_destino || ''}
+                                        onChange={(e) => setEditandoOpcion({ ...editandoOpcion, area_destino: e.target.value })}
+                                        className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                      >
+                                        <option value="">Seleccionar...</option>
+                                        <option value="admin">Administración</option>
+                                        <option value="alumnos">Alumnos</option>
+                                        <option value="ventas">Ventas</option>
+                                        <option value="comunidad">Comunidad</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                        Subetiqueta
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={editandoOpcion.subetiqueta || ''}
+                                        onChange={(e) => setEditandoOpcion({ ...editandoOpcion, subetiqueta: e.target.value })}
+                                        className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                      Mensaje de contexto
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editandoOpcion.mensaje_contexto || ''}
+                                      onChange={(e) => setEditandoOpcion({ ...editandoOpcion, mensaje_contexto: e.target.value })}
+                                      className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-white"
+                                    />
+                                  </div>
+                                </>
+                              )}
+
+                              <div className="flex justify-end gap-2 pt-4">
+                                <button
+                                  onClick={() => setEditandoOpcion(null)}
+                                  className="px-4 py-2 bg-slate-500 text-white rounded-lg hover:bg-slate-600"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  onClick={guardarOpcion}
+                                  className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                                >
+                                  <Save size={16} />
+                                  Guardar
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         )}
 
