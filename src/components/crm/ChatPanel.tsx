@@ -7,10 +7,11 @@ import { supabase } from '@/lib/supabase';
 import { type Mensaje, type InboxType, INBOXES } from '@/types/crm';
 import { cn, formatMessageTime, getInitials } from '@/lib/utils';
 import { LinkPreview, extractUrls } from './LinkPreview';
-import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft, ChevronUp, ChevronDown, Users } from 'lucide-react';
 
 interface RespuestaRapida { id: string; atajo: string; titulo: string; contenido: string; }
 interface ArchivoSeleccionado { file: File; preview: string | null; tipo: 'image' | 'video' | 'document' | 'audio'; }
+interface AgenteDisponible { email: string; nombre: string; es_admin: boolean; inboxes: string[]; }
 
 interface MensajeCompleto extends Mensaje {
   estado_envio?: 'sent' | 'delivered' | 'read';
@@ -101,6 +102,13 @@ export default function ChatPanel() {
   const [motivoDerivacion, setMotivoDerivacion] = useState('');
   const [derivando, setDerivando] = useState(false);
 
+  // Estados para asignación de agentes
+  const [mostrarModalAsignar, setMostrarModalAsignar] = useState(false);
+  const [agentesDisponibles, setAgentesDisponibles] = useState<AgenteDisponible[]>([]);
+  const [agenteSeleccionado, setAgenteSeleccionado] = useState<string | null>(null);
+  const [asignando, setAsignando] = useState(false);
+  const [puedeAsignar, setPuedeAsignar] = useState(false);
+
   // Estado para etiquetas del contacto (desde contacto_etiquetas + etiquetas_globales)
   const [etiquetasContacto, setEtiquetasContacto] = useState<{id: string; nombre: string; color: string}[]>([]);
 
@@ -122,6 +130,64 @@ export default function ChatPanel() {
   const menuAccionesRef = useRef<HTMLDivElement>(null);
   const busquedaInputRef = useRef<HTMLInputElement>(null);
   const mensajeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Cargar permisos del usuario y agentes disponibles
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const cargarPermisos = async () => {
+      // Obtener permisos del usuario actual
+      const { data: miPermiso } = await supabase
+        .from('user_permissions')
+        .select('es_admin, inboxes')
+        .eq('email', user.email)
+        .eq('activo', true)
+        .single();
+
+      if (!miPermiso) {
+        setPuedeAsignar(false);
+        return;
+      }
+
+      const esAdmin = miPermiso.es_admin;
+      const esMariana = user.email === 'myuvone.psi@gmail.com';
+
+      // Solo admins y Mariana pueden asignar
+      if (!esAdmin && !esMariana) {
+        setPuedeAsignar(false);
+        return;
+      }
+
+      setPuedeAsignar(true);
+
+      // Cargar agentes según permisos
+      const { data: todosAgentes } = await supabase
+        .from('user_permissions')
+        .select('email, nombre, es_admin, inboxes')
+        .eq('activo', true)
+        .order('nombre');
+
+      if (!todosAgentes) return;
+
+      let agentesFiltrados: AgenteDisponible[];
+
+      if (esAdmin) {
+        // Admins ven todos los agentes
+        agentesFiltrados = todosAgentes;
+      } else if (esMariana) {
+        // Mariana solo ve agentes de Alumnos/Comunidad (Fiamma y ella misma)
+        agentesFiltrados = todosAgentes.filter(a => 
+          a.inboxes?.includes('alumnos') || a.inboxes?.includes('comunidad')
+        );
+      } else {
+        agentesFiltrados = [];
+      }
+
+      setAgentesDisponibles(agentesFiltrados);
+    };
+
+    cargarPermisos();
+  }, [user?.email]);
 
   // Cargar etiquetas del contacto
   useEffect(() => {
@@ -297,6 +363,53 @@ export default function ChatPanel() {
       alert('Error al derivar la conversación');
     }
     setDerivando(false);
+  };
+
+  // Asignar conversación a un agente específico
+  const asignarAAgente = async () => {
+    if (!conversacionActual || !agenteSeleccionado || asignando) return;
+
+    setAsignando(true);
+    try {
+      const agente = agentesDisponibles.find(a => a.email === agenteSeleccionado);
+      if (!agente) {
+        alert('Agente no encontrado');
+        setAsignando(false);
+        return;
+      }
+
+      await supabase.from('conversaciones').update({
+        asignado_a: agente.email,
+        asignado_nombre: agente.nombre,
+        asignado_ts: new Date().toISOString()
+      }).eq('id', conversacionActual.id);
+
+      // Insertar mensaje de sistema
+      await supabase.from('mensajes').insert({
+        conversacion_id: conversacionActual.id,
+        mensaje: `👤 Conversación asignada a ${agente.nombre}`,
+        tipo: 'text',
+        direccion: 'entrante',
+        remitente_tipo: 'sistema',
+        remitente_nombre: 'Sistema'
+      });
+
+      setConversacionActual({
+        ...conversacionActual,
+        asignado_a: agente.email,
+        asignado_nombre: agente.nombre,
+        asignado_ts: new Date().toISOString()
+      });
+
+      // Cerrar modal y limpiar
+      setMostrarModalAsignar(false);
+      setMostrarMenuAcciones(false);
+      setAgenteSeleccionado(null);
+    } catch (error) {
+      console.error('Error al asignar:', error);
+      alert('Error al asignar la conversación');
+    }
+    setAsignando(false);
   };
 
   const tomarConversacion = async () => {
@@ -1006,6 +1119,15 @@ export default function ChatPanel() {
                         <ArrowRightLeft size={16} className="text-indigo-500" />
                         Derivar a otra área
                       </button>
+                      {puedeAsignar && (
+                        <button
+                          onClick={() => { setMostrarModalAsignar(true); setMostrarMenuAcciones(false); }}
+                          className="w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 text-[13px] text-slate-700 dark:text-slate-200"
+                        >
+                          <Users size={16} className="text-emerald-500" />
+                          Asignar a agente
+                        </button>
+                      )}
                       <div className="border-t border-slate-100 dark:border-slate-700" />
                       <button
                         onClick={() => { setModoBusqueda(true); setMostrarMenuAcciones(false); }}
@@ -1115,6 +1237,95 @@ export default function ChatPanel() {
                     <>
                       <ArrowRightLeft size={16} />
                       Derivar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de asignación a agente */}
+      {mostrarModalAsignar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={() => setMostrarModalAsignar(false)}>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <h3 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                <Users size={18} className="text-emerald-500" />
+                Asignar a agente
+              </h3>
+              <button onClick={() => setMostrarModalAsignar(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-md">
+                <X size={18} className="text-slate-500" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                Selecciona el agente al que deseas asignar esta conversación.
+              </p>
+
+              <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                {agentesDisponibles.map(agente => (
+                  <button
+                    key={agente.email}
+                    onClick={() => setAgenteSeleccionado(agente.email)}
+                    className={cn(
+                      "w-full px-3 py-2.5 rounded-lg border-2 flex items-center gap-3 transition-all text-left",
+                      agenteSeleccionado === agente.email
+                        ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600"
+                    )}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-400 to-teal-400 flex items-center justify-center text-white text-xs font-medium flex-shrink-0">
+                      {getInitials(agente.nombre)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={cn("font-medium text-sm", agenteSeleccionado === agente.email ? "text-emerald-700 dark:text-emerald-300" : "text-slate-700 dark:text-slate-200")}>
+                        {agente.nombre}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">{agente.email}</p>
+                    </div>
+                    {agente.es_admin && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-300">
+                        Admin
+                      </span>
+                    )}
+                    {agenteSeleccionado === agente.email && (
+                      <div className="w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMostrarModalAsignar(false)}
+                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-sm font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={asignarAAgente}
+                  disabled={!agenteSeleccionado || asignando}
+                  className={cn(
+                    "flex-1 px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2",
+                    agenteSeleccionado && !asignando
+                      ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                      : "bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed"
+                  )}
+                >
+                  {asignando ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Asignando...
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck size={16} />
+                      Asignar
                     </>
                   )}
                 </button>

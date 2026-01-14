@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { getSupabaseBrowser } from '@/lib/supabase';
 import { useCRMStore } from '@/stores/crm-store';
 
+// Emails con acceso a Vision Hub
+const VISION_HUB_EMAILS = ['marfer1@gmail.com', 'ninadulcich@gmail.com'];
+
 interface Profile {
   id: string;
   email: string;
@@ -24,6 +27,7 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   refreshProfile: () => Promise<void>;
+  tieneAccesoVisionHub: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,6 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { setUsuario } = useCRMStore();
   const supabase = getSupabaseBrowser();
+
+  const tieneAccesoVisionHub = user?.email ? VISION_HUB_EMAILS.includes(user.email) : false;
 
   const loadProfile = useCallback(async (authUser: User) => {
     const nombreFromMetadata = authUser.user_metadata?.nombre;
@@ -106,7 +112,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         return { error: error.message };
       }
-      window.location.href = '/';
+      
+      // Redirigir según email
+      if (VISION_HUB_EMAILS.includes(email.toLowerCase())) {
+        window.location.href = '/inicio';
+      } else {
+        window.location.href = '/crm';
+      }
       return { error: null };
     } catch (err) {
       return { error: 'Error de conexión. Intenta de nuevo.' };
@@ -149,7 +161,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [supabase]);
 
   return (
-    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, resetPassword, updatePassword, refreshProfile }}>
+    <AuthContext.Provider value={{ user, profile, session, loading, signIn, signOut, resetPassword, updatePassword, refreshProfile, tieneAccesoVisionHub }}>
       {children}
     </AuthContext.Provider>
   );
