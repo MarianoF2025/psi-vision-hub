@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect } from 'react';
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCRMStore } from '@/stores/crm-store';
@@ -7,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard, Bot } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
@@ -83,8 +86,45 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
   const { esAdmin, puedeVerInbox, cargando: cargandoPermisos } = usePermissions();
-  const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, sidebarExpandido, toggleSidebar, chatbotAbierto, toggleChatbot } = useCRMStore();
+  const { darkMode, toggleDarkMode, inboxActual, setInboxActual, contadores, setContador, sidebarExpandido, toggleSidebar, chatbotAbierto, toggleChatbot } = useCRMStore();
   const isMainChat = pathname === '/crm';
+
+  // Cargar contadores de todos los inboxes y mantener actualizado via Realtime
+  useEffect(() => {
+    const cargarContadores = async () => {
+      const { data } = await supabase
+        .from('conversaciones')
+        .select('area, mensajes_no_leidos')
+        .gt('mensajes_no_leidos', 0);
+      
+      if (data) {
+        const contadoresPorArea: Record<string, number> = {};
+        data.forEach(conv => {
+          const area = conv.area || 'wsp4';
+          contadoresPorArea[area] = (contadoresPorArea[area] || 0) + 1;
+        });
+        
+        // Actualizar todos los contadores
+        ['wsp4', 'ventas', 'ventas_api', 'alumnos', 'admin', 'comunidad'].forEach(inbox => {
+          setContador(inbox as any, contadoresPorArea[inbox] || 0);
+        });
+      }
+    };
+
+    cargarContadores();
+
+    // Escuchar cambios en conversaciones (para actualizar contadores)
+    const channel = supabase
+      .channel('sidebar-contadores')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversaciones' }, () => {
+        cargarContadores();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [setContador]);
 
   const userName = user?.user_metadata?.nombre || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuario';
   const userEmail = user?.email || 'Sin email';

@@ -983,10 +983,38 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
 
     const { data: convExistente } = await supabase
       .from('conversaciones')
-      .select('id, router_estado, estado')
+      .select('id, router_estado, estado, ventana_24h_fin')
       .eq('telefono', telNormalizado)
       .eq('linea_origen', 'wsp4')
       .single();
+
+    // === VERIFICAR SI VENTANA 24H EXPIRÓ ===
+    if (convExistente && convExistente.ventana_24h_fin) {
+      const ventanaExpiro = new Date(convExistente.ventana_24h_fin) < new Date();
+      if (ventanaExpiro) {
+        console.log(`[WSP4] Ventana 24h expirada - reseteando conversación y mostrando menú`);
+        
+        // Resetear conversación
+        await supabase
+          .from('conversaciones')
+          .update({
+            estado: 'activa',
+            router_estado: 'menu_principal',
+            menu_actual: 'principal',
+            ventana_24h_activa: true,
+            ventana_24h_fin: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          })
+          .eq('id', convExistente.id);
+        
+        // Guardar mensaje entrante antes de mostrar menú
+        await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
+        
+        // Enviar menú interactivo
+        await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
+        res.json({ success: true, action: 'menu_enviado_ventana_expirada' });
+        return;
+      }
+    }
 
     // === VERIFICAR SI ES COMANDO MENU/VOLVER ===
     const comando = interactiveMenuProcessor.esComandoEspecial(mensaje);

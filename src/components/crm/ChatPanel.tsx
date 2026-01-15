@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import { supabase } from '@/lib/supabase';
 import { type Mensaje, type InboxType, INBOXES } from '@/types/crm';
 import { cn, formatMessageTime, getInitials } from '@/lib/utils';
@@ -71,6 +72,13 @@ export default function ChatPanel() {
   const { conversacionActual, panelInfoAbierto, togglePanelInfo, mensajeEnRespuesta, setMensajeEnRespuesta, setConversacionActual, usuario } = useCRMStore();
   const { user } = useAuth();
   const userId = user?.id || null;
+  const { esAdmin } = usePermissions();
+  
+  // Calcular si puede asignar (Admin o Mariana en Alumnos/Comunidad)
+  const esMariana = user?.email === 'myuvone.psi@gmail.com';
+  const areaActual = conversacionActual?.area;
+  const enAlumnosComunidad = areaActual === 'alumnos' || areaActual === 'comunidad';
+  const puedeAsignar = esAdmin || (esMariana && enAlumnosComunidad);
   const [mensajes, setMensajes] = useState<MensajeCompleto[]>([]);
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -107,7 +115,7 @@ export default function ChatPanel() {
   const [agentesDisponibles, setAgentesDisponibles] = useState<AgenteDisponible[]>([]);
   const [agenteSeleccionado, setAgenteSeleccionado] = useState<string | null>(null);
   const [asignando, setAsignando] = useState(false);
-  const [puedeAsignar, setPuedeAsignar] = useState(false);
+  // puedeAsignar ahora se calcula directamente
 
   // Estado para etiquetas del contacto (desde contacto_etiquetas + etiquetas_globales)
   const [etiquetasContacto, setEtiquetasContacto] = useState<{id: string; nombre: string; color: string}[]>([]);
@@ -145,7 +153,6 @@ export default function ChatPanel() {
         .single();
 
       if (!miPermiso) {
-        setPuedeAsignar(false);
         return;
       }
 
@@ -154,11 +161,8 @@ export default function ChatPanel() {
 
       // Solo admins y Mariana pueden asignar
       if (!esAdmin && !esMariana) {
-        setPuedeAsignar(false);
         return;
       }
-
-      setPuedeAsignar(true);
 
       // Cargar agentes según permisos
       const { data: todosAgentes } = await supabase
@@ -167,7 +171,9 @@ export default function ChatPanel() {
         .eq('activo', true)
         .order('nombre');
 
-      if (!todosAgentes) return;
+      if (!todosAgentes) {
+        return;
+      }
 
       let agentesFiltrados: AgenteDisponible[];
 
@@ -182,7 +188,6 @@ export default function ChatPanel() {
       } else {
         agentesFiltrados = [];
       }
-
       setAgentesDisponibles(agentesFiltrados);
     };
 
@@ -443,6 +448,22 @@ export default function ChatPanel() {
     });
   };
 
+  // Función para asignar conversación a otro agente (Mariana → Fiamma)
+  const asignarConversacion = async (emailDestino: string, nombreDestino: string) => {
+    if (!conversacionActual) return;
+    await supabase.from("conversaciones").update({
+      asignado_a: emailDestino,
+      asignado_nombre: nombreDestino,
+      asignado_ts: new Date().toISOString()
+    }).eq("id", conversacionActual.id);
+    setConversacionActual({
+      ...conversacionActual,
+      asignado_a: emailDestino,
+      asignado_nombre: nombreDestino,
+      asignado_ts: new Date().toISOString()
+    });
+  };
+
   const menuRef = useRef<HTMLDivElement>(null);
 
   const insertarEmoji = (emoji: string) => {
@@ -604,7 +625,7 @@ export default function ChatPanel() {
       const { data } = await supabase.from('vw_mensajes_completos').select('*').eq('conversacion_id', conversacionActual.id).eq('eliminado', false).order('timestamp', { ascending: true });
       if (data) setMensajes(data);
     };
-    const marcarLeido = async () => { await supabase.from('conversaciones').update({ mensajes_no_leidos: 0 }).eq('id', conversacionActual.id); };
+    const marcarLeido = async () => { await supabase.rpc('marcar_como_leidos', { p_conversacion_id: conversacionActual.id }); };
     cargarMensajes();
     marcarLeido();
     const channel = supabase.channel(`chat-${conversacionActual.id}`)
@@ -1094,9 +1115,33 @@ export default function ChatPanel() {
               <div className="flex items-center gap-0.5 flex-shrink-0">
                 <button onClick={() => setModoBusqueda(true)} className="p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><Search size={16} /></button>
                 <button onClick={togglePanelInfo} className={cn('p-1.5 rounded-md transition-colors', panelInfoAbierto ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500')}><User size={16} /></button>
-                {!conversacionActual.asignado_a && <button onClick={tomarConversacion} className="px-2 py-1 border border-emerald-400 text-emerald-600 text-[11px] font-medium rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex items-center gap-1"><UserCheck size={12} /> Tomar</button>}
-                {conversacionActual.asignado_a === user?.email && <button onClick={soltarConversacion} className="px-2 py-1 border border-amber-400 text-amber-600 text-[11px] font-medium rounded-md hover:bg-amber-50 dark:hover:bg-amber-500/10 flex items-center gap-1"><UserMinus size={12} /> Soltar</button>}
-                {conversacionActual.asignado_a && conversacionActual.asignado_a !== user?.email && <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] rounded-md">{conversacionActual.asignado_nombre}</span>}
+                {/* Sistema de asignación con override */}
+                {(() => {
+                  const esMariana = user?.email === 'myuvone.psi@gmail.com';
+                  const areaAlumnosComunidad = conversacionActual.area === 'alumnos' || conversacionActual.area === 'comunidad';
+                  const puedeOverride = esAdmin || (esMariana && areaAlumnosComunidad);
+                  const puedeAsignarFiamma = esMariana && areaAlumnosComunidad;
+                  
+                  if (!conversacionActual.asignado_a) {
+                    return <button onClick={tomarConversacion} className="px-2 py-1 border border-emerald-400 text-emerald-600 text-[11px] font-medium rounded-md hover:bg-emerald-50 dark:hover:bg-emerald-500/10 flex items-center gap-1"><UserCheck size={12} /> Tomar</button>;
+                  }
+                  
+                  if (conversacionActual.asignado_a === user?.email) {
+                    return <button onClick={soltarConversacion} className="px-2 py-1 border border-amber-400 text-amber-600 text-[11px] font-medium rounded-md hover:bg-amber-50 dark:hover:bg-amber-500/10 flex items-center gap-1"><UserMinus size={12} /> Soltar</button>;
+                  }
+                  
+                  return (
+                    <div className="flex items-center gap-1">
+                      <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] rounded-md">{conversacionActual.asignado_nombre}</span>
+                      {puedeOverride && (
+                        <button onClick={() => { if (confirm(`¿Tomar conversación de ${conversacionActual.asignado_nombre}?`)) tomarConversacion(); }} className="px-2 py-1 border border-orange-400 text-orange-600 text-[11px] font-medium rounded-md hover:bg-orange-50 dark:hover:bg-orange-500/10 flex items-center gap-1" title="Override"><UserCheck size={12} /> Override</button>
+                      )}
+                      {puedeAsignarFiamma && conversacionActual.asignado_a !== 'fiamma.psi@gmail.com' && (
+                        <button onClick={() => { if (confirm('¿Asignar a Fiamma?')) asignarConversacion('fiamma.psi@gmail.com', 'Fiamma'); }} className="px-2 py-1 border border-purple-400 text-purple-600 text-[11px] font-medium rounded-md hover:bg-purple-50 dark:hover:bg-purple-500/10 flex items-center gap-1" title="Asignar a Fiamma"><ArrowRightLeft size={12} /> → Fiamma</button>
+                      )}
+                    </div>
+                  );
+                })()}
                 {!conversacionActual.desconectado_wsp4 && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
                 {conversacionActual.desconectado_wsp4 && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
 
