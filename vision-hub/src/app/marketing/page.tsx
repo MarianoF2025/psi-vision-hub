@@ -823,25 +823,38 @@ export default function MarketingPage() {
           </div>
         </div>
 
-        {/* Alertas */}
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-4 border border-amber-100">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="p-1.5 bg-amber-100 rounded-lg"><Zap className="w-4 h-4 text-amber-600" /></div>
-            <h3 className="font-semibold text-gray-900 text-sm">Alertas & Insights</h3>
+        {/* Agente IA */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-4 text-white">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="p-2 bg-gradient-to-br from-[#e63946] to-[#c1121f] rounded-lg">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold">Agente IA</h3>
+              <p className="text-[10px] text-gray-400">Análisis inteligente</p>
+            </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {alertas.filter(a => cursoSeleccionado === 'todos' || a.curso === cursoSeleccionado).map((alerta, index) => (
-              <div key={index} className="flex items-center gap-3 p-2 bg-white/80 rounded-xl">
-                <div className={`p-1 rounded-full ${alerta.tipo === 'warning' ? 'bg-amber-100' : alerta.tipo === 'success' ? 'bg-emerald-100' : 'bg-blue-100'}`}>
-                  {alerta.tipo === 'warning' ? <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> : alerta.tipo === 'success' ? <TrendingUp className="w-3.5 h-3.5 text-emerald-600" /> : <Target className="w-3.5 h-3.5 text-blue-600" />}
+              <div key={index} className="p-3 bg-white/10 rounded-lg border border-white/10">
+                <div className="flex items-start gap-2">
+                  <div className={`mt-0.5 flex-shrink-0 ${alerta.tipo === 'warning' ? 'text-amber-400' : alerta.tipo === 'success' ? 'text-emerald-400' : 'text-blue-400'}`}>
+                    {alerta.tipo === 'warning' ? <AlertTriangle className="w-4 h-4" /> : alerta.tipo === 'success' ? <TrendingUp className="w-4 h-4" /> : <Target className="w-4 h-4" />}
+                  </div>
+                  <div>
+                    <p className={`text-xs font-medium ${alerta.tipo === 'warning' ? 'text-amber-400' : alerta.tipo === 'success' ? 'text-emerald-400' : 'text-blue-400'}`}>
+                      {alerta.tipo === 'warning' ? 'Alerta' : alerta.tipo === 'success' ? 'Destacado' : 'Info'}
+                    </p>
+                    <p className="text-[11px] text-gray-300 mt-1">{alerta.mensaje}</p>
+                  </div>
                 </div>
-                <span className="text-sm text-gray-700 flex-1">{alerta.mensaje}</span>
-                <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                  {cursosData.find(c => c.id === alerta.curso)?.nombre.split(' ')[0]}
-                </span>
               </div>
             ))}
           </div>
+          <button className="w-full mt-4 py-2 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2">
+            <Zap className="w-3.5 h-3.5" />
+            Generar análisis completo
+          </button>
         </div>
       </div>
     </div>

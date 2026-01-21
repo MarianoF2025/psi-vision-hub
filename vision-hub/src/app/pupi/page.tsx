@@ -1,127 +1,374 @@
 'use client';
 
-import { useState } from 'react';
-import { Bot, Send, Sparkles, Lightbulb, TrendingUp, Users, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import {
+  Bot,
+  Send,
+  User,
+  Sparkles,
+  TrendingUp,
+  TrendingDown,
+  AlertTriangle,
+  Lightbulb,
+  BarChart3,
+  RefreshCw,
+  Copy,
+  Check
+} from 'lucide-react';
+
+// ============================================
+// TIPOS
+// ============================================
+
+interface Mensaje {
+  id: string;
+  rol: 'user' | 'assistant';
+  contenido: string;
+  timestamp: Date;
+}
+
+interface SugerenciaRapida {
+  texto: string;
+  icono: React.ElementType;
+}
+
+// ============================================
+// DATOS
+// ============================================
+
+const sugerenciasRapidas: SugerenciaRapida[] = [
+  { texto: '¿Cómo están las ventas este mes?', icono: TrendingUp },
+  { texto: '¿Qué cursos tienen más abandono?', icono: AlertTriangle },
+  { texto: 'Dame un resumen del día', icono: BarChart3 },
+  { texto: '¿Qué acciones me recomendás?', icono: Lightbulb },
+];
+
+const respuestasMock: Record<string, string> = {
+  'ventas': `📊 **Resumen de Ventas - Enero 2025**
+
+- **Leads totales:** 456 (+12% vs mes anterior)
+- **Tasa de conversión:** 14.7%
+- **TTF promedio:** 12 minutos
+- **Ingresos:** $5.7M
+
+**Top performer:** Sofía García con 17.9% de conversión
+
+⚠️ **Atención:** 12 leads llevan +24hs sin contactar. Recomiendo asignarlos urgente.`,
+
+  'abandono': `📉 **Análisis de Abandono por Curso**
+
+Los cursos con mayor tasa de abandono son:
+
+1. **Biodescodificación:** 61% (muy alto)
+2. **Trauma y Disociación:** 58%
+3. **Neurociencias:** 55%
+
+El promedio general es 54%.
+
+💡 **Recomendación:** Implementar seguimiento proactivo en las primeras 3 cuotas. Esto reduce abandono hasta 25% según datos históricos.`,
+
+  'resumen': `☀️ **Buenos días! Resumen del día**
+
+**🟢 Positivo:**
+- Ingresos +18% vs mismo día mes anterior
+- 3 inscripciones nuevas en AT
+- Sofía cerró 2 ventas esta mañana
+
+**🟡 Atención:**
+- 12 leads sin contactar (+24hs)
+- $890K en cobros vencidos
+- Workshop de mañana al 90% capacidad
+
+**🔴 Urgente:**
+- Campaña AT con frecuencia 4.2 (fatiga de audiencia)
+
+¿Querés que profundice en algún tema?`,
+
+  'acciones': `🎯 **Acciones Recomendadas para Hoy**
+
+**Prioridad Alta:**
+1. Asignar los 12 leads pendientes a vendedoras
+2. Contactar a los 5 morosos críticos (+$890K)
+3. Pausar o ampliar audiencia de campaña AT
+
+**Prioridad Media:**
+4. Revisar contenido de Biodescodificación (61% abandono)
+5. Enviar recordatorio del workshop de mañana
+6. Preparar reporte semanal para Nina
+
+**Quick wins:**
+7. Felicitar a Sofía por su performance
+8. Compartir el video de regulación emocional (1250 vistas)
+
+¿Empezamos por alguna?`,
+
+  'default': `Entiendo tu consulta. Basándome en los datos actuales del sistema:
+
+📊 **Datos relevantes:**
+- Tenemos 31,206 inscripciones históricas
+- 4,850 miembros en la comunidad
+- 456 leads activos en el pipeline
+
+¿Podrías ser más específico sobre qué información necesitás? Puedo ayudarte con:
+- Métricas de ventas y conversión
+- Análisis de retención de alumnos
+- Performance de campañas
+- Cobros y facturación
+- Engagement de la comunidad`
+};
+
+// ============================================
+// COMPONENTE PRINCIPAL
+// ============================================
 
 export default function PupiPage() {
-  const [mensaje, setMensaje] = useState('');
-  const [conversacion, setConversacion] = useState<{rol: 'user' | 'pupi', texto: string}[]>([]);
+  const [mensajes, setMensajes] = useState<Mensaje[]>([
+    {
+      id: '1',
+      rol: 'assistant',
+      contenido: `¡Hola! 👋 Soy **Pupi**, tu asistente de inteligencia de negocios.
+
+Puedo ayudarte a:
+- Analizar métricas de todas las áreas
+- Detectar problemas y oportunidades
+- Sugerir acciones basadas en datos
+- Responder preguntas sobre el negocio
+
+¿En qué puedo ayudarte hoy?`,
+      timestamp: new Date()
+    }
+  ]);
+  const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const sugerencias = [
-    { icon: TrendingUp, text: '¿Cómo está el CPL hoy?' },
-    { icon: Users, text: '¿Cuántos leads entraron?' },
-    { icon: Lightbulb, text: 'Dame el resumen del día' },
-  ];
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-  const handleEnviar = () => {
-    if (!mensaje.trim()) return;
-    
-    setConversacion([...conversacion, { rol: 'user', texto: mensaje }]);
-    setMensaje('');
+  useEffect(() => {
+    scrollToBottom();
+  }, [mensajes]);
+
+  const enviarMensaje = async (texto: string) => {
+    if (!texto.trim()) return;
+
+    const mensajeUsuario: Mensaje = {
+      id: Date.now().toString(),
+      rol: 'user',
+      contenido: texto,
+      timestamp: new Date()
+    };
+
+    setMensajes(prev => [...prev, mensajeUsuario]);
+    setInput('');
     setIsTyping(true);
+
+    // Simular delay de respuesta
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    // Determinar respuesta
+    let respuesta = respuestasMock.default;
+    const textoLower = texto.toLowerCase();
     
-    // Simular respuesta
-    setTimeout(() => {
-      setConversacion(prev => [...prev, { 
-        rol: 'pupi', 
-        texto: '¡Hola! Soy Pupi, tu asistente de BI. Todavía estoy en desarrollo, pero pronto podré ayudarte con consultas sobre métricas, alertas y recomendaciones. 🚀' 
-      }]);
-      setIsTyping(false);
-    }, 1500);
+    if (textoLower.includes('venta') || textoLower.includes('lead') || textoLower.includes('conversión')) {
+      respuesta = respuestasMock.ventas;
+    } else if (textoLower.includes('abandono') || textoLower.includes('retención') || textoLower.includes('baja')) {
+      respuesta = respuestasMock.abandono;
+    } else if (textoLower.includes('resumen') || textoLower.includes('día') || textoLower.includes('hoy')) {
+      respuesta = respuestasMock.resumen;
+    } else if (textoLower.includes('accion') || textoLower.includes('recomend') || textoLower.includes('hacer')) {
+      respuesta = respuestasMock.acciones;
+    }
+
+    const mensajeAsistente: Mensaje = {
+      id: (Date.now() + 1).toString(),
+      rol: 'assistant',
+      contenido: respuesta,
+      timestamp: new Date()
+    };
+
+    setMensajes(prev => [...prev, mensajeAsistente]);
+    setIsTyping(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    enviarMensaje(input);
   };
 
   const handleSugerencia = (texto: string) => {
-    setMensaje(texto);
+    enviarMensaje(texto);
+  };
+
+  const copiarMensaje = (id: string, contenido: string) => {
+    navigator.clipboard.writeText(contenido);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const limpiarChat = () => {
+    setMensajes([{
+      id: '1',
+      rol: 'assistant',
+      contenido: `¡Chat reiniciado! 🔄
+
+¿En qué puedo ayudarte?`,
+      timestamp: new Date()
+    }]);
   };
 
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col">
-      {/* Header simple para Pupi */}
-      <div className="bg-white border-b border-gray-200 sticky top-12 lg:top-0 z-20 px-3 sm:px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-[#e63946] to-[#c1121f] rounded-xl flex items-center justify-center">
-            <Bot className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center">
+              <Bot className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold text-gray-900">Pupi</h1>
+              <p className="text-[10px] text-gray-500">Asistente IA de PSI Vision Hub</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-bold text-gray-900">Pupi</h1>
-            <p className="text-[10px] sm:text-xs text-gray-500 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-              Asistente IA de PSI Vision Hub
-            </p>
-          </div>
+          <button
+            onClick={limpiarChat}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Limpiar chat"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
-      {/* Área de chat */}
-      <div className="flex-1 p-3 sm:p-4 overflow-y-auto">
-        {conversacion.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center px-4">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-[#e63946]/10 to-[#c1121f]/10 rounded-2xl flex items-center justify-center mb-4">
-              <Sparkles className="w-8 h-8 sm:w-10 sm:h-10 text-[#e63946]" />
+      {/* Mensajes */}
+      <div className="flex-1 overflow-y-auto p-4">
+        <div className="max-w-4xl mx-auto space-y-4">
+          {mensajes.map((mensaje) => (
+            <div
+              key={mensaje.id}
+              className={`flex gap-3 ${mensaje.rol === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {mensaje.rol === 'assistant' && (
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center flex-shrink-0">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+              )}
+
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                  mensaje.rol === 'user'
+                    ? 'bg-[#e63946] text-white'
+                    : 'bg-white border border-gray-200 text-gray-900'
+                }`}
+              >
+                <div 
+                  className={`text-sm whitespace-pre-wrap ${mensaje.rol === 'assistant' ? 'prose prose-sm max-w-none' : ''}`}
+                  dangerouslySetInnerHTML={{ 
+                    __html: mensaje.contenido
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/\n/g, '<br>')
+                  }}
+                />
+                
+                {mensaje.rol === 'assistant' && (
+                  <div className="flex items-center justify-end mt-2 pt-2 border-t border-gray-100">
+                    <button
+                      onClick={() => copiarMensaje(mensaje.id, mensaje.contenido)}
+                      className="text-[10px] text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      {copiedId === mensaje.id ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          Copiado
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          Copiar
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {mensaje.rol === 'user' && (
+                <div className="w-8 h-8 rounded-lg bg-gray-200 flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-gray-600" />
+                </div>
+              )}
             </div>
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-2">¡Hola! Soy Pupi</h2>
-            <p className="text-xs sm:text-sm text-gray-500 max-w-sm mb-6">
-              Tu asistente inteligente para consultar métricas, recibir alertas y obtener recomendaciones.
-            </p>
-            
-            <div className="w-full max-w-sm space-y-2">
-              <p className="text-[10px] sm:text-xs font-medium text-gray-400 uppercase tracking-wider">Prueba preguntar</p>
-              {sugerencias.map((s, i) => (
+          ))}
+
+          {isTyping && (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      {/* Sugerencias rápidas */}
+      {mensajes.length <= 2 && (
+        <div className="px-4 pb-2">
+          <div className="max-w-4xl mx-auto">
+            <p className="text-[10px] text-gray-500 uppercase font-medium mb-2">Sugerencias</p>
+            <div className="flex flex-wrap gap-2">
+              {sugerenciasRapidas.map((sugerencia, index) => (
                 <button
-                  key={i}
-                  onClick={() => handleSugerencia(s.text)}
-                  className="w-full flex items-center gap-3 p-3 bg-white rounded-xl border border-gray-200 hover:border-[#e63946] hover:bg-red-50/50 transition-all text-left"
+                  key={index}
+                  onClick={() => handleSugerencia(sugerencia.texto)}
+                  className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-700 hover:border-[#e63946] hover:text-[#e63946] transition-colors"
                 >
-                  <s.icon className="w-4 h-4 text-[#e63946] flex-shrink-0" />
-                  <span className="text-xs sm:text-sm text-gray-700">{s.text}</span>
+                  <sugerencia.icono className="w-3.5 h-3.5" />
+                  {sugerencia.texto}
                 </button>
               ))}
             </div>
           </div>
-        ) : (
-          <div className="space-y-3 sm:space-y-4 max-w-2xl mx-auto">
-            {conversacion.map((msg, i) => (
-              <div key={i} className={`flex ${msg.rol === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2 sm:py-3 ${
-                  msg.rol === 'user' 
-                    ? 'bg-[#e63946] text-white rounded-br-md' 
-                    : 'bg-white border border-gray-200 text-gray-800 rounded-bl-md'
-                }`}>
-                  <p className="text-xs sm:text-sm">{msg.texto}</p>
-                </div>
-              </div>
-            ))}
-            {isTyping && (
-              <div className="flex justify-start">
-                <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3">
-                  <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Input */}
-      <div className="bg-white border-t border-gray-200 p-3 sm:p-4">
-        <div className="max-w-2xl mx-auto flex items-center gap-2">
-          <input
-            type="text"
-            value={mensaje}
-            onChange={(e) => setMensaje(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleEnviar()}
-            placeholder="Preguntale a Pupi..."
-            className="flex-1 px-3 sm:px-4 py-2 sm:py-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#e63946]/20 focus:border-[#e63946]"
-          />
-          <button
-            onClick={handleEnviar}
-            disabled={!mensaje.trim()}
-            className="p-2 sm:p-3 bg-[#e63946] text-white rounded-xl hover:bg-[#c1121f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Send className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-        </div>
+      <div className="bg-white border-t border-gray-200 p-4">
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+          <div className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Preguntale algo a Pupi..."
+              className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#e63946] focus:border-transparent"
+              disabled={isTyping}
+            />
+            <button
+              type="submit"
+              disabled={!input.trim() || isTyping}
+              className="px-4 py-3 bg-[#e63946] text-white rounded-xl hover:bg-[#c1121f] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send className="w-5 h-5" />
+            </button>
+          </div>
+          <p className="text-[10px] text-gray-400 text-center mt-2">
+            Pupi analiza datos en tiempo real de todas las áreas de PSI
+          </p>
+        </form>
       </div>
     </div>
   );

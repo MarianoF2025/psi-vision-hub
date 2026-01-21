@@ -5,24 +5,24 @@ import { supabase } from '../config/supabase';
 import { Contacto, ContactoInsert } from '../types/database';
 
 export class ContactoService {
-  
+
   /**
    * Buscar contacto por teléfono
    */
   async buscarPorTelefono(telefono: string): Promise<Contacto | null> {
     const telefonoNormalizado = this.normalizarTelefono(telefono);
-    
+
     const { data, error } = await supabase
       .from('contactos')
       .select('*')
       .eq('telefono', telefonoNormalizado)
       .single();
-    
+
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
       console.error('[ContactoService] Error buscando contacto:', error);
       throw error;
     }
-    
+
     return data;
   }
 
@@ -39,7 +39,6 @@ export class ContactoService {
       utm_source: datos.utm_source || null,
       utm_campaign: datos.utm_campaign || null,
       etiquetas: datos.etiquetas || [],
-      cursos: datos.cursos || [],
     };
 
     const { data, error } = await supabase
@@ -73,7 +72,6 @@ export class ContactoService {
     if (datos.utm_source !== undefined) updateData.utm_source = datos.utm_source;
     if (datos.utm_campaign !== undefined) updateData.utm_campaign = datos.utm_campaign;
     if (datos.etiquetas !== undefined) updateData.etiquetas = datos.etiquetas;
-    if (datos.cursos !== undefined) updateData.cursos = datos.cursos;
 
     const { data, error } = await supabase
       .from('contactos')
@@ -96,14 +94,14 @@ export class ContactoService {
    */
   async obtenerOCrear(datos: ContactoInsert): Promise<{ contacto: Contacto; esNuevo: boolean }> {
     const telefonoNormalizado = this.normalizarTelefono(datos.telefono);
-    
+
     // 1. Buscar existente
     const existente = await this.buscarPorTelefono(telefonoNormalizado);
-    
+
     if (existente) {
       // 2a. Si existe, actualizar campos si vienen nuevos datos
       const actualizaciones: Partial<ContactoInsert> = {};
-      
+
       if (datos.nombre && !existente.nombre) {
         actualizaciones.nombre = datos.nombre;
       }
@@ -113,21 +111,21 @@ export class ContactoService {
       if (datos.utm_campaign && !existente.utm_campaign) {
         actualizaciones.utm_campaign = datos.utm_campaign;
       }
-      
+
       if (Object.keys(actualizaciones).length > 0) {
         const actualizado = await this.actualizar(existente.id, actualizaciones);
         return { contacto: actualizado, esNuevo: false };
       }
-      
+
       return { contacto: existente, esNuevo: false };
     }
-    
+
     // 2b. Si no existe, crear nuevo
     const nuevo = await this.crear({
       ...datos,
       telefono: telefonoNormalizado,
     });
-    
+
     return { contacto: nuevo, esNuevo: true };
   }
 
@@ -138,32 +136,32 @@ export class ContactoService {
   normalizarTelefono(telefono: string): string {
     // Remover todo excepto números
     let limpio = telefono.replace(/\D/g, '');
-    
+
     // Si empieza con 54 y tiene 13 dígitos, ya está en formato correcto
     if (limpio.startsWith('54') && limpio.length === 13) {
       return '+' + limpio;
     }
-    
+
     // Si empieza con 549 y tiene 12 dígitos (sin el 15)
     if (limpio.startsWith('549') && limpio.length === 12) {
       return '+' + limpio;
     }
-    
+
     // Si empieza con 15 (celular argentino local)
     if (limpio.startsWith('15') && limpio.length === 10) {
       return '+5491' + limpio.substring(2);
     }
-    
+
     // Si empieza con 11 (Buenos Aires sin 15)
     if (limpio.startsWith('11') && limpio.length === 10) {
       return '+549' + limpio;
     }
-    
+
     // Si no tiene código país, asumir Argentina
     if (!limpio.startsWith('54') && limpio.length === 10) {
       return '+549' + limpio;
     }
-    
+
     // Default: agregar + si no lo tiene
     return limpio.startsWith('+') ? limpio : '+' + limpio;
   }
@@ -205,5 +203,3 @@ export class ContactoService {
 }
 
 export const contactoService = new ContactoService();
-
-

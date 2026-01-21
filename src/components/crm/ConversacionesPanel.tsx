@@ -7,13 +7,19 @@ import { INBOXES, type Conversacion } from '@/types/crm';
 import { cn, timeAgo, getInitials, getWindowTimeLeft } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserPermissions, canAccessInbox } from '@/lib/permissions';
-import { Search, Plus, Clock, X, MessageSquarePlus, Phone, Users, GraduationCap, Building2, Calendar, ChevronDown, Pin } from 'lucide-react';
+import { Search, Plus, Clock, X, MessageSquarePlus, Phone, Users, GraduationCap, Building2, Calendar, ChevronDown, Pin, Tag } from 'lucide-react';
 
 interface Contacto {
   id: string;
   nombre: string | null;
   telefono: string;
   email: string | null;
+}
+
+interface EtiquetaGlobal {
+  id: string;
+  nombre: string;
+  color: string;
 }
 
 const LINEAS_SALIDA = [
@@ -40,7 +46,6 @@ export default function ConversacionesPanel() {
     setContador, usuario
   } = useCRMStore();
 
-  // Hooks de autenticación y permisos
   const { user } = useAuth();
   const { permissions } = useUserPermissions(user?.email);
 
@@ -52,16 +57,22 @@ export default function ConversacionesPanel() {
   const [buscandoContactos, setBuscandoContactos] = useState(false);
   const [creandoChat, setCreandoChat] = useState(false);
   const [numeroNuevo, setNumeroNuevo] = useState('');
-  
-  // Filtrar líneas de salida según permisos del usuario
+
   const lineasFiltradas = LINEAS_SALIDA.filter(linea => canAccessInbox(permissions, linea.id));
   const [lineaSeleccionada, setLineaSeleccionada] = useState(lineasFiltradas[0]?.id || 'administracion');
-  
+
   const [filtroFecha, setFiltroFecha] = useState('todas');
   const [mostrarFiltroFecha, setMostrarFiltroFecha] = useState(false);
 
+  // Estado para filtro de etiquetas
+  const [etiquetasGlobales, setEtiquetasGlobales] = useState<EtiquetaGlobal[]>([]);
+  const [etiquetasSeleccionadas, setEtiquetasSeleccionadas] = useState<string[]>([]);
+  const [mostrarFiltroEtiquetas, setMostrarFiltroEtiquetas] = useState(false);
+  const [contactosConEtiquetas, setContactosConEtiquetas] = useState<string[]>([]);
+
   const modalRef = useRef<HTMLDivElement>(null);
   const filtroFechaRef = useRef<HTMLDivElement>(null);
+  const filtroEtiquetasRef = useRef<HTMLDivElement>(null);
   const inboxConfig = INBOXES.find(i => i.id === inboxActual);
 
   const calcularFechaFiltro = (filtroId: string): { desde?: string; hasta?: string } => {
@@ -83,25 +94,55 @@ export default function ConversacionesPanel() {
     }
   };
 
-  // Ordenar conversaciones: fijadas primero, luego por fecha
   const ordenarConversaciones = (convs: Conversacion[]): Conversacion[] => {
     return [...convs].sort((a, b) => {
-      // Primero por fijada (fijadas arriba)
       if (a.fijada && !b.fijada) return -1;
       if (!a.fijada && b.fijada) return 1;
-      // Luego por fecha (más reciente primero)
       const fechaA = new Date(a.ts_ultimo_mensaje || 0).getTime();
       const fechaB = new Date(b.ts_ultimo_mensaje || 0).getTime();
       return fechaB - fechaA;
     });
   };
 
-  // Actualizar línea seleccionada cuando cambian los permisos
   useEffect(() => {
     if (lineasFiltradas.length > 0 && !lineasFiltradas.find(l => l.id === lineaSeleccionada)) {
       setLineaSeleccionada(lineasFiltradas[0].id);
     }
   }, [lineasFiltradas, lineaSeleccionada]);
+
+  // Cargar etiquetas globales
+  useEffect(() => {
+    const cargarEtiquetas = async () => {
+      const { data } = await supabase
+        .from('etiquetas_globales')
+        .select('id, nombre, color')
+        .eq('activa', true)
+        .order('nombre');
+      if (data) setEtiquetasGlobales(data);
+    };
+    cargarEtiquetas();
+  }, []);
+
+  // Cargar contactos que tienen las etiquetas seleccionadas
+  useEffect(() => {
+    const cargarContactosConEtiquetas = async () => {
+      if (etiquetasSeleccionadas.length === 0) {
+        setContactosConEtiquetas([]);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('contacto_etiquetas')
+        .select('contacto_id')
+        .in('etiqueta_id', etiquetasSeleccionadas);
+
+      if (data) {
+        const uniqueContactos = [...new Set(data.map(d => d.contacto_id))];
+        setContactosConEtiquetas(uniqueContactos);
+      }
+    };
+    cargarContactosConEtiquetas();
+  }, [etiquetasSeleccionadas]);
 
   useEffect(() => {
     const cargarConversaciones = async (inicial = false) => {
@@ -117,9 +158,19 @@ export default function ConversacionesPanel() {
       if (fechaFiltro.desde) query = query.gte('ts_ultimo_mensaje', fechaFiltro.desde);
       if (fechaFiltro.hasta) query = query.lte('ts_ultimo_mensaje', fechaFiltro.hasta);
 
+      // Filtrar por etiquetas (contactos que tienen esas etiquetas)
+      if (etiquetasSeleccionadas.length > 0 && contactosConEtiquetas.length > 0) {
+        query = query.in('contacto_id', contactosConEtiquetas);
+      } else if (etiquetasSeleccionadas.length > 0 && contactosConEtiquetas.length === 0) {
+        // Si hay etiquetas seleccionadas pero ningún contacto las tiene, no mostrar nada
+        setConversaciones([]);
+        setContador(inboxActual, 0);
+        setLoading(false);
+        return;
+      }
+
       const { data } = await query;
       if (data) {
-        // Ordenar con fijadas primero
         setConversaciones(ordenarConversaciones(data));
         setContador(inboxActual, data.filter(c => (c.mensajes_no_leidos || 0) > 0).length);
       }
@@ -130,7 +181,7 @@ export default function ConversacionesPanel() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversaciones' }, () => cargarConversaciones())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [inboxActual, filtroConversaciones, busquedaConversaciones, usuario?.id, setContador, filtroFecha]);
+  }, [inboxActual, filtroConversaciones, busquedaConversaciones, usuario?.id, setContador, filtroFecha, etiquetasSeleccionadas, contactosConEtiquetas]);
 
   useEffect(() => {
     const buscar = async () => {
@@ -149,10 +200,11 @@ export default function ConversacionesPanel() {
     const handleClickOutside = (e: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(e.target as Node)) setMostrarNuevoChat(false);
       if (filtroFechaRef.current && !filtroFechaRef.current.contains(e.target as Node)) setMostrarFiltroFecha(false);
+      if (filtroEtiquetasRef.current && !filtroEtiquetasRef.current.contains(e.target as Node)) setMostrarFiltroEtiquetas(false);
     };
-    if (mostrarNuevoChat || mostrarFiltroFecha) document.addEventListener('mousedown', handleClickOutside);
+    if (mostrarNuevoChat || mostrarFiltroFecha || mostrarFiltroEtiquetas) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [mostrarNuevoChat, mostrarFiltroFecha]);
+  }, [mostrarNuevoChat, mostrarFiltroFecha, mostrarFiltroEtiquetas]);
 
   const normalizarTelefono = (tel: string): string => {
     let numero = tel.replace(/\D/g, '');
@@ -225,6 +277,20 @@ export default function ConversacionesPanel() {
     setCreandoChat(false);
   };
 
+  const toggleEtiqueta = (etiquetaId: string) => {
+    setEtiquetasSeleccionadas(prev =>
+      prev.includes(etiquetaId)
+        ? prev.filter(id => id !== etiquetaId)
+        : [...prev, etiquetaId]
+    );
+  };
+
+  const limpiarFiltroEtiquetas = () => {
+    setEtiquetasSeleccionadas([]);
+    setMostrarFiltroEtiquetas(false);
+  };
+
+  const etiquetasSeleccionadasInfo = etiquetasGlobales.filter(e => etiquetasSeleccionadas.includes(e.id));
   const filtroFechaActual = FILTROS_FECHA.find(f => f.id === filtroFecha);
 
   return (
@@ -253,7 +319,8 @@ export default function ConversacionesPanel() {
           ))}
         </div>
 
-        <div className="relative" ref={filtroFechaRef}>
+        {/* Filtro de fecha */}
+        <div className="relative mb-2" ref={filtroFechaRef}>
           <button
             onClick={() => setMostrarFiltroFecha(!mostrarFiltroFecha)}
             className={cn(
@@ -286,6 +353,89 @@ export default function ConversacionesPanel() {
                   {filtro.label}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Filtro de etiquetas */}
+        <div className="relative" ref={filtroEtiquetasRef}>
+          <button
+            onClick={() => setMostrarFiltroEtiquetas(!mostrarFiltroEtiquetas)}
+            className={cn(
+              'w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded-md border transition-colors',
+              etiquetasSeleccionadas.length > 0
+                ? 'border-purple-300 bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+            )}
+          >
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <Tag size={12} />
+              {etiquetasSeleccionadas.length === 0 ? (
+                <span>Filtrar por etiquetas</span>
+              ) : (
+                <div className="flex items-center gap-1 flex-1 min-w-0 overflow-hidden">
+                  {etiquetasSeleccionadasInfo.slice(0, 2).map(et => (
+                    <span
+                      key={et.id}
+                      className="px-1.5 py-0.5 rounded text-[9px] font-medium truncate"
+                      style={{
+                        backgroundColor: `${et.color}20`,
+                        color: et.color
+                      }}
+                    >
+                      {et.nombre}
+                    </span>
+                  ))}
+                  {etiquetasSeleccionadas.length > 2 && (
+                    <span className="text-[9px] text-purple-500">+{etiquetasSeleccionadas.length - 2}</span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {etiquetasSeleccionadas.length > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); limpiarFiltroEtiquetas(); }}
+                  className="p-0.5 hover:bg-purple-200 dark:hover:bg-purple-500/20 rounded"
+                >
+                  <X size={10} />
+                </button>
+              )}
+              <ChevronDown size={12} className={cn('transition-transform', mostrarFiltroEtiquetas && 'rotate-180')} />
+            </div>
+          </button>
+
+          {mostrarFiltroEtiquetas && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 py-1 max-h-48 overflow-y-auto">
+              {etiquetasGlobales.length === 0 ? (
+                <p className="px-3 py-2 text-[11px] text-slate-400">No hay etiquetas</p>
+              ) : (
+                etiquetasGlobales.map((etiqueta) => {
+                  const isSelected = etiquetasSeleccionadas.includes(etiqueta.id);
+                  return (
+                    <button
+                      key={etiqueta.id}
+                      onClick={() => toggleEtiqueta(etiqueta.id)}
+                      className={cn(
+                        'w-full text-left px-3 py-1.5 text-[11px] transition-colors flex items-center gap-2',
+                        isSelected
+                          ? 'bg-purple-50 dark:bg-purple-500/10'
+                          : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                      )}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full flex-shrink-0 flex items-center justify-center"
+                        style={{ backgroundColor: isSelected ? etiqueta.color : 'transparent', border: `2px solid ${etiqueta.color}` }}
+                      >
+                        {isSelected && <span className="text-white text-[8px]">✓</span>}
+                      </span>
+                      <span className={cn('flex-1', isSelected ? 'font-medium' : '')} style={{ color: isSelected ? etiqueta.color : undefined }}>
+                        {etiqueta.nombre}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
             </div>
           )}
         </div>

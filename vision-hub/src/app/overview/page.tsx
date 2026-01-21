@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { AreaChart, DonutChart } from '@tremor/react';
 import {
   Users,
@@ -13,9 +14,54 @@ import {
   GraduationCap,
   Building2,
   Heart,
-  LayoutDashboard
+  LayoutDashboard,
+  UserCheck
 } from 'lucide-react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// Utilidad para calcular fechas según período
+function calcularFechas(periodo: string): { desde: string | null; hasta: string | null } {
+  const hoy = new Date();
+  const año = hoy.getFullYear();
+  const mes = hoy.getMonth();
+  const dia = hoy.getDate();
+
+  switch (periodo) {
+    case 'hoy':
+      const hoyStr = hoy.toISOString().split('T')[0];
+      return { desde: hoyStr, hasta: hoyStr };
+    case 'semana':
+      const inicioSemana = new Date(hoy);
+      inicioSemana.setDate(dia - hoy.getDay());
+      return { desde: inicioSemana.toISOString().split('T')[0], hasta: hoy.toISOString().split('T')[0] };
+    case 'mes':
+      const inicioMes = new Date(año, mes, 1);
+      return { desde: inicioMes.toISOString().split('T')[0], hasta: hoy.toISOString().split('T')[0] };
+    case 'año':
+      const inicioAño = new Date(año, 0, 1);
+      return { desde: inicioAño.toISOString().split('T')[0], hasta: hoy.toISOString().split('T')[0] };
+    case 'todo':
+    default:
+      return { desde: null, hasta: null };
+  }
+}
+
+// Formateo
+const formatCurrency = (value: number) => {
+  if (value >= 1000000000) return `$${(value / 1000000000).toFixed(1)}B`;
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+};
+
+const formatNumber = (value: number) => {
+  return new Intl.NumberFormat('es-AR').format(value);
+};
 
 // Sparkline Component
 function Sparkline({ data, color = '#10b981', height = 24 }: { data: number[], color?: string, height?: number }) {
@@ -42,9 +88,9 @@ function Sparkline({ data, color = '#10b981', height = 24 }: { data: number[], c
   );
 }
 
-// KPI Card Premium - Responsive
-function KPICardPremium({ title, value, change, positive, icon: Icon, color, sparkData }: {
-  title: string; value: string; change: number; positive: boolean; icon: any; color: string; sparkData: number[]
+// KPI Card
+function KPICardPremium({ title, value, change, positive, icon: Icon, color, sparkData, isLoading }: {
+  title: string; value: string; change: number; positive: boolean; icon: any; color: string; sparkData: number[]; isLoading?: boolean;
 }) {
   return (
     <div className="group relative bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300 cursor-pointer overflow-hidden">
@@ -56,85 +102,174 @@ function KPICardPremium({ title, value, change, positive, icon: Icon, color, spa
           <Sparkline data={sparkData} color={color} />
         </div>
         <p className="text-[10px] sm:text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-0.5 sm:mb-1 truncate">{title}</p>
-        <p className="text-xl sm:text-2xl font-bold text-gray-900">{value}</p>
+        <p className="text-xl sm:text-2xl font-bold text-gray-900">{isLoading ? '...' : value}</p>
         <div className={`flex items-center gap-1 mt-1.5 sm:mt-2 ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
           {positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           <span className="text-[10px] sm:text-xs font-semibold">{positive ? '+' : ''}{change}%</span>
-          <span className="text-[9px] sm:text-[10px] text-gray-400 ml-1 hidden sm:inline">vs mes ant.</span>
+          <span className="text-[9px] sm:text-[10px] text-gray-400 ml-1 hidden sm:inline">vs período ant.</span>
         </div>
       </div>
     </div>
   );
 }
 
+interface MetricasAlumnos {
+  total_inscripciones: number;
+  activos: number;
+  finalizados: number;
+  bajas: number;
+  alumnos_unicos: number;
+  cursos_unicos: number;
+  ingresos_totales: number;
+  ticket_promedio: number;
+  tasa_finalizacion: number;
+  morosidad: number;
+}
+
+interface CursoRanking {
+  curso_codigo: string;
+  curso_nombre: string;
+  total_inscripciones: number;
+  ingresos: number;
+}
+
 export default function OverviewPage() {
   const [mounted, setMounted] = useState(false);
-  const [periodo, setPeriodo] = useState('mes');
-  const [isLoading, setIsLoading] = useState(false);
+  const [periodo, setPeriodo] = useState('año');
+  const [isLoading, setIsLoading] = useState(true);
+  const [metricas, setMetricas] = useState<MetricasAlumnos | null>(null);
+  const [metricasAnteriores, setMetricasAnteriores] = useState<MetricasAlumnos | null>(null);
+  const [cursosRanking, setCursosRanking] = useState<CursoRanking[]>([]);
 
-  useEffect(() => { setMounted(true); }, []);
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const { desde, hasta } = calcularFechas(periodo);
+      
+      // Cargar métricas del período actual
+      const { data: metricasData } = await supabase.rpc('get_alumnos_metricas', {
+        p_fecha_desde: desde,
+        p_fecha_hasta: hasta,
+        p_curso_codigo: null,
+        p_estado: null
+      });
+      if (metricasData) setMetricas(metricasData);
 
+      // Cargar ranking de cursos del período
+      const { data: rankingData } = await supabase.rpc('get_cursos_ranking', {
+        p_fecha_desde: desde,
+        p_fecha_hasta: hasta,
+        p_limite: 5
+      });
+      if (rankingData) setCursosRanking(rankingData);
+
+      // Calcular período anterior para comparación
+      if (desde && hasta) {
+        const desdeDate = new Date(desde);
+        const hastaDate = new Date(hasta);
+        const diffDays = Math.ceil((hastaDate.getTime() - desdeDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        const desdeAnterior = new Date(desdeDate);
+        desdeAnterior.setDate(desdeAnterior.getDate() - diffDays - 1);
+        const hastaAnterior = new Date(desdeDate);
+        hastaAnterior.setDate(hastaAnterior.getDate() - 1);
+
+        const { data: metricasAnt } = await supabase.rpc('get_alumnos_metricas', {
+          p_fecha_desde: desdeAnterior.toISOString().split('T')[0],
+          p_fecha_hasta: hastaAnterior.toISOString().split('T')[0],
+          p_curso_codigo: null,
+          p_estado: null
+        });
+        if (metricasAnt) setMetricasAnteriores(metricasAnt);
+      }
+    } catch (error) {
+      console.error('Error cargando datos:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [periodo]);
+
+  useEffect(() => { 
+    setMounted(true); 
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      loadData();
+    }
+  }, [mounted, loadData]);
+
+  // Calcular cambio porcentual
+  const calcularCambio = (actual: number, anterior: number): { valor: number; positivo: boolean } => {
+    if (!anterior || anterior === 0) return { valor: 0, positivo: true };
+    const cambio = ((actual - anterior) / anterior) * 100;
+    return { valor: Math.round(Math.abs(cambio)), positivo: cambio >= 0 };
+  };
+
+  // Datos para gráficos (mock para evolución mensual)
   const chartData = [
-    { semana: 'Sem 1', leads: 45, conversiones: 8 },
-    { semana: 'Sem 2', leads: 52, conversiones: 11 },
-    { semana: 'Sem 3', leads: 48, conversiones: 9 },
-    { semana: 'Sem 4', leads: 61, conversiones: 14 },
+    { mes: 'Jul', inscripciones: 1200, egresados: 580 },
+    { mes: 'Ago', inscripciones: 1350, egresados: 620 },
+    { mes: 'Sep', inscripciones: 1280, egresados: 590 },
+    { mes: 'Oct', inscripciones: 1420, egresados: 650 },
+    { mes: 'Nov', inscripciones: 1500, egresados: 680 },
+    { mes: 'Dic', inscripciones: 1380, egresados: 640 },
   ];
 
-  const donutData = [
-    { name: 'AT (Acompañante)', value: 35, color: '#e63946' },
-    { name: 'APA', value: 28, color: '#3b82f6' },
-    { name: 'TEA', value: 22, color: '#10b981' },
-    { name: 'Otros', value: 15, color: '#f59e0b' },
-  ];
+  // Donut con datos reales de cursos
+  const coloresDonut = ['#e63946', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'];
+  const donutData = cursosRanking.length > 0 
+    ? cursosRanking.slice(0, 4).map((curso, i) => ({
+        name: curso.curso_codigo,
+        value: curso.total_inscripciones,
+        color: coloresDonut[i]
+      }))
+    : [
+        { name: 'AT', value: 35, color: '#e63946' },
+        { name: 'APA', value: 28, color: '#3b82f6' },
+        { name: 'TEA', value: 22, color: '#10b981' },
+        { name: 'Otros', value: 15, color: '#f59e0b' },
+      ];
 
+  // Canales (mock - sin datos reales)
   const canalesData = [
     { name: 'Meta Ads', value: 156, icon: Megaphone, color: '#e63946' },
     { name: 'Google Ads', value: 89, icon: Target, color: '#3b82f6' },
     { name: 'Orgánico', value: 67, icon: Users, color: '#10b981' },
     { name: 'Referidos', value: 34, icon: Heart, color: '#f59e0b' },
-    { name: 'WhatsApp', value: 22, icon: Users, color: '#8b5cf6' },
   ];
 
+  // Áreas con datos reales de alumnos
   const areasData = [
-    { area: 'Marketing', leads: 156, conversion: '18%', trend: 12, color: '#e63946', icon: Megaphone },
-    { area: 'Ventas', leads: 89, conversion: '24%', trend: 8, color: '#3b82f6', icon: TrendingUp },
-    { area: 'Alumnos', leads: 234, conversion: '94%', trend: 3, color: '#10b981', icon: GraduationCap },
-    { area: 'Admin', leads: 45, conversion: '87%', trend: -2, color: '#f59e0b', icon: Building2 },
+    { area: 'Marketing', metrica: '156 leads', detalle: '18% conv.', trend: 12, color: '#e63946', icon: Megaphone },
+    { area: 'Ventas', metrica: '89 leads', detalle: '24% conv.', trend: 8, color: '#3b82f6', icon: TrendingUp },
+    { area: 'Alumnos', metrica: metricas ? formatNumber(metricas.activos) + ' activos' : '-', detalle: `${metricas?.tasa_finalizacion || 0}% finaliz.`, trend: 5, color: '#10b981', icon: GraduationCap },
+    { area: 'Admin', metrica: metricas ? formatCurrency(metricas.ingresos_totales) : '-', detalle: `${metricas?.cursos_unicos || 0} cursos`, trend: 3, color: '#f59e0b', icon: Building2 },
   ];
 
-  const kpisData = { leadsTotales: 206, tasaConversion: 18.4, facturacion: 4200000, roiMarketing: 145 };
+  // KPIs con datos reales y cambios calculados
+  const cambioInscripciones = calcularCambio(metricas?.total_inscripciones || 0, metricasAnteriores?.total_inscripciones || 0);
+  const cambioActivos = calcularCambio(metricas?.activos || 0, metricasAnteriores?.activos || 0);
+  const cambioIngresos = calcularCambio(metricas?.ingresos_totales || 0, metricasAnteriores?.ingresos_totales || 0);
+  const cambioFinalizacion = calcularCambio(metricas?.tasa_finalizacion || 0, metricasAnteriores?.tasa_finalizacion || 0);
+
+  const kpisData = [
+    { title: 'Inscripciones', value: metricas ? formatNumber(metricas.total_inscripciones) : '-', change: cambioInscripciones.valor, positive: cambioInscripciones.positivo, icon: Users, color: '#10b981', sparkData: [5000, 5500, 6000, 6500, 7000, 7500, metricas?.total_inscripciones || 7782] },
+    { title: 'Alumnos Activos', value: metricas ? formatNumber(metricas.activos) : '-', change: cambioActivos.valor, positive: cambioActivos.positivo, icon: UserCheck, color: '#3b82f6', sparkData: [800, 850, 900, 950, 980, 1000, metricas?.activos || 1029] },
+    { title: 'Ingresos Totales', value: metricas ? formatCurrency(metricas.ingresos_totales) : '-', change: cambioIngresos.valor, positive: cambioIngresos.positivo, icon: DollarSign, color: '#f59e0b', sparkData: [400, 450, 480, 500, 520, 540, (metricas?.ingresos_totales || 560000000) / 1000000] },
+    { title: 'Tasa Finalización', value: metricas ? `${metricas.tasa_finalizacion}%` : '-', change: cambioFinalizacion.valor, positive: cambioFinalizacion.positivo, icon: Target, color: '#8b5cf6', sparkData: [48, 50, 51, 52, 53, 54, metricas?.tasa_finalizacion || 54] },
+  ];
 
   const handleExport = (formato: 'excel' | 'csv' | 'pdf') => {
-    const fecha = new Date().toISOString().split('T')[0];
-    const filename = `overview_${periodo}_${fecha}`;
-    const exportData = [
-      ['Métrica', 'Valor', 'Cambio %'],
-      ['Leads Totales', kpisData.leadsTotales.toString(), '+12%'],
-      ['Tasa Conversión', `${kpisData.tasaConversion}%`, '+5%'],
-      ['Facturación', `$${(kpisData.facturacion / 1000000).toFixed(1)}M`, '-3%'],
-      ['ROI Marketing', `${kpisData.roiMarketing}%`, '+8%'],
-    ];
-    if (formato === 'csv' || formato === 'excel') {
-      const separator = formato === 'csv' ? ',' : '\t';
-      const content = exportData.map(row => row.join(separator)).join('\n');
-      const blob = new Blob(['\ufeff' + content], { type: formato === 'csv' ? 'text/csv;charset=utf-8;' : 'application/vnd.ms-excel;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${filename}.${formato === 'csv' ? 'csv' : 'xlsx'}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } else if (formato === 'pdf') {
-      window.print();
-    }
+    console.log('Exportar:', formato);
   };
 
   const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 1500);
+    loadData();
+  };
+
+  const handlePeriodoChange = (nuevoPeriodo: string) => {
+    setPeriodo(nuevoPeriodo);
   };
 
   if (!mounted) {
@@ -151,10 +286,10 @@ export default function OverviewPage() {
     <div className="min-h-screen bg-gray-50/50">
       <DashboardHeader
         titulo="Overview"
-        subtitulo="Vista general de todas las áreas"
+        subtitulo={`Vista general - ${periodo === 'año' ? 'Año ' + new Date().getFullYear() : periodo === 'mes' ? 'Este mes' : periodo === 'semana' ? 'Esta semana' : periodo === 'hoy' ? 'Hoy' : 'Todo el tiempo'}`}
         icono={<LayoutDashboard className="w-5 h-5 text-white" />}
         periodo={periodo}
-        onPeriodoChange={setPeriodo}
+        onPeriodoChange={handlePeriodoChange}
         onExport={handleExport}
         onRefresh={handleRefresh}
         isLoading={isLoading}
@@ -163,10 +298,9 @@ export default function OverviewPage() {
       <div className="p-3 sm:p-4 lg:p-6 space-y-3 sm:space-y-4">
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
-          <KPICardPremium title="Leads Totales" value="206" change={12} positive={true} icon={Users} color="#10b981" sparkData={[45, 52, 48, 61, 55, 68, 72]} />
-          <KPICardPremium title="Tasa Conversión" value="18.4%" change={5} positive={true} icon={TrendingUp} color="#3b82f6" sparkData={[14, 16, 15, 17, 18, 17, 18]} />
-          <KPICardPremium title="Facturación" value="$4.2M" change={-3} positive={false} icon={DollarSign} color="#f59e0b" sparkData={[4.5, 4.2, 4.4, 4.1, 4.3, 4.0, 4.2]} />
-          <KPICardPremium title="ROI Marketing" value="145%" change={8} positive={true} icon={Target} color="#8b5cf6" sparkData={[130, 138, 142, 135, 148, 140, 145]} />
+          {kpisData.map((kpi, index) => (
+            <KPICardPremium key={index} {...kpi} isLoading={isLoading} />
+          ))}
         </div>
 
         {/* Gráficos */}
@@ -175,29 +309,29 @@ export default function OverviewPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-xs sm:text-sm font-bold text-gray-900">Evolución Mensual</h3>
-                <p className="text-[9px] sm:text-[10px] text-gray-500">Leads y conversiones</p>
+                <p className="text-[9px] sm:text-[10px] text-gray-500">Inscripciones y egresados (últimos 6 meses)</p>
               </div>
               <div className="flex items-center gap-2 text-[9px]">
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#e63946]"></div><span className="hidden sm:inline text-gray-600">Leads</span></div>
-                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10b981]"></div><span className="hidden sm:inline text-gray-600">Conv.</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#e63946]"></div><span className="hidden sm:inline text-gray-600">Inscr.</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#10b981]"></div><span className="hidden sm:inline text-gray-600">Egres.</span></div>
               </div>
             </div>
-            <AreaChart className="h-36 sm:h-44" data={chartData} index="semana" categories={['leads', 'conversiones']} colors={['rose', 'emerald']} showLegend={false} showGridLines={false} curveType="monotone" />
+            <AreaChart className="h-36 sm:h-44" data={chartData} index="mes" categories={['inscripciones', 'egresados']} colors={['rose', 'emerald']} showLegend={false} showGridLines={false} curveType="monotone" />
           </div>
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
             <div className="mb-3">
-              <h3 className="text-xs sm:text-sm font-bold text-gray-900">Ingresos por Curso</h3>
-              <p className="text-[9px] sm:text-[10px] text-gray-500">Distribución del mes</p>
+              <h3 className="text-xs sm:text-sm font-bold text-gray-900">Top Cursos por Inscripciones</h3>
+              <p className="text-[9px] sm:text-[10px] text-gray-500">Período seleccionado</p>
             </div>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-              <DonutChart className="h-32 w-32 sm:h-40 sm:w-40" data={donutData} category="value" index="name" colors={['rose', 'blue', 'emerald', 'amber']} showLabel={true} label="100%" showAnimation={true} />
+              <DonutChart className="h-32 w-32 sm:h-40 sm:w-40" data={donutData} category="value" index="name" colors={['rose', 'blue', 'emerald', 'amber']} showLabel={true} showAnimation={true} />
               <div className="grid grid-cols-2 sm:grid-cols-1 gap-1.5 w-full sm:w-auto">
                 {donutData.map((item, i) => (
                   <div key={i} className="flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></div>
                     <span className="text-[9px] sm:text-[10px] text-gray-600 truncate">{item.name}</span>
-                    <span className="text-[9px] sm:text-[10px] font-semibold text-gray-900 ml-auto">{item.value}%</span>
+                    <span className="text-[9px] sm:text-[10px] font-semibold text-gray-900 ml-auto">{formatNumber(item.value)}</span>
                   </div>
                 ))}
               </div>
@@ -210,7 +344,7 @@ export default function OverviewPage() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 sm:p-4">
             <div className="mb-3">
               <h3 className="text-xs sm:text-sm font-bold text-gray-900">Top Canales</h3>
-              <p className="text-[9px] sm:text-[10px] text-gray-500">Leads por fuente</p>
+              <p className="text-[9px] sm:text-[10px] text-gray-500">Leads por fuente (datos de muestra)</p>
             </div>
             <div className="space-y-2.5">
               {canalesData.map((canal, index) => {
@@ -249,7 +383,7 @@ export default function OverviewPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] sm:text-xs font-semibold text-gray-900">{area.area}</p>
-                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">{area.leads} leads · {area.conversion}</p>
+                    <p className="text-[9px] sm:text-[10px] text-gray-500 truncate">{area.metrica} · {area.detalle}</p>
                   </div>
                   <div className={`flex items-center gap-0.5 flex-shrink-0 ${area.trend >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                     {area.trend >= 0 ? <ArrowUpRight className="w-2.5 h-2.5 sm:w-3 sm:h-3" /> : <ArrowDownRight className="w-2.5 h-2.5 sm:w-3 sm:h-3" />}
