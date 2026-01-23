@@ -793,3 +793,77 @@ Click en "Exportar" y elegí el formato: Excel, CSV o PDF.
 **Documento generado:** 11 de Enero 2026  
 **Basado en:** Análisis de código fuente de producción  
 **Para uso de:** Chatbot asistente PSI Asociación
+
+---
+
+# 11. MENSAJES PROGRAMADOS
+
+## Descripción
+
+Funcionalidad estilo ManyChat que permite a los agentes programar mensajes para enviar automáticamente en una fecha y hora específica.
+
+## Requisito Previo: Desconectar del Router
+
+**⚠️ IMPORTANTE:** Para programar un mensaje, la conversación DEBE estar desconectada del Router WSP4.
+
+### ¿Por qué?
+
+Los mensajes programados se envían por las líneas Evolution API (Ventas, Administración, Alumnos, Comunidad), no por WSP4. Si la conversación sigue conectada al Router, el mensaje no podrá enviarse.
+
+### Cómo desconectar
+
+1. Abrir la conversación en el CRM
+2. En el header, hacer clic en el botón "Desconectar del Router"
+3. Seleccionar la línea por la que se enviará (Ventas, Admin, Alumnos, Comunidad)
+4. Confirmar
+
+## Cómo Programar un Mensaje
+
+1. **Desconectar la conversación del Router** (ver arriba)
+2. Escribir el mensaje en el input del chat
+3. Hacer clic en el botón **🕐 (reloj)** junto al clip de adjuntos
+4. En el modal:
+   - Verificar la línea de envío (debe coincidir con la línea donde se desconectó)
+   - Seleccionar fecha y hora
+   - Revisar el preview del mensaje
+5. Hacer clic en "Programar mensaje"
+
+## Líneas Disponibles
+
+| Línea | Instancia Evolution | Uso |
+|-------|---------------------|-----|
+| **Ventas** | PSI Ventas | Leads y seguimiento comercial |
+| **Administración** | EME Automations | Pagos, facturas, certificados |
+| **Alumnos** | PSI Alumnos | Soporte académico |
+| **Comunidad** | PSI Comunidad | Eventos y comunidad LC |
+
+## ¿Qué pasa cuando se envía?
+
+1. El sistema (pg_cron) revisa cada minuto si hay mensajes pendientes
+2. Cuando llega la hora programada, envía el mensaje automáticamente
+3. El mensaje queda registrado en la conversación
+4. Cuando el lead **contesta**, la conversación sube al tope de la lista
+
+## Estados del Mensaje Programado
+
+| Estado | Descripción |
+|--------|-------------|
+| `pendiente` | Esperando la hora programada |
+| `enviado` | Mensaje enviado exitosamente |
+| `fallido` | Error al enviar (ver error_mensaje) |
+| `cancelado` | Cancelado por el agente |
+
+## Preguntas Frecuentes
+
+**¿Puedo programar mensajes por WSP4?**
+No. Solo se pueden programar mensajes por las líneas Evolution API. Primero hay que desconectar la conversación del Router.
+
+**¿Puedo cancelar un mensaje programado?**
+Sí, desde la tabla de mensajes programados (si está implementada la vista) o contactando al administrador.
+
+**¿Qué pasa si el lead contesta antes de la hora programada?**
+El mensaje programado se enviará de todas formas a la hora indicada. El agente puede cancelarlo manualmente si ya no es necesario.
+
+**¿Puedo adjuntar archivos?**
+Sí. Primero adjuntá el archivo, luego hacé clic en el botón de reloj para programar.
+

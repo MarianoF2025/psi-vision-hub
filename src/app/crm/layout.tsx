@@ -1,12 +1,15 @@
 'use client';
-
 import { useEffect } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
+import { useSessionTracker } from '@/hooks/useSessionTracker';
 import Sidebar from '@/components/crm/Sidebar';
 import ChatbotAsistente from '@/components/crm/ChatbotAsistente';
 
 export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const { darkMode } = useCRMStore();
+  
+  // Registrar conexión/desconexión del agente
+  useSessionTracker();
 
   useEffect(() => {
     if (darkMode) {

@@ -57,24 +57,61 @@ ESTRUCTURA DE PANTALLA:
 PANEL CONVERSACIONES:
 - Filtros por inbox: WSP4, Ventas, Admin, Alumnos, Comunidad
 - Búsqueda por teléfono o nombre
+- Filtro por etiquetas
 - Badge de mensajes sin leer
 - Badge de asignación (👤 + nombre agente)
 
 PANEL CHAT:
-- Header: nombre, teléfono, botones TOMAR/SOLTAR
-- Burbujas de mensajes (entrante izquierda gris, saliente derecha verde)
+- Header: nombre, teléfono, área actual (badge de color), etiquetas del contacto
+- Botones de asignación: TOMAR/SOLTAR/Override
+- Burbujas de mensajes (entrante izquierda gris, saliente derecha indigo)
 - Soporte multimedia: imagen, audio, video, documento
 - Input con adjuntos, grabación de audio, respuestas rápidas (/comando)
+- Búsqueda dentro del chat (botón lupa en header)
 
-PANEL INFO CONTACTO (toggle):
+PANEL INFO CONTACTO (toggle derecha):
 - Datos del contacto (nombre, teléfono, email)
 - Edición inline de campos
 - Estado del lead, etiquetas, notas
 
-SISTEMA DE ASIGNACIÓN:
-- TOMAR: Asigna la conversación al agente actual
-- SOLTAR: Libera la conversación
-- Badge visible en la lista con nombre del asignado
+---
+
+SISTEMA DE ASIGNACIÓN DE CONVERSACIONES:
+
+1. TOMAR (botón verde):
+   - Aparece cuando la conversación no está asignada
+   - Asigna la conversación al agente actual
+   - Se muestra el nombre del agente en la lista de conversaciones
+
+2. SOLTAR (botón ámbar):
+   - Aparece cuando la conversación está asignada a ti
+   - Libera la conversación para que otro agente la tome
+
+3. OVERRIDE (botón naranja - solo admins):
+   - Aparece cuando la conversación está asignada a OTRO agente
+   - Permite a admins tomar la conversación de otro agente
+   - También disponible para Mariana en áreas Alumnos/Comunidad
+   - Pide confirmación antes de ejecutar
+
+4. ASIGNAR A AGENTE (desde menú ⋮):
+   - Solo visible para admins y usuarios con permisos especiales
+   - Abre modal con lista de agentes disponibles
+   - Muestra: nombre, email, badge "Admin" si corresponde
+   - Al asignar, se registra mensaje de sistema en el chat
+   - Mariana puede asignar a Fiamma en Alumnos/Comunidad
+
+---
+
+MENÚ DE ACCIONES (botón ⋮ en header del chat):
+
+- 🔄 Derivar a otra área: Mover conversación a Admin/Alumnos/Ventas/Comunidad
+- 👥 Asignar a agente: Modal para asignar a agente específico (solo admins)
+- 🔍 Buscar en chat: Activar búsqueda dentro de la conversación
+- 📌 Fijar/Desfijar conversación: Mantener conversación arriba en la lista
+
+ACCIONES ADICIONALES EN HEADER:
+- 🔗 Desconectar: El contacto ya no pasará por el menú automático del Router
+- ✅ Fin Conv.: Finalizar conversación (el contacto volverá a ver el menú si escribe)
 
 ═══════════════════════════════════════════════════════════════
                     3. MÓDULO CONTACTOS
@@ -107,6 +144,7 @@ FUNCIONALIDADES:
 - Crear nueva etiqueta (nombre + color)
 - Editar/eliminar etiqueta
 - Ver cantidad de usos
+- Filtrar conversaciones por etiqueta en el panel principal
 
 ═══════════════════════════════════════════════════════════════
                     5. MÓDULO RESPUESTAS RÁPIDAS
@@ -324,31 +362,126 @@ Paso 3 - CREAR E INVITAR:
                     9. MÓDULO ESTADÍSTICAS
 ═══════════════════════════════════════════════════════════════
 
-CONTROL DE ACCESO: Solo usuarios autorizados (EMAILS_ADMIN).
+CONTROL DE ACCESO: Basado en permisos del usuario. Cada usuario ve solo las áreas a las que tiene acceso.
 
-3 TABS:
+5 TABS (según permisos):
 
-TAB 1 - WSP4 Router:
+TAB 1 - WSP4 Router (solo admins):
 - Cards: Mensajes Hoy, Conv. Activas, Derivaciones Hoy, Autorespuestas
-- Gráfico: Derivaciones por Área
+- Gráfico: Derivaciones por Área (barras horizontales)
 
-TAB 2 - Ventas API:
-- Cards: Leads Hoy, Leads Semana, Leads Mes, Conversiones
-- Sección: Top 5 Anuncios
+TAB 2 - Ventas:
+- Cards: Leads Hoy, Leads Semana, Leads Mes, Conversiones, Tasa conversión
+- CTWA vs Directo (anuncios vs orgánico)
+- Top 5 Cursos Consultados (ranking)
+- Top 5 Anuncios CTWA (ranking con ad_id)
+- Leads por Estado (badges de colores)
+- Ranking Agentes Ventas: mensajes, atendidas, asignadas, conversiones
 
-TAB 3 - Por Agente:
-- Filtros: Hoy, Semana, Mes, Todo, Personalizado
-- Métricas: Mensajes, Atendidas, Asignadas, Promedio, T. Respuesta, Conversiones
-- Variación % vs período anterior
-- Actividad por línea con badges
+TAB 3 - Administración:
+- Cards: Conversaciones, Mensajes, T. Respuesta promedio, Agentes Activos
+- Top Consultas (opciones de menú más elegidas)
+- Ranking Agentes: mensajes, atendidas, asignadas
+
+TAB 4 - Alumnos:
+- Cards: Conversaciones, Mensajes, T. Respuesta promedio, Agentes Activos
+- Top Consultas (opciones de menú más elegidas)
+- Ranking Agentes: mensajes, atendidas, asignadas
+
+TAB 5 - Comunidad:
+- Cards: Conversaciones, Mensajes, T. Respuesta promedio, Agentes Activos
+- Top Consultas (opciones de menú más elegidas)
+- Ranking Agentes: mensajes, atendidas, asignadas
+
+FILTROS DE PERÍODO (en todos los tabs excepto WSP4):
+- Hoy, Semana, Mes, Todo
+- Personalizado (fecha desde/hasta)
 
 EXPORTACIÓN:
-- Excel (.xlsx): 3 hojas
-- CSV: todas las métricas
-- PDF: 2 páginas formateadas
+- Excel (.xlsx): Hoja por cada área
 
 ═══════════════════════════════════════════════════════════════
-                    10. INTEGRACIÓN PSI API
+                    10. MÓDULO AJUSTES
+═══════════════════════════════════════════════════════════════
+
+Configuración del sistema. Ruta: /crm/ajustes
+
+SECCIONES DISPONIBLES:
+
+1. MI PERFIL:
+   - Editar nombre
+   - Ver email (no editable)
+   - Toggle modo oscuro
+
+2. NOTIFICACIONES:
+   - Sonido de nuevos mensajes (on/off)
+   - Notificaciones de escritorio (requiere permiso del navegador)
+   - Alertas de leads META (on/off)
+
+3. MENÚ ROUTER WSP4 (importante!):
+   Configuración del menú interactivo que ve el usuario al escribir a WSP4.
+
+   SELECTOR DE MENÚ:
+   - Principal, Administración, Alumnos, Comunidad (submenús)
+
+   CONFIGURACIÓN DEL MENÚ:
+   - Header: Texto opcional que aparece arriba
+   - Body: Mensaje principal del menú
+   - Footer: Texto opcional que aparece abajo
+   - Texto del botón: Texto del botón que abre las opciones
+
+   OPCIONES DEL MENÚ (CRUD completo):
+   - Reordenar con flechas ↑↓
+   - Toggle activo/inactivo por opción
+   - Editar/Eliminar opciones
+
+   CAMPOS POR OPCIÓN:
+   | Campo | Descripción |
+   |-------|-------------|
+   | ID de opción | Identificador único (ej: admin_pagos) |
+   | Emoji | Emoji decorativo |
+   | Título | Texto que ve el usuario |
+   | Descripción | Texto secundario (opcional) |
+   | Tipo de acción | derivar, submenu, volver, cursos_dinamico |
+   | Área destino | Solo si tipo=derivar (admin, alumnos, ventas, comunidad) |
+   | Subetiqueta | Etiqueta adicional para clasificar |
+   | Mensaje contexto | Mensaje que se guarda con la derivación |
+
+4. AUTORESPUESTAS:
+   Mensajes automáticos según horario.
+
+   SELECTOR DE LÍNEA: Ventas API, WSP4 Router
+
+   ESTADO ACTUAL:
+   - Indicador visual de franja actual (Descanso, Preparación, Atención Activa, Post Atención)
+   - Botón "Cortar/Reanudar Atención" para cambiar manualmente
+
+   FRANJAS HORARIAS:
+   - 🌙 Franja 1 (22:00-07:00): Descanso
+   - ☀️ Franja 2 (07:00-09:00): Preparación
+   - 💼 Franja 3 (09:00-corte): Atención Activa
+   - 🌆 Franja 4 (corte-22:00): Post Atención
+
+   CONFIGURACIÓN:
+   - Autorespuestas activas (on/off)
+   - Cooldown: No repetir en las últimas X horas
+   - No enviar si agente respondió en los últimos X minutos
+
+   MENSAJES POR FRANJA:
+   - Cada franja tiene su propio mensaje personalizable
+   - Variable {dia_tarde} se reemplaza automáticamente
+
+5. RESPUESTAS RÁPIDAS:
+   - Redirige a /crm/respuestas
+
+6. SEGURIDAD:
+   - Cambiar contraseña
+
+7. DATOS Y EXPORTACIÓN:
+   - Redirige a /crm/estadisticas
+
+═══════════════════════════════════════════════════════════════
+                    11. INTEGRACIÓN PSI API
 ═══════════════════════════════════════════════════════════════
 
 Sincronización automática de inscripciones desde el sistema de gestión de PSI.
@@ -379,10 +512,23 @@ USO:
 
 ¿Qué significan los colores de las burbujas?
 → Gris (izquierda): Mensajes del contacto
-→ Verde/Indigo (derecha): Mensajes enviados por agentes
+→ Indigo (derecha): Mensajes enviados por agentes
 
 ¿Cómo asigno una conversación?
 → Click en "TOMAR" en el header del chat. Para liberar, click en "SOLTAR".
+
+¿Cómo asigno una conversación a otro agente?
+→ Click en el menú ⋮ → "Asignar a agente" → Seleccionar agente → Confirmar.
+→ Solo admins y usuarios con permisos especiales pueden hacerlo.
+
+¿Qué es el Override?
+→ Permite a admins tomar una conversación que ya está asignada a otro agente.
+→ Aparece como botón naranja cuando la conversación está asignada a alguien más.
+
+¿Cómo edito el menú que ve el usuario en WSP4?
+→ Ir a /crm/ajustes → Sección "Menú Router WSP4"
+→ Seleccionar el menú (Principal, Admin, Alumnos, etc.)
+→ Editar textos del menú o agregar/modificar opciones
 
 ¿Cómo creo una respuesta rápida?
 → Ir a /crm/respuestas → "Nueva Respuesta" → Completar atajo y contenido → Guardar
@@ -409,8 +555,38 @@ USO:
 ¿Cómo funciona el sistema anti-baneo?
 → Distribuye los envíos a lo largo de X horas para evitar que WhatsApp detecte spam.
 
-¿Por qué no veo las estadísticas?
-→ Solo usuarios autorizados tienen acceso. Contactá al administrador.
+¿Por qué no veo algunas estadísticas?
+→ Las estadísticas se muestran según tus permisos. Solo ves las áreas a las que tenés acceso.
+
+¿Cómo filtro conversaciones por etiqueta?
+→ En el panel de conversaciones hay un filtro de etiquetas. Seleccioná una para ver solo esas conversaciones.
+
+¿Cómo busco dentro de una conversación?
+→ Click en el botón 🔍 en el header del chat, o desde el menú ⋮ → "Buscar en chat".
+
+═══════════════════════════════════════════════════════════════
+                    11. MENSAJES PROGRAMADOS
+═══════════════════════════════════════════════════════════════
+
+Funcionalidad para programar mensajes automáticos (estilo ManyChat).
+
+⚠️ REQUISITO: La conversación DEBE estar DESCONECTADA del Router WSP4.
+Los mensajes programados solo funcionan con líneas Evolution API.
+
+CÓMO USAR:
+1. Desconectar la conversación del Router (botón 🔗 en header)
+2. Elegir la línea (Ventas, Admin, Alumnos, Comunidad)
+3. Escribir el mensaje en el input
+4. Clic en botón 🕐 (reloj) junto al clip
+5. Seleccionar fecha y hora → "Programar mensaje"
+
+LÍNEAS: Ventas (comercial), Administración (pagos), Alumnos (académico), Comunidad (eventos)
+
+FLUJO: El sistema envía automáticamente a la hora programada. Cuando el lead CONTESTA, la conversación sube al tope.
+
+ESTADOS: pendiente → enviado/fallido/cancelado
+
+¿Por WSP4? → No, solo líneas Evolution. Hay que desconectar primero.
 
 ═══════════════════════════════════════════════════════════════
                     GLOSARIO
@@ -425,6 +601,8 @@ Engagement: Tasa de interacción (clics en opciones del menú).
 TTF: Time To First Response. Tiempo hasta primera respuesta.
 Evolution API: API alternativa para WhatsApp sin límites de ventana.
 Cloud API: API oficial de Meta para WhatsApp Business.
+Override: Acción de admin para tomar conversación de otro agente.
+Corte: Momento en que se finaliza la atención activa del día.
 
 ═══════════════════════════════════════════════════════════════
                     TROUBLESHOOTING
@@ -445,6 +623,14 @@ Multimedia no se ve:
 Conversación no aparece en inbox correcto:
 → Verificar campo inbox_id
 → El inbox se define por donde ENTRÓ el mensaje
+
+No puedo asignar conversaciones:
+→ Solo admins pueden asignar a otros agentes
+→ Mariana puede asignar en Alumnos/Comunidad
+
+No veo el botón Override:
+→ Solo aparece para admins
+→ Solo aparece cuando la conversación está asignada a OTRO agente
 
 PARA PROBLEMAS TÉCNICOS:
 Contactar a Mariano (soporte técnico) con:

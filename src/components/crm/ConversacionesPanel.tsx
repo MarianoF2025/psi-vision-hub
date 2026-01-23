@@ -28,16 +28,6 @@ const LINEAS_SALIDA = [
   { id: 'comunidad', nombre: 'Comunidad', icon: Users, color: 'bg-orange-500' },
 ];
 
-const FILTROS_FECHA = [
-  { id: 'todas', label: 'Todas las fechas', dias: null },
-  { id: 'hoy', label: 'Hoy', dias: 0 },
-  { id: 'ultimos_7', label: 'Últimos 7 días', dias: -7 },
-  { id: 'ultimos_30', label: 'Últimos 30 días', dias: -30 },
-  { id: 'mas_7', label: 'Hace +7 días', dias: 7 },
-  { id: 'mas_20', label: 'Hace +20 días', dias: 20 },
-  { id: 'mas_30', label: 'Hace +30 días', dias: 30 },
-];
-
 export default function ConversacionesPanel() {
   const {
     inboxActual, conversacionActual, setConversacionActual,
@@ -61,7 +51,9 @@ export default function ConversacionesPanel() {
   const lineasFiltradas = LINEAS_SALIDA.filter(linea => canAccessInbox(permissions, linea.id));
   const [lineaSeleccionada, setLineaSeleccionada] = useState(lineasFiltradas[0]?.id || 'administracion');
 
-  const [filtroFecha, setFiltroFecha] = useState('todas');
+  // Estado para filtro de fechas (rango)
+  const [fechaDesde, setFechaDesde] = useState<string>('');
+  const [fechaHasta, setFechaHasta] = useState<string>('');
   const [mostrarFiltroFecha, setMostrarFiltroFecha] = useState(false);
 
   // Estado para filtro de etiquetas
@@ -75,23 +67,25 @@ export default function ConversacionesPanel() {
   const filtroEtiquetasRef = useRef<HTMLDivElement>(null);
   const inboxConfig = INBOXES.find(i => i.id === inboxActual);
 
-  const calcularFechaFiltro = (filtroId: string): { desde?: string; hasta?: string } => {
-    const ahora = new Date();
-    const filtro = FILTROS_FECHA.find(f => f.id === filtroId);
-    if (!filtro || filtro.dias === null) return {};
+  const tieneFiltroFecha = fechaDesde !== '' || fechaHasta !== '';
 
-    if (filtro.dias === 0) {
-      const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
-      return { desde: inicioHoy.toISOString() };
-    } else if (filtro.dias < 0) {
-      const desde = new Date(ahora);
-      desde.setDate(desde.getDate() + filtro.dias);
-      return { desde: desde.toISOString() };
-    } else {
-      const hasta = new Date(ahora);
-      hasta.setDate(hasta.getDate() - filtro.dias);
-      return { hasta: hasta.toISOString() };
-    }
+  const formatearFechaDisplay = (fecha: string): string => {
+    if (!fecha) return '';
+    const [year, month, day] = fecha.split('-');
+    return `${day}/${month}`;
+  };
+
+  const getTextoFiltroFecha = (): string => {
+    if (!tieneFiltroFecha) return 'Filtrar por fecha';
+    if (fechaDesde && fechaHasta) return `${formatearFechaDisplay(fechaDesde)} - ${formatearFechaDisplay(fechaHasta)}`;
+    if (fechaDesde) return `Desde ${formatearFechaDisplay(fechaDesde)}`;
+    if (fechaHasta) return `Hasta ${formatearFechaDisplay(fechaHasta)}`;
+    return 'Filtrar por fecha';
+  };
+
+  const limpiarFiltroFecha = () => {
+    setFechaDesde('');
+    setFechaHasta('');
   };
 
   const ordenarConversaciones = (convs: Conversacion[]): Conversacion[] => {
@@ -154,9 +148,17 @@ export default function ConversacionesPanel() {
       else if (filtroConversaciones === 'mias' && usuario?.id) query = query.eq('agente_asignado_id', usuario.id);
       if (busquedaConversaciones.trim()) query = query.or(`nombre.ilike.%${busquedaConversaciones}%,telefono.ilike.%${busquedaConversaciones}%`);
 
-      const fechaFiltro = calcularFechaFiltro(filtroFecha);
-      if (fechaFiltro.desde) query = query.gte('ts_ultimo_mensaje', fechaFiltro.desde);
-      if (fechaFiltro.hasta) query = query.lte('ts_ultimo_mensaje', fechaFiltro.hasta);
+      // Filtro por rango de fechas
+      if (fechaDesde) {
+        const desde = new Date(fechaDesde);
+        desde.setHours(0, 0, 0, 0);
+        query = query.gte('ts_ultimo_mensaje', desde.toISOString());
+      }
+      if (fechaHasta) {
+        const hasta = new Date(fechaHasta);
+        hasta.setHours(23, 59, 59, 999);
+        query = query.lte('ts_ultimo_mensaje', hasta.toISOString());
+      }
 
       // Filtrar por etiquetas (contactos que tienen esas etiquetas)
       if (etiquetasSeleccionadas.length > 0 && contactosConEtiquetas.length > 0) {
@@ -181,7 +183,7 @@ export default function ConversacionesPanel() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversaciones' }, () => cargarConversaciones())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [inboxActual, filtroConversaciones, busquedaConversaciones, usuario?.id, setContador, filtroFecha, etiquetasSeleccionadas, contactosConEtiquetas]);
+  }, [inboxActual, filtroConversaciones, busquedaConversaciones, usuario?.id, setContador, fechaDesde, fechaHasta, etiquetasSeleccionadas, contactosConEtiquetas]);
 
   useEffect(() => {
     const buscar = async () => {
@@ -291,7 +293,6 @@ export default function ConversacionesPanel() {
   };
 
   const etiquetasSeleccionadasInfo = etiquetasGlobales.filter(e => etiquetasSeleccionadas.includes(e.id));
-  const filtroFechaActual = FILTROS_FECHA.find(f => f.id === filtroFecha);
 
   return (
     <div className="w-72 h-full flex flex-col bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-shrink-0">
@@ -319,40 +320,70 @@ export default function ConversacionesPanel() {
           ))}
         </div>
 
-        {/* Filtro de fecha */}
+        {/* Filtro de fecha - Rango */}
         <div className="relative mb-2" ref={filtroFechaRef}>
           <button
             onClick={() => setMostrarFiltroFecha(!mostrarFiltroFecha)}
             className={cn(
               'w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded-md border transition-colors',
-              filtroFecha !== 'todas'
+              tieneFiltroFecha
                 ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
                 : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
             )}
           >
             <div className="flex items-center gap-1.5">
               <Calendar size={12} />
-              <span>{filtroFechaActual?.label || 'Filtrar por fecha'}</span>
+              <span>{getTextoFiltroFecha()}</span>
             </div>
-            <ChevronDown size={12} className={cn('transition-transform', mostrarFiltroFecha && 'rotate-180')} />
+            <div className="flex items-center gap-1">
+              {tieneFiltroFecha && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); limpiarFiltroFecha(); }}
+                  className="p-0.5 hover:bg-indigo-200 dark:hover:bg-indigo-500/20 rounded"
+                >
+                  <X size={10} />
+                </button>
+              )}
+              <ChevronDown size={12} className={cn('transition-transform', mostrarFiltroFecha && 'rotate-180')} />
+            </div>
           </button>
 
           {mostrarFiltroFecha && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 py-1">
-              {FILTROS_FECHA.map((filtro) => (
-                <button
-                  key={filtro.id}
-                  onClick={() => { setFiltroFecha(filtro.id); setMostrarFiltroFecha(false); }}
-                  className={cn(
-                    'w-full text-left px-3 py-1.5 text-[11px] transition-colors',
-                    filtroFecha === filtro.id
-                      ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                  )}
-                >
-                  {filtro.label}
-                </button>
-              ))}
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-10 p-3">
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    Desde
+                  </label>
+                  <input
+                    type="date"
+                    value={fechaDesde}
+                    onChange={(e) => setFechaDesde(e.target.value)}
+                    max={fechaHasta || undefined}
+                    className="w-full px-2 py-1.5 text-[11px] bg-slate-100 dark:bg-slate-800 border-0 rounded-md focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                    Hasta
+                  </label>
+                  <input
+                    type="date"
+                    value={fechaHasta}
+                    onChange={(e) => setFechaHasta(e.target.value)}
+                    min={fechaDesde || undefined}
+                    className="w-full px-2 py-1.5 text-[11px] bg-slate-100 dark:bg-slate-800 border-0 rounded-md focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-white"
+                  />
+                </div>
+                {tieneFiltroFecha && (
+                  <button
+                    onClick={() => { limpiarFiltroFecha(); setMostrarFiltroFecha(false); }}
+                    className="w-full py-1.5 text-[10px] text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+                  >
+                    Limpiar filtro
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

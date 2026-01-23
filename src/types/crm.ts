@@ -194,3 +194,41 @@ export const WEBHOOKS: Record<InboxType, string> = {
   admin: process.env.NEXT_PUBLIC_WEBHOOK_ADMIN || 'https://n8n.psi.com/webhook/admin/enviar',
   comunidad: process.env.NEXT_PUBLIC_WEBHOOK_COMUNIDAD || 'https://n8n.psi.com/webhook/comunidad/enviar'
 };
+
+// ==========================================
+// MENSAJES PROGRAMADOS
+// ==========================================
+
+export type LineaEvolution = 'ventas' | 'administracion' | 'alumnos' | 'comunidad';
+export type EstadoMensajeProgramado = 'pendiente' | 'enviado' | 'fallido' | 'cancelado';
+
+export interface MensajeProgramado {
+  id: string;
+  conversacion_id: string;
+  contacto_id?: string;
+  telefono: string;
+  nombre_contacto?: string;
+  mensaje?: string;
+  media_url?: string;
+  media_type?: 'image' | 'document' | null;
+  media_filename?: string;
+  linea_envio: LineaEvolution;
+  instancia_evolution: string;
+  programado_para: string;
+  estado: EstadoMensajeProgramado;
+  error_mensaje?: string;
+  enviado_at?: string;
+  creado_por: string;
+  creado_por_nombre?: string;
+  created_at: string;
+  updated_at: string;
+  cancelado_at?: string;
+  cancelado_por?: string;
+}
+
+export const LINEAS_EVOLUTION: { id: LineaEvolution; nombre: string; instancia: string; icono: string; color: string }[] = [
+  { id: 'ventas', nombre: 'Ventas', instancia: 'PSI Ventas', icono: '💰', color: 'amber' },
+  { id: 'administracion', nombre: 'Administración', instancia: 'EME Automations', icono: '📋', color: 'blue' },
+  { id: 'alumnos', nombre: 'Alumnos', instancia: 'PSI Alumnos', icono: '🎓', color: 'emerald' },
+  { id: 'comunidad', nombre: 'Comunidad', instancia: 'PSI Comunidad', icono: '👥', color: 'purple' },
+];

@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { type Mensaje, type InboxType, INBOXES } from '@/types/crm';
 import { cn, formatMessageTime, getInitials } from '@/lib/utils';
 import { LinkPreview, extractUrls } from './LinkPreview';
-import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft, ChevronUp, ChevronDown, Users } from 'lucide-react';
+import { Search, User, MoreVertical, Smile, Paperclip, Mic, Send, X, MessageSquare, Reply, Copy, Trash2, Pin, Star, Forward, CheckSquare, Share2, Plus, Play, Pause, Download, Unlink, CheckCircle, UserCheck, UserMinus, ArrowRightLeft, ChevronUp, ChevronDown, Users, CalendarClock } from 'lucide-react';
+import ModalProgramarMensaje from './ModalProgramarMensaje';
 
 interface RespuestaRapida { id: string; atajo: string; titulo: string; contenido: string; }
 interface ArchivoSeleccionado { file: File; preview: string | null; tipo: 'image' | 'video' | 'document' | 'audio'; }
@@ -112,6 +113,7 @@ export default function ChatPanel() {
 
   // Estados para asignación de agentes
   const [mostrarModalAsignar, setMostrarModalAsignar] = useState(false);
+  const [mostrarModalProgramar, setMostrarModalProgramar] = useState(false);
   const [agentesDisponibles, setAgentesDisponibles] = useState<AgenteDisponible[]>([]);
   const [agenteSeleccionado, setAgenteSeleccionado] = useState<string | null>(null);
   const [asignando, setAsignando] = useState(false);
@@ -1546,6 +1548,7 @@ export default function ChatPanel() {
         </div>
 
         <button onClick={handleClickAdjuntar} className={cn('p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800', archivoSeleccionado ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-500/20' : 'text-slate-500')}><Paperclip size={18} /></button>
+        <button onClick={() => setMostrarModalProgramar(true)} disabled={!texto.trim() && !archivoSeleccionado} className={cn("p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800", (texto.trim() || archivoSeleccionado) ? "text-indigo-500" : "text-slate-300 cursor-not-allowed")} title="Programar mensaje"><CalendarClock size={18} /></button>
 
         <div className="flex-1">
           {grabandoAudio ? (
@@ -1564,6 +1567,25 @@ export default function ChatPanel() {
           {enviando ? (<div className="w-[18px] h-[18px] border-2 border-white border-t-transparent rounded-full animate-spin" />) : grabandoAudio ? (<div className="w-4 h-4 bg-white rounded-sm" />) : (texto.trim() || archivoSeleccionado) ? (<Send size={18} />) : (<Mic size={18} />)}
         </button>
       </div>
+      {/* Modal Programar Mensaje */}
+      {mostrarModalProgramar && conversacionActual && (
+        <ModalProgramarMensaje
+          isOpen={mostrarModalProgramar}
+          onClose={() => setMostrarModalProgramar(false)}
+          conversacion={conversacionActual}
+          mensaje={texto}
+          archivoUrl={archivoSeleccionado?.preview || undefined}
+          archivoTipo={archivoSeleccionado?.tipo === 'image' ? 'image' : archivoSeleccionado?.tipo === 'document' ? 'document' : undefined}
+          archivoNombre={archivoSeleccionado?.file.name}
+          usuarioEmail={user?.email || ''}
+          usuarioNombre={usuario?.nombre || user?.email || ''}
+          onSuccess={() => {
+            setTexto('');
+            setArchivoSeleccionado(null);
+            setMostrarModalProgramar(false);
+          }}
+        />
+      )}
     </div>
   );
 }

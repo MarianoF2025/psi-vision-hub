@@ -10,7 +10,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard, Bot } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard, Bot, UserCheck } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
@@ -24,61 +24,71 @@ const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
 // Módulos de gestión con permisos por inbox
 // Si inboxesPermitidos está vacío, solo admins pueden ver
 const PAGINAS_EXTRA = [
-  { 
-    id: 'contactos', 
-    nombre: 'Contactos', 
-    href: '/crm/contactos', 
-    icono: Contact, 
-    inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api', 'admin'] 
+  {
+    id: 'contactos',
+    nombre: 'Contactos',
+    href: '/crm/contactos',
+    icono: Contact,
+    inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api', 'admin']
   },
-  { 
-    id: 'pagos', 
-    nombre: 'Pagos', 
-    href: '/crm/pagos', 
-    icono: CreditCard, 
+  {
+    id: 'pagos',
+    nombre: 'Pagos',
+    href: '/crm/pagos',
+    icono: CreditCard,
     inboxesPermitidos: ['admin'] // Solo Administración
   },
-  { 
-    id: 'etiquetas', 
-    nombre: 'Etiquetas', 
-    href: '/crm/etiquetas', 
-    icono: Tag, 
-    inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api', 'admin'] 
+  {
+    id: 'etiquetas',
+    nombre: 'Etiquetas',
+    href: '/crm/etiquetas',
+    icono: Tag,
+    inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api', 'admin']
   },
-  { 
-    id: 'respuestas', 
-    nombre: 'Respuestas', 
-    href: '/crm/respuestas', 
-    icono: MessageSquare, 
+  {
+    id: 'respuestas',
+    nombre: 'Respuestas',
+    href: '/crm/respuestas',
+    icono: MessageSquare,
     inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api'] // No Admin
   },
-  { 
-    id: 'estadisticas', 
-    nombre: 'Estadisticas', 
-    href: '/crm/estadisticas', 
-    icono: BarChart3, 
+  {
+    id: 'estadisticas',
+    nombre: 'Estadisticas',
+    href: '/crm/estadisticas',
+    icono: BarChart3,
     inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api', 'admin'] // Todos (filtrado por agente en la página)
   },
-  { 
-    id: 'automatizaciones', 
-    nombre: 'Automatizaciones', 
-    href: '/crm/automatizaciones', 
-    icono: Zap, 
+  {
+    id: 'automatizaciones',
+    nombre: 'Automatizaciones',
+    href: '/crm/automatizaciones',
+    icono: Zap,
     inboxesPermitidos: ['ventas', 'ventas_api'] // Solo Ventas
   },
-  { 
-    id: 'remarketing', 
-    nombre: 'Remarketing', 
-    href: '/crm/remarketing', 
-    icono: Send, 
+  {
+    id: 'remarketing',
+    nombre: 'Remarketing',
+    href: '/crm/remarketing',
+    icono: Send,
     inboxesPermitidos: [] // Solo admins
   },
-  { 
-    id: 'grupos', 
-    nombre: 'Grupos WA', 
-    href: '/crm/grupos', 
-    icono: UsersRound, 
-    inboxesPermitidos: ['alumnos', 'comunidad'] // Solo Alumnos y Comunidad
+  {
+    id: 'grupos',
+    nombre: 'Grupos WA',
+    href: '/crm/grupos',
+    icono: UsersRound,
+    inboxesPermitidos: ['alumnos', 'comunidad', 'ventas', 'ventas_api'] // Alumnos, Comunidad y Ventas
+  },
+];
+
+// Páginas solo para administradores
+const PAGINAS_ADMIN = [
+  {
+    id: 'control-agentes',
+    nombre: 'Control Agentes',
+    href: '/crm/control-agentes',
+    icono: UserCheck,
   },
 ];
 
@@ -96,14 +106,14 @@ export default function Sidebar() {
         .from('conversaciones')
         .select('area, mensajes_no_leidos')
         .gt('mensajes_no_leidos', 0);
-      
+
       if (data) {
         const contadoresPorArea: Record<string, number> = {};
         data.forEach(conv => {
           const area = conv.area || 'wsp4';
           contadoresPorArea[area] = (contadoresPorArea[area] || 0) + 1;
         });
-        
+
         // Actualizar todos los contadores
         ['wsp4', 'ventas', 'ventas_api', 'alumnos', 'admin', 'comunidad'].forEach(inbox => {
           setContador(inbox as any, contadoresPorArea[inbox] || 0);
@@ -136,10 +146,10 @@ export default function Sidebar() {
   const puedeVerPagina = (pagina: typeof PAGINAS_EXTRA[0]): boolean => {
     // Admins ven todo
     if (esAdmin) return true;
-    
+
     // Si no tiene inboxes permitidos definidos, solo admins
     if (!pagina.inboxesPermitidos || pagina.inboxesPermitidos.length === 0) return false;
-    
+
     // Si alguno de sus inboxes está en la lista de permitidos, puede ver
     return pagina.inboxesPermitidos.some(inbox => puedeVerInbox(inbox as InboxType));
   };
@@ -253,6 +263,42 @@ export default function Sidebar() {
                   {sidebarExpandido && <span className="flex-1 text-xs font-medium truncate">{pagina.nombre}</span>}
                   {!sidebarExpandido && (
                     <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-slate-900 dark:bg-slate-700 text-white text-[10px] rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                      {pagina.nombre}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </>
+        )}
+
+        {/* Sección ADMIN - Solo para administradores */}
+        {esAdmin && (
+          <>
+            <div className="my-2 mx-3 border-t border-slate-200 dark:border-slate-800" />
+
+            {sidebarExpandido && (
+              <p className="px-3 text-[9px] font-semibold text-amber-500 uppercase tracking-wider mb-1">Admin</p>
+            )}
+            {PAGINAS_ADMIN.map((pagina) => {
+              const isActive = pathname === pagina.href || pathname.startsWith(pagina.href + '/');
+              return (
+                <Link
+                  key={pagina.id}
+                  href={pagina.href}
+                  className={cn(
+                    'relative mx-1 px-2 py-1.5 rounded-lg flex items-center gap-2 transition-all group',
+                    isActive
+                      ? 'bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400'
+                      : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800',
+                    !sidebarExpandido && 'justify-center'
+                  )}
+                >
+                  {isActive && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-amber-500 rounded-r-full" />}
+                  <pagina.icono size={16} />
+                  {sidebarExpandido && <span className="flex-1 text-xs font-medium truncate">{pagina.nombre}</span>}
+                  {!sidebarExpandido && (
+                    <div className="absolute left-full ml-1 px-1.5 py-0.5 bg-amber-600 text-white text-[10px] rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
                       {pagina.nombre}
                     </div>
                   )}
