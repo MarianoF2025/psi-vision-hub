@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
-import { 
-  UserCheck, Users, Clock, Calendar, ChevronDown, RefreshCw, 
-  Circle, LogIn, LogOut, AlertTriangle, TrendingUp, Filter
+import {
+  UserCheck, Users, Clock, Calendar, ChevronDown, RefreshCw,
+  Circle, LogIn, LogOut, AlertTriangle, TrendingUp, Filter,
+  History, FileEdit, Plus, Trash2, ToggleLeft, Settings
 } from 'lucide-react';
 
 interface AgenteConectado {
@@ -40,14 +41,28 @@ interface ResumenAgente {
   ultima_actividad: string;
 }
 
+interface AuditLogEntry {
+  id: string;
+  accion: string;
+  tabla_afectada: string;
+  registro_id: string;
+  valores_anteriores: any;
+  valores_nuevos: any;
+  user_name: string;
+  origen: string;
+  detalles: string;
+  created_at: string;
+}
+
 export default function ControlAgentesPage() {
   const { esAdmin, cargando: cargandoPermisos } = usePermissions();
   const [agentesConectados, setAgentesConectados] = useState<AgenteConectado[]>([]);
   const [sesionesHoy, setSesionesHoy] = useState<SesionAgente[]>([]);
   const [resumenSemanal, setResumenSemanal] = useState<ResumenAgente[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tabActiva, setTabActiva] = useState<'tiempo-real' | 'historial' | 'resumen'>('tiempo-real');
-  
+  const [tabActiva, setTabActiva] = useState<'tiempo-real' | 'historial' | 'resumen' | 'cambios'>('tiempo-real');
+
   // Filtros
   const [fechaDesde, setFechaDesde] = useState(() => {
     const hace7dias = new Date();
@@ -56,16 +71,19 @@ export default function ControlAgentesPage() {
   });
   const [fechaHasta, setFechaHasta] = useState(() => new Date().toISOString().split('T')[0]);
   const [agenteSeleccionado, setAgenteSeleccionado] = useState<string>('todos');
+  
+  // Filtros para audit log
+  const [filtroAccion, setFiltroAccion] = useState<string>('todos');
 
   const cargarDatos = async () => {
     setLoading(true);
-    
+
     // Cargar agentes conectados (vista)
     const { data: conectados } = await supabase
       .from('agentes_estado_actual')
       .select('*')
       .order('ultimo_timestamp', { ascending: false });
-    
+
     if (conectados) setAgentesConectados(conectados);
 
     // Cargar sesiones de hoy
@@ -76,7 +94,7 @@ export default function ControlAgentesPage() {
       .eq('fecha', hoy)
       .order('timestamp', { ascending: false })
       .limit(100);
-    
+
     if (sesiones) setSesionesHoy(sesiones);
 
     // Cargar resumen semanal usando la función RPC
@@ -85,8 +103,18 @@ export default function ControlAgentesPage() {
         p_fecha_desde: fechaDesde,
         p_fecha_hasta: fechaHasta
       });
-    
+
     if (resumen) setResumenSemanal(resumen);
+
+    // Cargar audit logs (cambios en automatizaciones)
+    const { data: logs } = await supabase
+      .from('audit_log')
+      .select('*')
+      .in('origen', ['crm-automatizaciones', 'router-wsp4', 'crm-respuestas'])
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (logs) setAuditLogs(logs);
 
     setLoading(false);
   };
@@ -110,6 +138,9 @@ export default function ControlAgentesPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'agentes_sesiones' }, () => {
         cargarDatos();
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_log' }, () => {
+        cargarDatos();
+      })
       .subscribe();
 
     return () => {
@@ -118,24 +149,23 @@ export default function ControlAgentesPage() {
   }, [esAdmin]);
 
   const formatearHora = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString('es-AR', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return new Date(timestamp).toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
   const formatearFechaHora = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString('es-AR', { 
+    return new Date(timestamp).toLocaleString('es-AR', {
       day: '2-digit',
       month: '2-digit',
-      hour: '2-digit', 
-      minute: '2-digit' 
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
   const formatearDuracion = (intervalo: string) => {
     if (!intervalo) return '0h 0m';
-    // El intervalo viene como "HH:MM:SS" o similar
     const match = intervalo.match(/(\d+):(\d+):(\d+)/);
     if (match) {
       const horas = parseInt(match[1]);
@@ -150,7 +180,7 @@ export default function ControlAgentesPage() {
     const ultima = new Date(timestamp);
     const diffMs = ahora.getTime() - ultima.getTime();
     const diffMin = Math.floor(diffMs / 60000);
-    
+
     if (diffMin < 1) return 'Ahora';
     if (diffMin < 60) return `Hace ${diffMin}m`;
     const diffHoras = Math.floor(diffMin / 60);
@@ -158,10 +188,64 @@ export default function ControlAgentesPage() {
     return `Hace ${Math.floor(diffHoras / 24)}d`;
   };
 
+  // Helper para obtener icono y color según la acción
+  const getAccionStyle = (accion: string) => {
+    if (accion.includes('creado') || accion.includes('creada') || accion.includes('vinculado')) {
+      return { icon: Plus, bgColor: 'bg-green-100 dark:bg-green-500/20', textColor: 'text-green-600 dark:text-green-400' };
+    }
+    if (accion.includes('eliminado') || accion.includes('eliminada') || accion.includes('desvinculado')) {
+      return { icon: Trash2, bgColor: 'bg-red-100 dark:bg-red-500/20', textColor: 'text-red-600 dark:text-red-400' };
+    }
+    if (accion.includes('activado') || accion.includes('activada') || accion.includes('desactivado') || accion.includes('desactivada')) {
+      return { icon: ToggleLeft, bgColor: 'bg-amber-100 dark:bg-amber-500/20', textColor: 'text-amber-600 dark:text-amber-400' };
+    }
+    if (accion.includes('actualizado') || accion.includes('actualizada') || accion.includes('reordenadas')) {
+      return { icon: FileEdit, bgColor: 'bg-blue-100 dark:bg-blue-500/20', textColor: 'text-blue-600 dark:text-blue-400' };
+    }
+    if (accion.includes('seleccion') || accion.includes('derivacion')) {
+      return { icon: Settings, bgColor: 'bg-purple-100 dark:bg-purple-500/20', textColor: 'text-purple-600 dark:text-purple-400' };
+    }
+    return { icon: History, bgColor: 'bg-slate-100 dark:bg-slate-800', textColor: 'text-slate-600 dark:text-slate-400' };
+  };
+
+  // Formatear acción para mostrar
+  const formatearAccion = (accion: string) => {
+    const mapeo: Record<string, string> = {
+      'curso_creado': 'Curso creado',
+      'curso_actualizado': 'Curso actualizado',
+      'curso_eliminado': 'Curso eliminado',
+      'curso_activado': 'Curso activado',
+      'curso_desactivado': 'Curso desactivado',
+      'opcion_menu_creada': 'Opción de menú creada',
+      'opcion_menu_actualizada': 'Opción de menú actualizada',
+      'opcion_menu_eliminada': 'Opción de menú eliminada',
+      'opcion_menu_activada': 'Opción de menú activada',
+      'opcion_menu_desactivada': 'Opción de menú desactivada',
+      'opciones_reordenadas': 'Opciones reordenadas',
+      'anuncio_vinculado': 'Anuncio vinculado',
+      'anuncio_desvinculado': 'Anuncio desvinculado',
+      'seleccion_curso_wsp4': 'Selección de curso (WSP4)',
+      'derivacion_menu_interactivo': 'Derivación desde menú',
+      'respuesta_creada': 'Respuesta rápida creada',
+      'respuesta_actualizada': 'Respuesta rápida actualizada',
+      'respuesta_eliminada': 'Respuesta rápida eliminada',
+    };
+    return mapeo[accion] || accion;
+  };
+
   // Obtener lista única de agentes para el filtro
   const agentesUnicos = [...new Map(
     [...sesionesHoy, ...resumenSemanal].map(s => [s.usuario_id, { id: s.usuario_id, nombre: s.usuario_nombre, email: s.usuario_email }])
   ).values()];
+
+  // Obtener acciones únicas para filtro
+  const accionesUnicas = [...new Set(auditLogs.map(l => l.accion))];
+
+  // Filtrar logs
+  const logsFiltrados = auditLogs.filter(log => {
+    if (filtroAccion !== 'todos' && log.accion !== filtroAccion) return false;
+    return true;
+  });
 
   if (cargandoPermisos) {
     return (
@@ -197,7 +281,7 @@ export default function ControlAgentesPage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-slate-800 dark:text-white">Control de Agentes</h1>
-              <p className="text-xs text-slate-500">Monitoreo de conexiones y horas trabajadas</p>
+              <p className="text-xs text-slate-500">Monitoreo de conexiones, horas y cambios</p>
             </div>
           </div>
           <button
@@ -216,6 +300,7 @@ export default function ControlAgentesPage() {
             { id: 'tiempo-real', label: 'Tiempo Real', icon: Circle },
             { id: 'historial', label: 'Historial Hoy', icon: Clock },
             { id: 'resumen', label: 'Resumen Horas', icon: TrendingUp },
+            { id: 'cambios', label: 'Historial Cambios', icon: History },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -485,6 +570,101 @@ export default function ControlAgentesPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab: Historial de Cambios */}
+        {tabActiva === 'cambios' && (
+          <div className="space-y-4">
+            {/* Filtros */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Filter size={14} className="text-slate-400" />
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Filtrar por acción:</span>
+                </div>
+                <select
+                  value={filtroAccion}
+                  onChange={(e) => setFiltroAccion(e.target.value)}
+                  className="px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md"
+                >
+                  <option value="todos">Todas las acciones</option>
+                  {accionesUnicas.map((accion) => (
+                    <option key={accion} value={accion}>
+                      {formatearAccion(accion)}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-slate-400 ml-auto">
+                  {logsFiltrados.length} registros
+                </span>
+              </div>
+            </div>
+
+            {/* Lista de cambios */}
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+              <div className="p-3 border-b border-slate-200 dark:border-slate-800">
+                <h3 className="font-medium text-sm text-slate-800 dark:text-white">
+                  Historial de Cambios en Automatizaciones
+                </h3>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[600px] overflow-y-auto">
+                {logsFiltrados.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 text-sm">
+                    No hay cambios registrados
+                  </div>
+                ) : (
+                  logsFiltrados.map((log) => {
+                    const style = getAccionStyle(log.accion);
+                    const IconComponent = style.icon;
+                    return (
+                      <div key={log.id} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <div className="flex items-start gap-3">
+                          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', style.bgColor)}>
+                            <IconComponent size={16} className={style.textColor} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium text-slate-800 dark:text-white">
+                                {formatearAccion(log.accion)}
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                {log.tabla_afectada}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                              {log.detalles || 'Sin detalles'}
+                            </p>
+                            {log.valores_nuevos && Object.keys(log.valores_nuevos).length > 0 && (
+                              <div className="mt-1.5 text-[10px] text-slate-500 bg-slate-50 dark:bg-slate-800/50 rounded px-2 py-1">
+                                {Object.entries(log.valores_nuevos).slice(0, 3).map(([key, value]) => (
+                                  <span key={key} className="mr-2">
+                                    <span className="text-slate-400">{key}:</span> {String(value).substring(0, 30)}{String(value).length > 30 ? '...' : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="text-[10px] text-slate-400">
+                                {formatearFechaHora(log.created_at)}
+                              </span>
+                              {log.user_name && log.user_name !== 'Sistema' && (
+                                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                                  por {log.user_name}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-400">
+                                {log.origen}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>

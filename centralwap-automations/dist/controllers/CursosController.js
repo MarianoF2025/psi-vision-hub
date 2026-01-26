@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.cursosController = exports.CursosController = void 0;
 const supabase_1 = require("../config/supabase");
+const AuditService_1 = require("../services/AuditService");
 class CursosController {
     async listar(req, res) {
         try {
@@ -58,6 +59,7 @@ class CursosController {
     async crear(req, res) {
         try {
             const body = req.body;
+            const userName = req.headers['x-user-name'];
             if (!body.codigo) {
                 res.status(400).json({ success: false, error: 'El código del curso es requerido' });
                 return;
@@ -75,7 +77,8 @@ class CursosController {
                 }
                 throw error;
             }
-            console.log(`✅ Curso creado: ${data.codigo} - ${data.nombre}`);
+            await AuditService_1.auditService.logCursoCreado(data.id, data, userName);
+            console.log(`✅ Curso creado: ${data.codigo} - ${data.nombre} (por ${userName || 'Sistema'})`);
             res.status(201).json({ success: true, data, message: 'Curso creado exitosamente' });
         }
         catch (error) {
@@ -87,6 +90,13 @@ class CursosController {
         try {
             const { id } = req.params;
             const body = req.body;
+            const userName = req.headers['x-user-name'];
+            // Obtener datos anteriores
+            const { data: anterior } = await supabase_1.supabase.from('cursos').select('*').eq('id', id).single();
+            if (!anterior) {
+                res.status(404).json({ success: false, error: 'Curso no encontrado' });
+                return;
+            }
             // Eliminar campos que no pertenecen a la tabla cursos
             delete body.anuncios;
             delete body.opciones;
@@ -105,7 +115,8 @@ class CursosController {
                 }
                 throw error;
             }
-            console.log(`✅ Curso actualizado: ${data.codigo}`);
+            await AuditService_1.auditService.logCursoActualizado(id, anterior, body, userName);
+            console.log(`✅ Curso actualizado: ${data.codigo} (por ${userName || 'Sistema'})`);
             res.json({ success: true, data, message: 'Curso actualizado exitosamente' });
         }
         catch (error) {
@@ -116,7 +127,8 @@ class CursosController {
     async eliminar(req, res) {
         try {
             const { id } = req.params;
-            const { data: existing } = await supabase_1.supabase.from('cursos').select('id, codigo').eq('id', id).single();
+            const userName = req.headers['x-user-name'];
+            const { data: existing } = await supabase_1.supabase.from('cursos').select('id, codigo, nombre').eq('id', id).single();
             if (!existing) {
                 res.status(404).json({ success: false, error: 'Curso no encontrado' });
                 return;
@@ -124,7 +136,8 @@ class CursosController {
             const { error } = await supabase_1.supabase.from('cursos').delete().eq('id', id);
             if (error)
                 throw error;
-            console.log(`🗑️ Curso eliminado: ${existing.codigo}`);
+            await AuditService_1.auditService.logCursoEliminado(id, existing, userName);
+            console.log(`🗑️ Curso eliminado: ${existing.codigo} (por ${userName || 'Sistema'})`);
             res.json({ success: true, message: 'Curso eliminado exitosamente' });
         }
         catch (error) {
@@ -135,6 +148,7 @@ class CursosController {
     async toggle(req, res) {
         try {
             const { id } = req.params;
+            const userName = req.headers['x-user-name'];
             const { data: existing, error: fetchError } = await supabase_1.supabase.from('cursos').select('activo, codigo').eq('id', id).single();
             if (fetchError || !existing) {
                 res.status(404).json({ success: false, error: 'Curso no encontrado' });
@@ -143,7 +157,8 @@ class CursosController {
             const { data, error } = await supabase_1.supabase.from('cursos').update({ activo: !existing.activo }).eq('id', id).select().single();
             if (error)
                 throw error;
-            console.log(`🔄 Curso ${existing.codigo}: ${data.activo ? 'ACTIVADO' : 'DESACTIVADO'}`);
+            await AuditService_1.auditService.logCursoToggle(id, existing.codigo, data.activo, userName);
+            console.log(`🔄 Curso ${existing.codigo}: ${data.activo ? 'ACTIVADO' : 'DESACTIVADO'} (por ${userName || 'Sistema'})`);
             res.json({ success: true, data, message: `Curso ${data.activo ? 'activado' : 'desactivado'} exitosamente` });
         }
         catch (error) {

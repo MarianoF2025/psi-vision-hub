@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.opcionesController = exports.OpcionesController = void 0;
 const supabase_1 = require("../config/supabase");
+const AuditService_1 = require("../services/AuditService");
 class OpcionesController {
     async listar(req, res) {
         try {
@@ -42,6 +43,7 @@ class OpcionesController {
         try {
             const { cursoId } = req.params;
             const body = req.body;
+            const userName = req.headers['x-user-name'];
             if (!body.titulo) {
                 res.status(400).json({ success: false, error: 'El título de la opción es requerido' });
                 return;
@@ -68,7 +70,8 @@ class OpcionesController {
                 }
                 throw error;
             }
-            console.log(`✅ Opción creada: ${data.emoji || ''} ${data.titulo}`);
+            await AuditService_1.auditService.logOpcionCreada(data.id, data, userName);
+            console.log(`✅ Opción creada: ${data.emoji || ''} ${data.titulo} (por ${userName || 'Sistema'})`);
             res.status(201).json({ success: true, data, message: 'Opción creada exitosamente' });
         }
         catch (error) {
@@ -80,8 +83,14 @@ class OpcionesController {
         try {
             const { id } = req.params;
             const body = req.body;
+            const userName = req.headers['x-user-name'];
             if (body.tipo && !['info', 'derivar', 'inscribir'].includes(body.tipo)) {
                 res.status(400).json({ success: false, error: 'El tipo debe ser: info, derivar o inscribir' });
+                return;
+            }
+            const { data: anterior } = await supabase_1.supabase.from('menu_opciones').select('*').eq('id', id).single();
+            if (!anterior) {
+                res.status(404).json({ success: false, error: 'Opción no encontrada' });
                 return;
             }
             const { data, error } = await supabase_1.supabase.from('menu_opciones').update(body).eq('id', id).select().single();
@@ -92,7 +101,8 @@ class OpcionesController {
                 }
                 throw error;
             }
-            console.log(`✅ Opción actualizada: ${data.emoji || ''} ${data.titulo}`);
+            await AuditService_1.auditService.logOpcionActualizada(id, anterior, body, userName);
+            console.log(`✅ Opción actualizada: ${data.emoji || ''} ${data.titulo} (por ${userName || 'Sistema'})`);
             res.json({ success: true, data, message: 'Opción actualizada exitosamente' });
         }
         catch (error) {
@@ -103,7 +113,8 @@ class OpcionesController {
     async eliminar(req, res) {
         try {
             const { id } = req.params;
-            const { data: existing } = await supabase_1.supabase.from('menu_opciones').select('id, titulo').eq('id', id).single();
+            const userName = req.headers['x-user-name'];
+            const { data: existing } = await supabase_1.supabase.from('menu_opciones').select('id, titulo, tipo').eq('id', id).single();
             if (!existing) {
                 res.status(404).json({ success: false, error: 'Opción no encontrada' });
                 return;
@@ -111,7 +122,8 @@ class OpcionesController {
             const { error } = await supabase_1.supabase.from('menu_opciones').delete().eq('id', id);
             if (error)
                 throw error;
-            console.log(`🗑️ Opción eliminada: ${existing.titulo}`);
+            await AuditService_1.auditService.logOpcionEliminada(id, existing, userName);
+            console.log(`🗑️ Opción eliminada: ${existing.titulo} (por ${userName || 'Sistema'})`);
             res.json({ success: true, message: 'Opción eliminada exitosamente' });
         }
         catch (error) {
@@ -123,6 +135,7 @@ class OpcionesController {
         try {
             const { cursoId } = req.params;
             const { opciones } = req.body;
+            const userName = req.headers['x-user-name'];
             if (!opciones || !Array.isArray(opciones)) {
                 res.status(400).json({ success: false, error: 'Debe enviar un array de opciones con id y orden' });
                 return;
@@ -130,7 +143,15 @@ class OpcionesController {
             const updatePromises = opciones.map(({ id, orden }) => supabase_1.supabase.from('menu_opciones').update({ orden }).eq('id', id).eq('curso_id', cursoId));
             await Promise.all(updatePromises);
             const { data } = await supabase_1.supabase.from('menu_opciones').select('*').eq('curso_id', cursoId).order('orden', { ascending: true });
-            console.log(`🔄 Opciones reordenadas para curso ${cursoId}`);
+            await AuditService_1.auditService.log({
+                accion: 'opciones_reordenadas',
+                tabla_afectada: 'menu_opciones',
+                registro_id: cursoId,
+                valores_nuevos: { orden: opciones },
+                user_name: userName,
+                detalles: `Opciones reordenadas en curso`,
+            });
+            console.log(`🔄 Opciones reordenadas para curso ${cursoId} (por ${userName || 'Sistema'})`);
             res.json({ success: true, data, message: 'Opciones reordenadas exitosamente' });
         }
         catch (error) {
@@ -141,6 +162,7 @@ class OpcionesController {
     async toggle(req, res) {
         try {
             const { id } = req.params;
+            const userName = req.headers['x-user-name'];
             const { data: existing, error: fetchError } = await supabase_1.supabase.from('menu_opciones').select('activo, titulo').eq('id', id).single();
             if (fetchError || !existing) {
                 res.status(404).json({ success: false, error: 'Opción no encontrada' });
@@ -149,7 +171,8 @@ class OpcionesController {
             const { data, error } = await supabase_1.supabase.from('menu_opciones').update({ activo: !existing.activo }).eq('id', id).select().single();
             if (error)
                 throw error;
-            console.log(`🔄 Opción ${existing.titulo}: ${data.activo ? 'ACTIVADA' : 'DESACTIVADA'}`);
+            await AuditService_1.auditService.logOpcionToggle(id, existing.titulo, data.activo, userName);
+            console.log(`🔄 Opción ${existing.titulo}: ${data.activo ? 'ACTIVADA' : 'DESACTIVADA'} (por ${userName || 'Sistema'})`);
             res.json({ success: true, data, message: `Opción ${data.activo ? 'activada' : 'desactivada'} exitosamente` });
         }
         catch (error) {

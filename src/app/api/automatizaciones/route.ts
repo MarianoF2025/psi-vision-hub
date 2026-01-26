@@ -7,7 +7,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '';
     
-    // Reenviar todos los query params excepto 'path'
     const forwardParams = new URLSearchParams();
     searchParams.forEach((value, key) => {
       if (key !== 'path') {
@@ -16,8 +15,8 @@ export async function GET(request: NextRequest) {
     });
     
     const queryString = forwardParams.toString();
-    const fullUrl = queryString 
-      ? `${API_URL}/api/${path}?${queryString}` 
+    const fullUrl = queryString
+      ? `${API_URL}/api/${path}?${queryString}`
       : `${API_URL}/api/${path}`;
     
     const res = await fetch(fullUrl, {
@@ -36,10 +35,14 @@ export async function POST(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '';
     const body = await request.json();
+    const userName = request.headers.get('x-user-name') || '';
     
     const res = await fetch(`${API_URL}/api/${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-name': userName
+      },
       body: JSON.stringify(body)
     });
     const data = await res.json();
@@ -55,10 +58,14 @@ export async function PUT(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '';
     const body = await request.json();
+    const userName = request.headers.get('x-user-name') || '';
     
     const res = await fetch(`${API_URL}/api/${path}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-name': userName
+      },
       body: JSON.stringify(body)
     });
     const data = await res.json();
@@ -73,10 +80,14 @@ export async function PATCH(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '';
+    const userName = request.headers.get('x-user-name') || '';
     
     const res = await fetch(`${API_URL}/api/${path}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-name': userName
+      }
     });
     const data = await res.json();
     return NextResponse.json(data);
@@ -90,10 +101,14 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const path = searchParams.get('path') || '';
+    const userName = request.headers.get('x-user-name') || '';
     
     const res = await fetch(`${API_URL}/api/${path}`, {
       method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-user-name': userName
+      }
     });
     const data = await res.json();
     return NextResponse.json(data);

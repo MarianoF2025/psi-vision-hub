@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Save, BookOpen, List, Megaphone, BarChart3, Plus, Trash2, Eye, X, Link2, Award, HeartHandshake, TrendingUp, Baby, Puzzle, GraduationCap, User, Brain, ChevronDown, Circle, DollarSign, Calendar, Clock, Medal, Briefcase, Home, FileText, ClipboardList, Users, MousePointerClick, Target, UserX, RefreshCw, Download } from 'lucide-react';
+import { ArrowLeft, Save, BookOpen, List, Megaphone, BarChart3, Plus, Trash2, Eye, X, Link2, Award, HeartHandshake, TrendingUp, Baby, Puzzle, GraduationCap, User, Brain, ChevronDown, Circle, DollarSign, Calendar, Clock, Medal, Briefcase, Home, FileText, ClipboardList, Users, MousePointerClick, Target, UserX, RefreshCw, Download, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -21,13 +22,21 @@ interface Curso {
   inscripciones_abiertas?: boolean;
   disponible_entrada_directa?: boolean;
   info_precio?: string;
+  info_precio_label?: string;
   info_fechas?: string;
+  info_fechas_label?: string;
   info_duracion?: string;
+  info_duracion_label?: string;
   info_certificacion?: string;
+  info_certificacion_label?: string;
   info_salida_laboral?: string;
+  info_salida_laboral_label?: string;
   info_modalidad?: string;
+  info_modalidad_label?: string;
   info_contenido?: string;
+  info_contenido_label?: string;
   info_requisitos?: string;
+  info_requisitos_label?: string;
 }
 
 interface MenuOpcion {
@@ -98,15 +107,16 @@ interface StatsData {
 
 const API_URL = '/api/automatizaciones';
 
-const CAMPOS_INFO = [
-  { value: 'info_precio', label: 'Precio', icon: DollarSign, color: 'text-green-600' },
-  { value: 'info_fechas', label: 'Fechas', icon: Calendar, color: 'text-blue-600' },
-  { value: 'info_duracion', label: 'Duración', icon: Clock, color: 'text-purple-600' },
-  { value: 'info_certificacion', label: 'Certificación', icon: Medal, color: 'text-amber-600' },
-  { value: 'info_salida_laboral', label: 'Salida Laboral', icon: Briefcase, color: 'text-indigo-600' },
-  { value: 'info_modalidad', label: 'Modalidad', icon: Home, color: 'text-teal-600' },
-  { value: 'info_contenido', label: 'Contenido', icon: FileText, color: 'text-orange-600' },
-  { value: 'info_requisitos', label: 'Requisitos', icon: ClipboardList, color: 'text-rose-600' },
+// Campos de información con labels por defecto
+const CAMPOS_INFO_DEFAULT = [
+  { value: 'info_precio', labelField: 'info_precio_label', defaultLabel: 'Arancel', icon: DollarSign, color: 'text-green-600' },
+  { value: 'info_fechas', labelField: 'info_fechas_label', defaultLabel: 'Fechas', icon: Calendar, color: 'text-blue-600' },
+  { value: 'info_duracion', labelField: 'info_duracion_label', defaultLabel: 'Duración', icon: Clock, color: 'text-purple-600' },
+  { value: 'info_certificacion', labelField: 'info_certificacion_label', defaultLabel: 'Certificación', icon: Medal, color: 'text-amber-600' },
+  { value: 'info_salida_laboral', labelField: 'info_salida_laboral_label', defaultLabel: 'Salida Laboral', icon: Briefcase, color: 'text-indigo-600' },
+  { value: 'info_modalidad', labelField: 'info_modalidad_label', defaultLabel: 'Modalidad', icon: Home, color: 'text-teal-600' },
+  { value: 'info_contenido', labelField: 'info_contenido_label', defaultLabel: 'Programa', icon: FileText, color: 'text-orange-600' },
+  { value: 'info_requisitos', labelField: 'info_requisitos_label', defaultLabel: 'Requisitos', icon: ClipboardList, color: 'text-rose-600' },
 ];
 
 const CATEGORIAS = [
@@ -133,6 +143,7 @@ const PERIODOS = [
 export default function CursoDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { profile } = useAuth();
   const searchParams = useSearchParams();
   const cursoId = params.id as string;
   const isNew = cursoId === 'nuevo';
@@ -149,7 +160,6 @@ export default function CursoDetailPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
-  // Filtros de fecha para stats
   const [periodo, setPeriodo] = useState('mes');
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
@@ -162,12 +172,29 @@ export default function CursoDetailPage() {
   const [nuevoAnuncio, setNuevoAnuncio] = useState({ ad_id: '', nombre: '' });
   const [savingAnuncio, setSavingAnuncio] = useState(false);
 
+  const [editingLabel, setEditingLabel] = useState<string | null>(null);
+
   const [formData, setFormData] = useState<Partial<Curso>>({
     codigo: '', nombre: '', descripcion: '', mensaje_bienvenida: '', mensaje_saludo: '', mensaje_menu_body: '',
     tipo_formacion: 'curso', categoria: '', inscripciones_abiertas: true, disponible_entrada_directa: false,
-    info_precio: '', info_fechas: '', info_duracion: '', info_certificacion: '',
-    info_salida_laboral: '', info_modalidad: '',
+    info_precio: '', info_precio_label: 'Arancel',
+    info_fechas: '', info_fechas_label: 'Fechas',
+    info_duracion: '', info_duracion_label: 'Duración',
+    info_certificacion: '', info_certificacion_label: 'Certificación',
+    info_salida_laboral: '', info_salida_laboral_label: 'Salida Laboral',
+    info_modalidad: '', info_modalidad_label: 'Modalidad',
+    info_contenido: '', info_contenido_label: 'Programa',
+    info_requisitos: '', info_requisitos_label: 'Requisitos',
   });
+
+  const getLabel = (campo: typeof CAMPOS_INFO_DEFAULT[0]) => {
+    return (formData as any)[campo.labelField] || campo.defaultLabel;
+  };
+
+  const CAMPOS_INFO = CAMPOS_INFO_DEFAULT.map(campo => ({
+    ...campo,
+    label: getLabel(campo)
+  }));
 
   function buildQueryParams(): string {
     if (periodo === 'custom' && fechaDesde) {
@@ -179,7 +206,7 @@ export default function CursoDetailPage() {
   }
 
   const periodoActual = PERIODOS.find(p => p.value === periodo);
-  const periodoLabel = periodo === 'custom' && fechaDesde 
+  const periodoLabel = periodo === 'custom' && fechaDesde
     ? `${fechaDesde}${fechaHasta ? ` - ${fechaHasta}` : ''}`
     : periodoActual?.label || 'Este mes';
 
@@ -209,7 +236,18 @@ export default function CursoDetailPage() {
       const data = await res.json();
       if (data.success) {
         setCurso(data.data);
-        setFormData(data.data);
+        const cursoData = {
+          ...data.data,
+          info_precio_label: data.data.info_precio_label || 'Arancel',
+          info_fechas_label: data.data.info_fechas_label || 'Fechas',
+          info_duracion_label: data.data.info_duracion_label || 'Duración',
+          info_certificacion_label: data.data.info_certificacion_label || 'Certificación',
+          info_salida_laboral_label: data.data.info_salida_laboral_label || 'Salida Laboral',
+          info_modalidad_label: data.data.info_modalidad_label || 'Modalidad',
+          info_contenido_label: data.data.info_contenido_label || 'Programa',
+          info_requisitos_label: data.data.info_requisitos_label || 'Requisitos',
+        };
+        setFormData(cursoData);
         setOpciones(data.data.opciones || []);
         setAnuncios(data.data.anuncios || []);
       } else {
@@ -245,7 +283,8 @@ export default function CursoDetailPage() {
       const url = isNew ? `${API_URL}?path=cursos` : `${API_URL}?path=cursos/${cursoId}`;
       const method = isNew ? 'POST' : 'PUT';
       const res = await fetch(url, {
-        method, headers: { 'Content-Type': 'application/json' },
+        method,
+        headers: { 'Content-Type': 'application/json', 'x-user-name': profile?.nombre || profile?.email || '' },
         body: JSON.stringify(formData)
       });
       const data = await res.json();
@@ -268,7 +307,7 @@ export default function CursoDetailPage() {
     const nuevaOpcion = { titulo: 'Nueva opción', tipo: 'info' as const, campo_info: 'info_precio', emoji: '📌', mostrar_menu_despues: true };
     try {
       const res = await fetch(`${API_URL}?path=cursos/${cursoId}/opciones`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-name': profile?.nombre || profile?.email || '' },
         body: JSON.stringify(nuevaOpcion)
       });
       const data = await res.json();
@@ -279,7 +318,7 @@ export default function CursoDetailPage() {
   async function actualizarOpcion(id: string, cambios: Partial<MenuOpcion>) {
     try {
       const res = await fetch(`${API_URL}?path=opciones/${id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-user-name': profile?.nombre || profile?.email || '' },
         body: JSON.stringify(cambios)
       });
       const data = await res.json();
@@ -290,7 +329,7 @@ export default function CursoDetailPage() {
   async function eliminarOpcion(id: string) {
     if (!confirm('¿Eliminar esta opción?')) return;
     try {
-      const res = await fetch(`${API_URL}?path=opciones/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}?path=opciones/${id}`, { method: 'DELETE', headers: { 'x-user-name': profile?.nombre || profile?.email || '' } });
       const data = await res.json();
       if (data.success) setOpciones(opciones.filter(o => o.id !== id));
     } catch (err) { console.error(err); }
@@ -298,7 +337,7 @@ export default function CursoDetailPage() {
 
   async function toggleOpcion(id: string) {
     try {
-      const res = await fetch(`${API_URL}?path=opciones/${id}/toggle`, { method: 'PATCH' });
+      const res = await fetch(`${API_URL}?path=opciones/${id}/toggle`, { method: 'PATCH', headers: { 'x-user-name': profile?.nombre || profile?.email || '' } });
       const data = await res.json();
       if (data.success) setOpciones(opciones.map(o => o.id === id ? { ...o, activo: data.data.activo } : o));
     } catch (err) { console.error(err); }
@@ -310,7 +349,7 @@ export default function CursoDetailPage() {
     setError(null);
     try {
       const res = await fetch(`${API_URL}?path=anuncios`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-user-name': profile?.nombre || profile?.email || '' },
         body: JSON.stringify({ ad_id: nuevoAnuncio.ad_id.trim(), curso_id: cursoId, nombre: nuevoAnuncio.nombre.trim() || null })
       });
       const data = await res.json();
@@ -333,7 +372,7 @@ export default function CursoDetailPage() {
   async function desvincularAnuncio(id: string) {
     if (!confirm('¿Desvincular este anuncio del curso?')) return;
     try {
-      const res = await fetch(`${API_URL}?path=anuncios/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_URL}?path=anuncios/${id}`, { method: 'DELETE', headers: { 'x-user-name': profile?.nombre || profile?.email || '' } });
       const data = await res.json();
       if (data.success) {
         setAnuncios(anuncios.filter(a => a.id !== id));
@@ -345,7 +384,7 @@ export default function CursoDetailPage() {
 
   async function toggleAnuncio(id: string) {
     try {
-      const res = await fetch(`${API_URL}?path=anuncios/${id}/toggle`, { method: 'PATCH' });
+      const res = await fetch(`${API_URL}?path=anuncios/${id}/toggle`, { method: 'PATCH', headers: { 'x-user-name': profile?.nombre || profile?.email || '' } });
       const data = await res.json();
       if (data.success) setAnuncios(anuncios.map(a => a.id === id ? { ...a, activo: data.data.activo } : a));
     } catch (err) { console.error(err); }
@@ -354,7 +393,6 @@ export default function CursoDetailPage() {
   function exportarExcel() {
     if (!stats) return;
     const wb = XLSX.utils.book_new();
-
     const resumenData = [
       ['Estadísticas del Curso', formData.nombre || ''],
       ['Período', periodoLabel],
@@ -372,7 +410,6 @@ export default function CursoDetailPage() {
     ];
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
-
     if (stats.opciones.length > 0) {
       const opcionesData = [
         ['Emoji', 'Título', 'Tipo', 'Veces Elegida', 'CTR (%)'],
@@ -381,7 +418,6 @@ export default function CursoDetailPage() {
       const wsOpciones = XLSX.utils.aoa_to_sheet(opcionesData);
       XLSX.utils.book_append_sheet(wb, wsOpciones, 'Menú');
     }
-
     if (stats.anuncios.length > 0) {
       const anunciosData = [
         ['Nombre', 'Ad ID', 'Leads', 'Engagement (%)', 'Inscripciones', 'Tasa Inscripción (%)'],
@@ -390,7 +426,6 @@ export default function CursoDetailPage() {
       const wsAnuncios = XLSX.utils.aoa_to_sheet(anunciosData);
       XLSX.utils.book_append_sheet(wb, wsAnuncios, 'Anuncios');
     }
-
     const filename = `estadisticas_${formData.codigo || 'curso'}_${new Date().toISOString().slice(0,10)}.xlsx`;
     XLSX.writeFile(wb, filename);
   }
@@ -399,12 +434,10 @@ export default function CursoDetailPage() {
     if (!stats) return;
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-
     doc.setFontSize(18);
     doc.text(`Estadísticas: ${formData.nombre || 'Curso'}`, pageWidth / 2, 20, { align: 'center' });
     doc.setFontSize(11);
     doc.text(periodoLabel, pageWidth / 2, 28, { align: 'center' });
-
     doc.setFontSize(14);
     doc.text('Resumen', 14, 40);
     autoTable(doc, {
@@ -423,9 +456,7 @@ export default function CursoDetailPage() {
       theme: 'striped',
       headStyles: { fillColor: [59, 130, 246] },
     });
-
     let currentY = (doc as any).lastAutoTable.finalY + 10;
-
     if (stats.opciones.length > 0) {
       doc.setFontSize(14);
       doc.text('Rendimiento del Menú', 14, currentY);
@@ -438,7 +469,6 @@ export default function CursoDetailPage() {
       });
       currentY = (doc as any).lastAutoTable.finalY + 10;
     }
-
     if (stats.anuncios.length > 0) {
       doc.setFontSize(14);
       doc.text('Rendimiento por Anuncio', 14, currentY);
@@ -456,7 +486,6 @@ export default function CursoDetailPage() {
         headStyles: { fillColor: [168, 85, 247] },
       });
     }
-
     const filename = `estadisticas_${formData.codigo || 'curso'}_${new Date().toISOString().slice(0,10)}.pdf`;
     doc.save(filename);
   }
@@ -475,7 +504,6 @@ export default function CursoDetailPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto h-full overflow-y-auto">
-      {/* Header */}
       <div className="flex items-center gap-4 mb-6">
         <button onClick={() => router.push('/crm/automatizaciones')} className="p-2 hover:bg-gray-100 rounded-lg">
           <ArrowLeft className="w-5 h-5" />
@@ -493,7 +521,6 @@ export default function CursoDetailPage() {
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">{error}</div>}
       {success && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4">{success}</div>}
 
-      {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg">
         {tabs.map(tab => (
           <button key={tab.id} onClick={() => !tab.disabled && setActiveTab(tab.id)} disabled={tab.disabled}
@@ -504,7 +531,6 @@ export default function CursoDetailPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
-        {/* INFO TAB */}
         {activeTab === 'info' && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
@@ -597,18 +623,43 @@ export default function CursoDetailPage() {
             </div>
             <hr />
             <h3 className="font-semibold">Información del Curso</h3>
-            <p className="text-sm text-gray-500 mb-4">Estos textos se envían cuando el usuario selecciona la opción correspondiente</p>
-            {CAMPOS_INFO.map(campo => (
-              <div key={campo.value}>
-                <label className="flex items-center gap-2 text-sm font-medium mb-1"><campo.icon className={`w-4 h-4 ${campo.color}`} />{campo.label}</label>
-                <textarea value={(formData as any)[campo.value] || ''} onChange={e => setFormData({ ...formData, [campo.value]: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg text-sm" rows={4} placeholder={`Texto para ${campo.label}...`} />
-              </div>
-            ))}
+            <p className="text-sm text-gray-500 mb-4">Estos textos se envían cuando el usuario selecciona la opción correspondiente. <span className="text-blue-600">Hacé clic en el título para editarlo.</span></p>
+            {CAMPOS_INFO_DEFAULT.map(campo => {
+              const currentLabel = (formData as any)[campo.labelField] || campo.defaultLabel;
+              const isEditing = editingLabel === campo.value;
+              return (
+                <div key={campo.value}>
+                  <label className="flex items-center gap-2 text-sm font-medium mb-1 group">
+                    <campo.icon className={`w-4 h-4 ${campo.color}`} />
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={currentLabel}
+                        onChange={e => setFormData({ ...formData, [campo.labelField]: e.target.value })}
+                        onBlur={() => setEditingLabel(null)}
+                        onKeyDown={e => e.key === 'Enter' && setEditingLabel(null)}
+                        className="border-b-2 border-blue-500 bg-blue-50 outline-none px-1 py-0.5 text-sm font-medium rounded"
+                        autoFocus
+                      />
+                    ) : (
+                      <span 
+                        onClick={() => setEditingLabel(campo.value)}
+                        className="cursor-pointer hover:text-blue-600 flex items-center gap-1"
+                        title="Clic para editar el título"
+                      >
+                        {currentLabel}
+                        <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+                      </span>
+                    )}
+                  </label>
+                  <textarea value={(formData as any)[campo.value] || ''} onChange={e => setFormData({ ...formData, [campo.value]: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm" rows={4} placeholder={`Texto para ${currentLabel}...`} />
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* MENU TAB */}
         {activeTab === 'menu' && (
           <div>
             <div className="flex justify-between items-center mb-4">
@@ -662,7 +713,6 @@ export default function CursoDetailPage() {
           </div>
         )}
 
-        {/* ANUNCIOS TAB */}
         {activeTab === 'anuncios' && (
           <div>
             <div className="flex justify-between items-center mb-4">
@@ -695,69 +745,38 @@ export default function CursoDetailPage() {
           </div>
         )}
 
-        {/* STATS TAB */}
         {activeTab === 'stats' && (
           <div>
-            {/* Filtro de período */}
             <div className="flex items-center justify-between mb-6 pb-4 border-b">
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2 text-gray-600">
                   <Calendar className="w-5 h-5" />
                   <span className="font-medium">Período:</span>
                 </div>
-                
                 <div className="relative">
-                  <button
-                    onClick={() => setShowPeriodoDropdown(!showPeriodoDropdown)}
-                    className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 min-w-[180px] justify-between"
-                  >
+                  <button onClick={() => setShowPeriodoDropdown(!showPeriodoDropdown)} className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 min-w-[180px] justify-between">
                     <span>{periodoLabel}</span>
                     <ChevronDown className={`w-4 h-4 transition-transform ${showPeriodoDropdown ? 'rotate-180' : ''}`} />
                   </button>
-                  
                   {showPeriodoDropdown && (
                     <div className="absolute top-full left-0 mt-1 bg-white border rounded-lg shadow-lg z-20 min-w-[180px]">
                       {PERIODOS.map(p => (
-                        <button
-                          key={p.value}
-                          onClick={() => {
-                            setPeriodo(p.value);
-                            if (p.value !== 'custom') {
-                              setFechaDesde('');
-                              setFechaHasta('');
-                            }
-                            setShowPeriodoDropdown(false);
-                          }}
-                          className={`w-full text-left px-4 py-2 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${
-                            periodo === p.value ? 'bg-blue-50 text-blue-600' : ''
-                          }`}
-                        >
+                        <button key={p.value} onClick={() => { setPeriodo(p.value); if (p.value !== 'custom') { setFechaDesde(''); setFechaHasta(''); } setShowPeriodoDropdown(false); }}
+                          className={`w-full text-left px-4 py-2 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${periodo === p.value ? 'bg-blue-50 text-blue-600' : ''}`}>
                           {p.label}
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-
                 {periodo === 'custom' && (
                   <>
-                    <input
-                      type="date"
-                      value={fechaDesde}
-                      onChange={(e) => setFechaDesde(e.target.value)}
-                      className="px-3 py-2 border rounded-lg text-sm"
-                    />
+                    <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
                     <span className="text-gray-400">hasta</span>
-                    <input
-                      type="date"
-                      value={fechaHasta}
-                      onChange={(e) => setFechaHasta(e.target.value)}
-                      className="px-3 py-2 border rounded-lg text-sm"
-                    />
+                    <input type="date" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} className="px-3 py-2 border rounded-lg text-sm" />
                   </>
                 )}
               </div>
-
               <div className="flex items-center gap-2">
                 {stats && (
                   <>
@@ -774,14 +793,12 @@ export default function CursoDetailPage() {
                 </button>
               </div>
             </div>
-
             {loadingStats ? (
               <div className="flex items-center justify-center py-12"><div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" /></div>
             ) : !stats ? (
               <div className="text-center py-12 text-gray-500">No hay datos disponibles</div>
             ) : (
               <div className="space-y-6">
-                {/* Cards resumen */}
                 <div className="grid grid-cols-4 gap-4">
                   <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
                     <div className="flex items-center gap-2 text-blue-600 mb-2"><Users className="w-5 h-5" /><span className="text-sm font-medium">Leads</span></div>
@@ -806,8 +823,6 @@ export default function CursoDetailPage() {
                     <div className="text-sm text-amber-600 mt-1">sin interacción</div>
                   </div>
                 </div>
-
-                {/* Rendimiento del menú */}
                 <div className="border rounded-xl p-4">
                   <h4 className="font-semibold mb-4">Rendimiento del Menú</h4>
                   {stats.opciones.length === 0 ? (
@@ -842,8 +857,6 @@ export default function CursoDetailPage() {
                     <span className="flex items-center gap-1"><span className="w-3 h-3 bg-purple-500 rounded" /> Inscribir</span>
                   </div>
                 </div>
-
-                {/* Rendimiento por anuncio */}
                 {stats.anuncios.length > 0 && (
                   <div className="border rounded-xl p-4">
                     <h4 className="font-semibold mb-4">Rendimiento por Anuncio</h4>
@@ -881,8 +894,6 @@ export default function CursoDetailPage() {
                     </div>
                   </div>
                 )}
-
-                {/* Totales */}
                 <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600">
                   <div className="flex justify-between">
                     <span>Total histórico: <strong>{stats.resumen.leads_total}</strong> leads</span>
@@ -896,7 +907,6 @@ export default function CursoDetailPage() {
         )}
       </div>
 
-      {/* Modal Vincular Anuncio */}
       {showAnuncioModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">

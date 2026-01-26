@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Plus, MessageSquare, Edit2, Trash2, X, Copy, Check } from 'lucide-react';
@@ -15,6 +16,7 @@ interface Respuesta {
 }
 
 export default function RespuestasPage() {
+  const { profile } = useAuth();
   const [respuestas, setRespuestas] = useState<Respuesta[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -25,6 +27,8 @@ export default function RespuestasPage() {
   const [categoria, setCategoria] = useState('');
   const [copiado, setCopiado] = useState<string | null>(null);
 
+  const userName = profile?.nombre || profile?.email || 'Sistema';
+
   const cargar = async () => {
     const { data } = await supabase.from('respuestas_predefinidas').select('*').order('atajo');
     if (data) setRespuestas(data);
@@ -33,13 +37,45 @@ export default function RespuestasPage() {
 
   useEffect(() => { cargar(); }, []);
 
+  const logAudit = async (accion: string, registroId: string, detalles: string, valoresAnteriores?: any, valoresNuevos?: any) => {
+    await supabase.from('audit_log').insert({
+      accion,
+      tabla_afectada: 'respuestas_predefinidas',
+      registro_id: registroId,
+      user_name: userName,
+      detalles,
+      valores_anteriores: valoresAnteriores || null,
+      valores_nuevos: valoresNuevos || null,
+      origen: 'crm-respuestas'
+    });
+  };
+
   const guardar = async () => {
     if (!atajo.trim() || !contenido.trim()) return;
     const datos = { atajo: atajo.startsWith('/') ? atajo : '/' + atajo, titulo, contenido, categoria };
+    
     if (editando) {
-      await supabase.from('respuestas_predefinidas').update(datos).eq('id', editando.id);
+      const { error } = await supabase.from('respuestas_predefinidas').update(datos).eq('id', editando.id);
+      if (!error) {
+        await logAudit(
+          'respuesta_actualizada',
+          editando.id,
+          `Respuesta actualizada: ${datos.atajo}`,
+          { atajo: editando.atajo, titulo: editando.titulo, contenido: editando.contenido, categoria: editando.categoria },
+          datos
+        );
+      }
     } else {
-      await supabase.from('respuestas_predefinidas').insert(datos);
+      const { data, error } = await supabase.from('respuestas_predefinidas').insert(datos).select().single();
+      if (!error && data) {
+        await logAudit(
+          'respuesta_creada',
+          data.id,
+          `Respuesta creada: ${datos.atajo}`,
+          null,
+          datos
+        );
+      }
     }
     setModalAbierto(false);
     limpiar();
@@ -55,8 +91,18 @@ export default function RespuestasPage() {
   };
 
   const eliminar = async (id: string) => {
+    const respuesta = respuestas.find(r => r.id === id);
     if (confirm('¿Eliminar esta respuesta?')) {
-      await supabase.from('respuestas_predefinidas').delete().eq('id', id);
+      const { error } = await supabase.from('respuestas_predefinidas').delete().eq('id', id);
+      if (!error && respuesta) {
+        await logAudit(
+          'respuesta_eliminada',
+          id,
+          `Respuesta eliminada: ${respuesta.atajo}`,
+          { atajo: respuesta.atajo, titulo: respuesta.titulo, contenido: respuesta.contenido },
+          null
+        );
+      }
       cargar();
     }
   };
