@@ -512,11 +512,14 @@ export default function ChatPanel() {
       }
       const timestamp = Date.now();
       const extension = file.name.split(".").pop() || "bin";
-      const fileName = `${conversacionActual?.id}/${timestamp}.${extension}`;
-      const { error } = await supabase.storage.from("media").upload(fileName, file, { cacheControl: "3600", upsert: false });
-      if (error) return null;
-      const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
-      return urlData.publicUrl;
+      const path = `${conversacionActual?.id}/${timestamp}.${extension}`;
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("path", path);
+      const response = await fetch("/api/storage/upload", { method: "POST", body: formData });
+      if (!response.ok) return null;
+      const result = await response.json();
+      return result.url;
     } catch { return null; }
   };
 
