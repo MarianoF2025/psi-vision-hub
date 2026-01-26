@@ -32,12 +32,15 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
 
-    console.log(`[Reacción CRM] Enviando ${emoji} al mensaje ${mensaje.whatsapp_message_id}`);
+   console.log('[Reaccion CRM] Enviando ' + emoji + ' al mensaje ' + mensaje.whatsapp_message_id);   
 
     // Enviar reacción al workflow
     const response = await fetch(WEBHOOK_ENVIO, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Webhook-Secret': process.env.N8N_WEBHOOK_SECRET || ''
+      },
       body: JSON.stringify({
         tipo: 'reaccion',
         telefono,
@@ -50,13 +53,14 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Reacción CRM] Error:', errorText);
+      console.error('[Reaccion CRM] Error:', errorText);
       return NextResponse.json({ error: 'Error enviando reacción', details: errorText }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
+
   } catch (error) {
-    console.error('[Reacción CRM] Error interno:', error);
+    console.error('[Reaccion CRM] Error interno:', error);
     return NextResponse.json({ error: 'Error interno' }, { status: 500 });
   }
 }

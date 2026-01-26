@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
 
     await fetch(webhookUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': process.env.N8N_WEBHOOK_SECRET || '' },
       body: JSON.stringify({ telefono, mensaje, conversacion_id: conv.id }),
     });
 
