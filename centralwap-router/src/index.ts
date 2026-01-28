@@ -343,7 +343,7 @@ async function procesarMensajeLineaSecundaria(
     if (conversacionActiva) {
       // Ya existe conversación activa - usar esa, NO enviar educativo
       console.log(`[${linea}] Conversación activa encontrada (${conversacionActiva.id}). Usando existente.`);
-      
+
       const mensajeData: MensajeInsert = {
         conversacion_id: conversacionActiva.id,
         mensaje: payload.mensaje,
@@ -355,10 +355,10 @@ async function procesarMensajeLineaSecundaria(
         whatsapp_message_id: payload.messageId,
         whatsapp_context_id: payload.contextMessageId,
       };
-      
+
       await supabase.from('mensajes').insert(mensajeData);
       await conversacionService.actualizarUltimoMensaje(conversacionActiva.id, payload.mensaje);
-      
+
       return { success: true, action: 'mensaje_guardado_en_existente', enviado_educativo: false };
     }
 
@@ -370,7 +370,7 @@ async function procesarMensajeLineaSecundaria(
 
     if (conversacionDesconectada) {
       console.log(`[${linea}] Conversación desconectada encontrada (${conversacionDesconectada.id}). Usando para guardar mensaje.`);
-      
+
       const mensajeData: MensajeInsert = {
         conversacion_id: conversacionDesconectada.id,
         mensaje: payload.mensaje,
@@ -382,10 +382,10 @@ async function procesarMensajeLineaSecundaria(
         whatsapp_message_id: payload.messageId,
         whatsapp_context_id: payload.contextMessageId,
       };
-      
+
       await supabase.from('mensajes').insert(mensajeData);
       await conversacionService.actualizarUltimoMensaje(conversacionDesconectada.id, payload.mensaje);
-      
+
       return { success: true, action: 'mensaje_guardado_en_desconectada', enviado_educativo: false };
     }
 
@@ -533,7 +533,7 @@ async function procesarSeleccionCurso(
 
     // Confirmación al usuario
     await interactiveService.enviarTexto(telefono,
-      `✅ ¡Excelente elección!\n\nTe contactamos en breve con toda la info sobre *${curso.nombre}*.\n\nSi necesitás otra cosa, escribí *MENU*.`
+      `✅ ¡Excelente elección!\n\nTe contactamos en breve con toda la info sobre *${curso.nombre}*.`
     );
 
     console.log(`[WSP4-Cursos] ✅ Derivación completada: ${ticketId} - ${curso.nombre}`);
@@ -626,7 +626,7 @@ async function procesarMenuInteractivo(
           .eq('id', conversacion.id);
 
         await interactiveService.enviarTexto(telefono,
-          '✅ Te derivamos con nuestro equipo de inscripciones.\n\nEn breve te contactamos. Si necesitás otra cosa, escribí *MENU*.'
+          '✅ Te derivamos con nuestro equipo de inscripciones.\n\nEn breve te contactamos.'
         );
 
         return { success: true, action: 'derivado_sin_cursos' };
@@ -981,7 +981,7 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       const ventanaExpiro = new Date(convExistente.ventana_24h_fin) < new Date();
       if (ventanaExpiro) {
         console.log(`[WSP4] Ventana 24h expirada - reseteando conversación y mostrando menú`);
-        
+
         // Resetear conversación
         await supabase
           .from('conversaciones')
@@ -993,10 +993,10 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
             ventana_24h_fin: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
           })
           .eq('id', convExistente.id);
-        
+
         // Guardar mensaje entrante antes de mostrar menú
         await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
-        
+
         // Enviar menú interactivo
         await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
         res.json({ success: true, action: 'menu_enviado_ventana_expirada' });
@@ -1004,7 +1004,15 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       }
     }
 
-    // === VERIFICAR SI ES COMANDO MENU/VOLVER ===
+    // === SI ESTÁ DERIVADA: SOLO GUARDAR MENSAJE (no procesar MENU) ===
+    if (convExistente && (convExistente.router_estado === 'derivado' || convExistente.estado === 'derivada')) {
+      console.log('[WSP4] Conversación derivada - guardando mensaje para agente');
+      await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
+      res.json({ success: true, action: 'mensaje_guardado', derivada: true });
+      return;
+    }
+
+    // === VERIFICAR SI ES COMANDO MENU/VOLVER (solo si NO está derivada) ===
     const comando = interactiveMenuProcessor.esComandoEspecial(mensaje);
     if (comando === 'MENU' || comando === 'VOLVER') {
       console.log(`[WSP4] Comando ${comando} recibido, enviando menú interactivo`);
@@ -1022,14 +1030,6 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
 
       await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
       res.json({ success: true, action: 'menu_enviado' });
-      return;
-    }
-
-    // === SI ESTÁ DERIVADA: SOLO GUARDAR MENSAJE ===
-    if (convExistente && (convExistente.router_estado === 'derivado' || convExistente.estado === 'derivada')) {
-      console.log(`[WSP4] Conversación derivada - guardando mensaje para agente`);
-      await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
-      res.json({ success: true, action: 'mensaje_guardado', derivada: true });
       return;
     }
 
