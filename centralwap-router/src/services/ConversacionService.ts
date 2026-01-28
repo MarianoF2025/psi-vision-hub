@@ -123,9 +123,9 @@ export class ConversacionService {
         .from('conversaciones')
         .select('*')
         .eq('telefono', telefono)
-        .eq('desconectado_wsp4', true)
         .eq('inbox_fijo', inbox)
         .neq('estado', 'cerrada')
+        .or('desconectado_wsp4.eq.true,desconectado_ventas_api.eq.true')
         .order('updated_at', { ascending: false })
         .limit(1)
         .single();

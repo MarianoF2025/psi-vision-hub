@@ -286,15 +286,23 @@ export default function ChatPanel() {
   // Desconectar del Router
   const desconectar = async () => {
     if (!conversacionActual) return;
-    if (confirm('¿Desconectar del Router? El contacto ya no pasará por el menú automático.')) {
-      await supabase.from('conversaciones').update({
-        desconectado_wsp4: true,
-        inbox_fijo: conversacionActual.area
-      }).eq('id', conversacionActual.id);
+    const esVentasApi = conversacionActual.linea_origen === 'ventas_api';
+    const mensaje = esVentasApi 
+      ? '¿Desconectar de Ventas API? Los mensajes saldrán por Ventas QR (Evolution).'
+      : '¿Desconectar del Router? El contacto ya no pasará por el menú automático.';
+    
+    if (confirm(mensaje)) {
+      const updateData = esVentasApi 
+        ? { desconectado_ventas_api: true, inbox_fijo: 'ventas' }
+        : { desconectado_wsp4: true, inbox_fijo: conversacionActual.area };
+      
+      await supabase.from('conversaciones').update(updateData).eq('id', conversacionActual.id);
+      
       setConversacionActual({
         ...conversacionActual,
-        desconectado_wsp4: true,
-        inbox_fijo: conversacionActual.area
+        ...(esVentasApi 
+          ? { desconectado_ventas_api: true, inbox_fijo: 'ventas' }
+          : { desconectado_wsp4: true, inbox_fijo: conversacionActual.area })
       });
     }
   };
@@ -305,12 +313,14 @@ export default function ChatPanel() {
     if (confirm('¿Finalizar conversación? El contacto volverá a ver el menú/mensaje educativo si escribe de nuevo.')) {
       await supabase.from('conversaciones').update({
         desconectado_wsp4: false,
-        inbox_fijo: undefined,
+        desconectado_ventas_api: false,
+        inbox_fijo: null,
         estado: 'cerrada'
       }).eq('id', conversacionActual.id);
       setConversacionActual({
         ...conversacionActual,
         desconectado_wsp4: false,
+        desconectado_ventas_api: false,
         inbox_fijo: undefined,
         estado: 'cerrada'
       });
@@ -823,6 +833,7 @@ export default function ChatPanel() {
           linea_origen: conversacionActual.linea_origen,
           inbox_fijo: conversacionActual.inbox_fijo,
           desconectado_wsp4: conversacionActual.desconectado_wsp4,
+          desconectado_ventas_api: conversacionActual.desconectado_ventas_api,
           respuesta_a: respuestaId,
           media_url: mediaUrl,
           media_type: mediaType,
@@ -1147,8 +1158,8 @@ export default function ChatPanel() {
                     </div>
                   );
                 })()}
-                {!conversacionActual.desconectado_wsp4 && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
-                {conversacionActual.desconectado_wsp4 && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
+                {!conversacionActual.desconectado_wsp4 && !conversacionActual.desconectado_ventas_api && <button onClick={desconectar} className="px-2 py-1 border border-red-300 text-red-500 text-[11px] font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-1"><Unlink size={12} /> Desconectar</button>}
+                {(conversacionActual.desconectado_wsp4 || conversacionActual.desconectado_ventas_api) && <button onClick={finConversacion} className="px-2 py-1 border border-green-400 text-green-600 text-[11px] font-medium rounded-md hover:bg-green-50 dark:hover:bg-green-500/10 flex items-center gap-1"><CheckCircle size={12} /> Fin Conv.</button>}
 
                 {/* Botón de acciones con dropdown */}
                 <div className="relative" ref={menuAccionesRef}>

@@ -336,81 +336,72 @@ async function procesarMensajeLineaSecundaria(
   try {
     console.log(`[${linea}] Procesando mensaje de ${payload.telefono}`);
 
-    const conversacionExistente = await conversacionService.buscarPorTelefonoYLinea(
-      payload.telefono,
-      linea
-    );
+    // REGLA: Un contacto = Una conversación
+    // 1. Buscar CUALQUIER conversación activa del teléfono (sin importar línea)
+    const conversacionActiva = await conversacionService.buscarActivaPorTelefono(payload.telefono);
 
+    if (conversacionActiva) {
+      // Ya existe conversación activa - usar esa, NO enviar educativo
+      console.log(`[${linea}] Conversación activa encontrada (${conversacionActiva.id}). Usando existente.`);
+      
+      const mensajeData: MensajeInsert = {
+        conversacion_id: conversacionActiva.id,
+        mensaje: payload.mensaje,
+        tipo: payload.mediaType || 'text',
+        direccion: 'entrante',
+        remitente_tipo: 'contacto',
+        media_url: payload.mediaUrl,
+        media_type: payload.mediaType,
+        whatsapp_message_id: payload.messageId,
+        whatsapp_context_id: payload.contextMessageId,
+      };
+      
+      await supabase.from('mensajes').insert(mensajeData);
+      await conversacionService.actualizarUltimoMensaje(conversacionActiva.id, payload.mensaje);
+      
+      return { success: true, action: 'mensaje_guardado_en_existente', enviado_educativo: false };
+    }
+
+    // 2. Buscar conversación desconectada con inbox_fijo = esta línea
     const conversacionDesconectada = await conversacionService.buscarDesconectadaPorTelefonoEInbox(
       payload.telefono,
       linea
     );
 
-    let enviarEducativo = true;
-    let conversacionAUsar: any = null;
-
     if (conversacionDesconectada) {
-      enviarEducativo = false;
-      conversacionAUsar = conversacionDesconectada;
       console.log(`[${linea}] Conversación desconectada encontrada (${conversacionDesconectada.id}). Usando para guardar mensaje.`);
+      
+      const mensajeData: MensajeInsert = {
+        conversacion_id: conversacionDesconectada.id,
+        mensaje: payload.mensaje,
+        tipo: payload.mediaType || 'text',
+        direccion: 'entrante',
+        remitente_tipo: 'contacto',
+        media_url: payload.mediaUrl,
+        media_type: payload.mediaType,
+        whatsapp_message_id: payload.messageId,
+        whatsapp_context_id: payload.contextMessageId,
+      };
+      
+      await supabase.from('mensajes').insert(mensajeData);
+      await conversacionService.actualizarUltimoMensaje(conversacionDesconectada.id, payload.mensaje);
+      
+      return { success: true, action: 'mensaje_guardado_en_desconectada', enviado_educativo: false };
     }
 
-    if (conversacionExistente) {
-      const iniciadoPorAgente = conversacionExistente.iniciado_por === 'agente';
-      const ventanaActiva = conversacionExistente.ventana_24h_activa &&
-        conversacionExistente.ventana_24h_fin &&
-        new Date(conversacionExistente.ventana_24h_fin) > new Date();
+    // 3. No hay conversación existente - enviar mensaje educativo
+    console.log(`[${linea}] Sin conversación existente. Enviando mensaje educativo a ${payload.telefono}`);
 
-      if (iniciadoPorAgente && ventanaActiva) {
-        enviarEducativo = false;
-        conversacionAUsar = conversacionExistente;
-        console.log(`[${linea}] Conversación iniciada por agente, ventana activa. NO enviar educativo.`);
-        await conversacionService.renovarVentana24h(conversacionExistente.id);
-      }
-    }
+    await webhookService.enviarMensajeViaWebhook({
+      linea: linea,
+      telefono: payload.telefono,
+      mensaje: MENSAJE_EDUCATIVO,
+      conversacion_id: '',
+      tipo: 'text',
+      remitente: 'sistema',
+    });
 
-    if (enviarEducativo) {
-      console.log(`[${linea}] Enviando mensaje educativo a ${payload.telefono} (sin crear conversación)`);
-
-      await webhookService.enviarMensajeViaWebhook({
-        linea: linea,
-        telefono: payload.telefono,
-        mensaje: MENSAJE_EDUCATIVO,
-        conversacion_id: '',
-        tipo: 'text',
-        remitente: 'sistema',
-      });
-
-      return { success: true, action: 'mensaje_educativo', enviado_educativo: true };
-    }
-
-    if (!conversacionAUsar) {
-      const { conversacion } = await conversacionService.obtenerOCrear({
-        telefono: payload.telefono,
-        linea_origen: linea,
-        area: linea,
-        estado: 'activa',
-        iniciado_por: 'usuario',
-      });
-      conversacionAUsar = conversacion;
-    }
-
-    const mensajeData: MensajeInsert = {
-      conversacion_id: conversacionAUsar.id,
-      mensaje: payload.mensaje,
-      tipo: payload.mediaType || 'text',
-      direccion: 'entrante',
-      remitente_tipo: 'contacto',
-      media_url: payload.mediaUrl,
-      media_type: payload.mediaType,
-      whatsapp_message_id: payload.messageId,
-      whatsapp_context_id: payload.contextMessageId,
-    };
-
-    await supabase.from('mensajes').insert(mensajeData);
-    await conversacionService.actualizarUltimoMensaje(conversacionAUsar.id, payload.mensaje);
-
-    return { success: true, action: 'mensaje_guardado', enviado_educativo: false };
+    return { success: true, action: 'mensaje_educativo', enviado_educativo: true };
 
   } catch (error) {
     console.error(`[${linea}] Error procesando mensaje:`, error);
@@ -418,9 +409,6 @@ async function procesarMensajeLineaSecundaria(
   }
 }
 
-// ===========================================
-// PROCESAR SELECCIÓN DE CURSO (WSP4)
-// ===========================================
 async function procesarSeleccionCurso(
   telefono: string,
   cursoId: string,

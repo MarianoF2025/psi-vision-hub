@@ -31,6 +31,7 @@ export interface Conversacion {
   canal?: string;
   es_lead_meta?: boolean;
   desconectado_wsp4?: boolean;
+  desconectado_ventas_api?: boolean;
   desconectado_por?: string;
   desconectado_ts?: string;
   inbox_fijo?: InboxType;

@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       linea_origen,
       inbox_fijo,
       desconectado_wsp4,
+      desconectado_ventas_api,
       respuesta_a,
       media_url,
       media_type,
@@ -53,6 +54,10 @@ export async function POST(request: NextRequest) {
     // Determinar webhook
     let webhookKey = linea_origen || 'wsp4';
     if (desconectado_wsp4 && inbox_fijo) {
+      webhookKey = inbox_fijo;
+    }
+    // Si está desconectado de Ventas API, usar inbox_fijo (ventas QR)
+    if (desconectado_ventas_api && inbox_fijo) {
       webhookKey = inbox_fijo;
     }
 

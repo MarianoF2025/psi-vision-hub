@@ -540,9 +540,17 @@ export default function CursoDetailPage() {
                   className="w-full px-3 py-2 border rounded-lg" placeholder="AT, TEA, HIP..." disabled={!isNew} />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">Nombre *</label>
-                <input type="text" value={formData.nombre || ''} onChange={e => setFormData({ ...formData, nombre: e.target.value })}
+                <label className="block text-sm font-medium mb-1">
+                  Nombre * <span className={(formData.nombre || '').length > 20 ? 'text-xs text-amber-600' : 'text-xs text-gray-400'}>({(formData.nombre || '').length}/24)</span>
+                </label>
+                <input type="text" value={formData.nombre || ''} 
+                  onChange={e => {
+                    const sanitized = e.target.value.replace(/\*/g, '').slice(0, 24);
+                    setFormData({ ...formData, nombre: sanitized });
+                  }}
+                  maxLength={24}
                   className="w-full px-3 py-2 border rounded-lg" placeholder="Acompañante Terapéutico" />
+                <p className="text-xs text-gray-500 mt-1">Máx 24 chars (límite WhatsApp). Sin asteriscos.</p>
               </div>
             </div>
             <div>
@@ -551,14 +559,22 @@ export default function CursoDetailPage() {
                 className="w-full px-3 py-2 border rounded-lg" rows={2} />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Mensaje de Saludo (previo al menú)</label>
-              <textarea value={formData.mensaje_saludo || ''} onChange={e => setFormData({ ...formData, mensaje_saludo: e.target.value })}
+              <label className="block text-sm font-medium mb-1">
+                Mensaje de Saludo (previo al menú) <span className={(formData.mensaje_saludo || '').length > 450 ? 'text-xs text-amber-600' : 'text-xs text-gray-400'}>({(formData.mensaje_saludo || '').length}/500)</span>
+              </label>
+              <textarea value={formData.mensaje_saludo || ''} 
+                onChange={e => setFormData({ ...formData, mensaje_saludo: e.target.value.slice(0, 500) })}
+                maxLength={500}
                 className="w-full px-3 py-2 border rounded-lg" rows={2} placeholder="¡Hola! 👋 Gracias por escribirnos..." />
               <p className="text-xs text-gray-500 mt-1">Se envía como mensaje separado antes del menú</p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Mensaje de Bienvenida (menú)</label>
-              <textarea value={formData.mensaje_bienvenida || ''} onChange={e => setFormData({ ...formData, mensaje_bienvenida: e.target.value })}
+              <label className="block text-sm font-medium mb-1">
+                Mensaje de Bienvenida (menú) <span className={(formData.mensaje_bienvenida || '').length > 450 ? 'text-xs text-amber-600' : 'text-xs text-gray-400'}>({(formData.mensaje_bienvenida || '').length}/500)</span>
+              </label>
+              <textarea value={formData.mensaje_bienvenida || ''} 
+                onChange={e => setFormData({ ...formData, mensaje_bienvenida: e.target.value.slice(0, 500) })}
+                maxLength={500}
                 className="w-full px-3 py-2 border rounded-lg" rows={3} placeholder="Descripción completa del curso..." />
               <p className="text-xs text-gray-500 mt-1">Se envía como mensaje separado después del saludo</p>
             </div>
