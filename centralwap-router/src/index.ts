@@ -1278,6 +1278,38 @@ app.post('/webhook/evolution/ventas', async (req: Request, res: Response) => {
       return;
     }
 
+    // ============================================
+    // MENSAJE DESDE TELÉFONO FÍSICO (fromMe: true)
+    // Guardar como saliente sin procesar menú
+    // ============================================
+    if (body.fromMe === true) {
+      console.log('[Ventas] Mensaje desde teléfono físico (fromMe). Guardando como saliente.');
+
+      const convActiva = await conversacionService.buscarActivaPorTelefono(payload.telefono);
+
+      if (convActiva) {
+        await supabase.from('mensajes').insert({
+          conversacion_id: convActiva.id,
+          mensaje: payload.mensaje,
+          tipo: payload.mediaType || 'text',
+          direccion: 'saliente',
+          remitente_tipo: 'agente',
+          remitente_nombre: 'Teléfono',
+          media_url: payload.mediaUrl,
+          media_type: payload.mediaType,
+          whatsapp_message_id: payload.messageId,
+          whatsapp_context_id: payload.contextMessageId,
+        });
+
+        await conversacionService.actualizarUltimoMensaje(convActiva.id, payload.mensaje);
+        res.json({ success: true, action: 'mensaje_saliente_telefono' });
+      } else {
+        console.log('[Ventas] fromMe pero sin conversación activa. Ignorando.');
+        res.json({ success: true, ignored: true, reason: 'fromMe sin conversación activa' });
+      }
+      return;
+    }
+
     const esDesdeWeb = payload.mensaje.startsWith('🌐');
 
     if (esDesdeWeb) {

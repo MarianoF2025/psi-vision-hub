@@ -4,7 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { supabase } from '@/lib/supabase';
 import { cn, getInitials, getWindowTimeLeft, formatPhone } from '@/lib/utils';
-import { X, Clock, Plus, Unlink, Camera, Save, Edit2, Check, MapPin, Mail, User, BookOpen, Building, ChevronDown, Tag } from 'lucide-react';
+import { 
+  X, Clock, Plus, Camera, Edit2, Check, Mail, BookOpen, ChevronDown, 
+  GraduationCap, CreditCard, AlertCircle, CheckCircle, ChevronRight,
+  Calendar, DollarSign, TrendingUp
+} from 'lucide-react';
 
 const ESTADOS_CONV = ['nueva', 'activa', 'esperando', 'resuelta', 'cerrada'] as const;
 const RESULTADOS = ['INS', 'NOINT', 'NOCONT', 'NR+'] as const;
@@ -36,6 +40,19 @@ interface EtiquetaAsignada {
   color: string;
 }
 
+interface InscripcionPSI {
+  id: string;
+  curso_codigo: string;
+  curso_nombre: string;
+  fecha_inscripcion: string;
+  estado: string;
+  cuotas_total: number;
+  cuotas_pagadas: number;
+  monto_total: number;
+  monto_pagado: number;
+  ultima_cuota_pagada: string | null;
+}
+
 export default function InfoContactoPanel() {
   const { conversacionActual, setConversacionActual, setPanelInfoAbierto } = useCRMStore();
   const [contacto, setContacto] = useState<Contacto | null>(null);
@@ -57,6 +74,12 @@ export default function InfoContactoPanel() {
   const [etiquetasAsignadas, setEtiquetasAsignadas] = useState<EtiquetaAsignada[]>([]);
   const [mostrarDropdownEtiquetas, setMostrarDropdownEtiquetas] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Datos de alumno PSI
+  const [inscripcionesPSI, setInscripcionesPSI] = useState<InscripcionPSI[]>([]);
+  const [loadingPSI, setLoadingPSI] = useState(false);
+  const [seccionPSIAbierta, setSeccionPSIAbierta] = useState(true);
+  const [cursoExpandido, setCursoExpandido] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -159,12 +182,40 @@ export default function InfoContactoPanel() {
       }
     };
 
+    // Cargar datos de alumno PSI
+    const cargarDatosPSI = async () => {
+      if (!conversacionActual.telefono) return;
+      
+      setLoadingPSI(true);
+      
+      // Normalizar teléfono para búsqueda (puede venir con o sin +)
+      const telefonoNormalizado = conversacionActual.telefono.replace(/\D/g, '');
+      
+      const { data, error } = await supabase
+        .from('inscripciones_psi')
+        .select('*')
+        .or(`telefono.eq.${conversacionActual.telefono},telefono.eq.+${telefonoNormalizado},telefono.eq.${telefonoNormalizado}`)
+        .order('fecha_inscripcion', { ascending: false });
+
+      if (data && !error) {
+        setInscripcionesPSI(data);
+        // Expandir el primer curso por defecto si hay datos
+        if (data.length > 0) {
+          setCursoExpandido(data[0].id);
+        }
+      } else {
+        setInscripcionesPSI([]);
+      }
+      setLoadingPSI(false);
+    };
+
     cargarContacto();
     cargarNotas();
     cargarCursoInteres();
     cargarEtiquetasGlobales();
     cargarEtiquetasAsignadas();
-  }, [conversacionActual?.contacto_id, conversacionActual?.id]);
+    cargarDatosPSI();
+  }, [conversacionActual?.contacto_id, conversacionActual?.id, conversacionActual?.telefono]);
 
   if (!conversacionActual) return null;
 
@@ -281,19 +332,33 @@ export default function InfoContactoPanel() {
     eg => !etiquetasAsignadas.some(ea => ea.etiqueta_id === eg.id)
   );
 
-  // Desconectar router
-  const desconectar = async () => {
-    if (confirm('¿Desconectar del Router? El contacto ya no pasará por el menú automático.')) {
-      await supabase.from('conversaciones').update({
-        desconectado_wsp4: true,
-        inbox_fijo: conversacionActual.area
-      }).eq('id', conversacionActual.id);
-      setConversacionActual({
-        ...conversacionActual,
-        desconectado_wsp4: true,
-        inbox_fijo: conversacionActual.area
-      });
+  // Helpers para datos PSI
+  const getEstadoColor = (estado: string) => {
+    switch (estado?.toLowerCase()) {
+      case 'activo': return 'text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20';
+      case 'finalizado': return 'text-blue-600 bg-blue-100 dark:bg-blue-500/20';
+      case 'baja': return 'text-red-600 bg-red-100 dark:bg-red-500/20';
+      case 'pendiente': return 'text-amber-600 bg-amber-100 dark:bg-amber-500/20';
+      default: return 'text-slate-600 bg-slate-100 dark:bg-slate-500/20';
     }
+  };
+
+  const calcularPorcentajePago = (pagado: number, total: number) => {
+    if (!total || total === 0) return 0;
+    return Math.round((pagado / total) * 100);
+  };
+
+  const tieneDeuda = (inscripcion: InscripcionPSI) => {
+    return inscripcion.cuotas_pagadas < inscripcion.cuotas_total && inscripcion.estado?.toLowerCase() === 'activo';
+  };
+
+  // Resumen de datos PSI
+  const resumenPSI = {
+    totalCursos: inscripcionesPSI.length,
+    cursosActivos: inscripcionesPSI.filter(i => i.estado?.toLowerCase() === 'activo').length,
+    cursosFinalizados: inscripcionesPSI.filter(i => i.estado?.toLowerCase() === 'finalizado').length,
+    conDeuda: inscripcionesPSI.filter(tieneDeuda).length,
+    totalPagado: inscripcionesPSI.reduce((acc, i) => acc + (i.monto_pagado || 0), 0),
   };
 
   return (
@@ -361,7 +426,225 @@ export default function InfoContactoPanel() {
                 </div>
               )}
               <p className="text-xs text-slate-500">{formatPhone(conversacionActual.telefono)}</p>
+              
+              {/* Badge de alumno PSI */}
+              {inscripcionesPSI.length > 0 && (
+                <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 rounded-full text-[10px] font-medium">
+                  <GraduationCap size={10} />
+                  Alumno PSI
+                </div>
+              )}
             </div>
+
+            {/* ========== SECCIÓN DATOS ALUMNO PSI ========== */}
+            {inscripcionesPSI.length > 0 && (
+              <div className="border border-purple-200 dark:border-purple-500/30 rounded-lg overflow-hidden">
+                {/* Header colapsable */}
+                <button
+                  onClick={() => setSeccionPSIAbierta(!seccionPSIAbierta)}
+                  className="w-full px-3 py-2 bg-purple-50 dark:bg-purple-500/10 flex items-center justify-between hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <GraduationCap size={14} className="text-purple-600" />
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
+                      Datos Alumno PSI
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {resumenPSI.conDeuda > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-600 text-[9px] font-medium rounded">
+                        {resumenPSI.conDeuda} con deuda
+                      </span>
+                    )}
+                    <ChevronDown 
+                      size={14} 
+                      className={cn(
+                        "text-purple-500 transition-transform",
+                        seccionPSIAbierta && "rotate-180"
+                      )} 
+                    />
+                  </div>
+                </button>
+
+                {seccionPSIAbierta && (
+                  <div className="p-2 space-y-2">
+                    {/* Resumen general */}
+                    <div className="grid grid-cols-3 gap-1 text-center">
+                      <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded">
+                        <p className="text-lg font-bold text-slate-800 dark:text-white">{resumenPSI.totalCursos}</p>
+                        <p className="text-[9px] text-slate-500">Cursos</p>
+                      </div>
+                      <div className="p-1.5 bg-emerald-50 dark:bg-emerald-500/10 rounded">
+                        <p className="text-lg font-bold text-emerald-600">{resumenPSI.cursosActivos}</p>
+                        <p className="text-[9px] text-slate-500">Activos</p>
+                      </div>
+                      <div className="p-1.5 bg-blue-50 dark:bg-blue-500/10 rounded">
+                        <p className="text-lg font-bold text-blue-600">{resumenPSI.cursosFinalizados}</p>
+                        <p className="text-[9px] text-slate-500">Finalizados</p>
+                      </div>
+                    </div>
+
+                    {/* Lista de cursos */}
+                    <div className="space-y-1.5">
+                      {inscripcionesPSI.map((inscripcion) => {
+                        const porcentajePago = calcularPorcentajePago(inscripcion.monto_pagado, inscripcion.monto_total);
+                        const estaExpandido = cursoExpandido === inscripcion.id;
+                        const deuda = tieneDeuda(inscripcion);
+
+                        return (
+                          <div 
+                            key={inscripcion.id} 
+                            className={cn(
+                              "border rounded-lg overflow-hidden transition-all",
+                              deuda 
+                                ? "border-red-200 dark:border-red-500/30" 
+                                : "border-slate-200 dark:border-slate-700"
+                            )}
+                          >
+                            {/* Header del curso */}
+                            <button
+                              onClick={() => setCursoExpandido(estaExpandido ? null : inscripcion.id)}
+                              className="w-full px-2 py-1.5 flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                            >
+                              <ChevronRight 
+                                size={12} 
+                                className={cn(
+                                  "text-slate-400 transition-transform flex-shrink-0",
+                                  estaExpandido && "rotate-90"
+                                )} 
+                              />
+                              <div className="flex-1 text-left min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                                    {inscripcion.curso_codigo}
+                                  </span>
+                                  <span className={cn(
+                                    "px-1 py-0.5 text-[8px] font-medium rounded",
+                                    getEstadoColor(inscripcion.estado)
+                                  )}>
+                                    {inscripcion.estado}
+                                  </span>
+                                  {deuda && (
+                                    <AlertCircle size={10} className="text-red-500" />
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-600 dark:text-slate-400 truncate">
+                                  {inscripcion.curso_nombre}
+                                </p>
+                              </div>
+                            </button>
+
+                            {/* Detalles expandidos */}
+                            {estaExpandido && (
+                              <div className="px-2 pb-2 pt-1 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                                {/* Fecha inscripción */}
+                                <div className="flex items-center gap-1.5 text-[10px]">
+                                  <Calendar size={10} className="text-slate-400" />
+                                  <span className="text-slate-500">Inscripción:</span>
+                                  <span className="text-slate-700 dark:text-slate-300">
+                                    {inscripcion.fecha_inscripcion 
+                                      ? new Date(inscripcion.fecha_inscripcion).toLocaleDateString('es-AR', {
+                                          day: '2-digit',
+                                          month: 'short',
+                                          year: 'numeric'
+                                        })
+                                      : '-'
+                                    }
+                                  </span>
+                                </div>
+
+                                {/* Cuotas */}
+                                <div className="flex items-center gap-1.5 text-[10px]">
+                                  <CreditCard size={10} className="text-slate-400" />
+                                  <span className="text-slate-500">Cuotas:</span>
+                                  <span className={cn(
+                                    "font-medium",
+                                    deuda ? "text-red-600" : "text-slate-700 dark:text-slate-300"
+                                  )}>
+                                    {inscripcion.cuotas_pagadas} / {inscripcion.cuotas_total}
+                                  </span>
+                                  {deuda && (
+                                    <span className="text-red-500 text-[9px]">
+                                      (debe {inscripcion.cuotas_total - inscripcion.cuotas_pagadas})
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Barra de progreso de pago */}
+                                <div>
+                                  <div className="flex items-center justify-between text-[9px] mb-0.5">
+                                    <span className="text-slate-500">Pago</span>
+                                    <span className={cn(
+                                      "font-medium",
+                                      porcentajePago >= 100 ? "text-emerald-600" :
+                                      porcentajePago >= 50 ? "text-amber-600" : "text-red-600"
+                                    )}>
+                                      {porcentajePago}%
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                    <div 
+                                      className={cn(
+                                        "h-full rounded-full transition-all",
+                                        porcentajePago >= 100 ? "bg-emerald-500" :
+                                        porcentajePago >= 50 ? "bg-amber-500" : "bg-red-500"
+                                      )}
+                                      style={{ width: `${Math.min(porcentajePago, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Montos */}
+                                <div className="flex items-center gap-1.5 text-[10px]">
+                                  <DollarSign size={10} className="text-slate-400" />
+                                  <span className="text-slate-500">Pagado:</span>
+                                  <span className="text-emerald-600 font-medium">
+                                    ${(inscripcion.monto_pagado || 0).toLocaleString('es-AR')}
+                                  </span>
+                                  <span className="text-slate-400">/</span>
+                                  <span className="text-slate-600 dark:text-slate-400">
+                                    ${(inscripcion.monto_total || 0).toLocaleString('es-AR')}
+                                  </span>
+                                </div>
+
+                                {/* Última cuota pagada */}
+                                {inscripcion.ultima_cuota_pagada && (
+                                  <div className="flex items-center gap-1.5 text-[10px]">
+                                    <CheckCircle size={10} className="text-emerald-500" />
+                                    <span className="text-slate-500">Último pago:</span>
+                                    <span className="text-slate-700 dark:text-slate-300">
+                                      {new Date(inscripcion.ultima_cuota_pagada).toLocaleDateString('es-AR', {
+                                        day: '2-digit',
+                                        month: 'short',
+                                        year: 'numeric'
+                                      })}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Total histórico */}
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-500 flex items-center gap-1">
+                          <TrendingUp size={10} />
+                          Total histórico pagado:
+                        </span>
+                        <span className="font-bold text-emerald-600">
+                          ${resumenPSI.totalPagado.toLocaleString('es-AR')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {/* ========== FIN SECCIÓN PSI ========== */}
 
             {/* Email */}
             <div>

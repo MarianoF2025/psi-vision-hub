@@ -10,7 +10,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { INBOXES, type InboxType } from '@/types/crm';
 import { cn, getInitials } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
-import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard, Bot, UserCheck } from 'lucide-react';
+import { Sun, Moon, Settings, Home, DollarSign, Megaphone, GraduationCap, ClipboardList, Users, ChevronLeft, ChevronRight, Contact, Tag, MessageSquare, BarChart3, LogOut, Zap, Send, UsersRound, CreditCard, Bot, UserCheck, Mail } from 'lucide-react';
 
 const INBOX_ICONS: Record<InboxType, React.ReactNode> = {
   wsp4: <Home size={16} />,
@@ -67,13 +67,6 @@ const PAGINAS_EXTRA = [
     inboxesPermitidos: ['ventas', 'ventas_api'] // Solo Ventas
   },
   {
-    id: 'remarketing',
-    nombre: 'Remarketing',
-    href: '/crm/remarketing',
-    icono: Send,
-    inboxesPermitidos: [] // Solo admins
-  },
-  {
     id: 'grupos',
     nombre: 'Grupos WA',
     href: '/crm/grupos',
@@ -83,7 +76,21 @@ const PAGINAS_EXTRA = [
 ];
 
 // Páginas solo para administradores
-const PAGINAS_ADMIN = [
+const PAGINAS_MODULOS = [
+  {
+    id: 'remarketing',
+    nombre: 'Remarketing',
+    href: 'https://remarketing.psivisionhub.com',
+    icono: Send,
+    external: true,
+  },
+  {
+    id: 'email-marketing',
+    nombre: 'Email Marketing',
+    href: 'https://email.psivisionhub.com',
+    icono: Mail,
+    external: true,
+  },
   {
     id: 'control-agentes',
     nombre: 'Control Agentes',
@@ -278,14 +285,15 @@ export default function Sidebar() {
             <div className="my-2 mx-3 border-t border-slate-200 dark:border-slate-800" />
 
             {sidebarExpandido && (
-              <p className="px-3 text-[9px] font-semibold text-amber-500 uppercase tracking-wider mb-1">Admin</p>
+              <p className="px-3 text-[9px] font-semibold text-amber-500 uppercase tracking-wider mb-1">Módulos</p>
             )}
-            {PAGINAS_ADMIN.map((pagina) => {
+            {PAGINAS_MODULOS.map((pagina) => {
               const isActive = pathname === pagina.href || pathname.startsWith(pagina.href + '/');
               return (
                 <Link
                   key={pagina.id}
                   href={pagina.href}
+                  {...(pagina.external && { target: "_blank", rel: "noopener noreferrer" })}
                   className={cn(
                     'relative mx-1 px-2 py-1.5 rounded-lg flex items-center gap-2 transition-all group',
                     isActive
