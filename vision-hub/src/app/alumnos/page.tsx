@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import { parsePeriodo, getAgrupacion, PERIODO_DEFAULT } from '@/lib/periodo';
 import {
   AreaChart,
   Area,
@@ -29,7 +30,6 @@ import {
   Bot
 } from 'lucide-react';
 
-// Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -70,40 +70,31 @@ interface Tendencia {
   ingresos: number;
 }
 
-// Función para formatear moneda
 const formatCurrency = (value: number) => {
-  if (value >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
-  }
-  if (value >= 1000) {
-    return `$${(value / 1000).toFixed(0)}K`;
-  }
+  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
+  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
   return `$${value.toFixed(0)}`;
 };
 
-// Función para formatear números
 const formatNumber = (value: number) => {
   return new Intl.NumberFormat('es-AR').format(value);
 };
 
 export default function AlumnosPage() {
-  const [periodo, setPeriodo] = useState('año');
+  const [periodo, setPeriodo] = useState(PERIODO_DEFAULT);
   const [isLoading, setIsLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
 
-  // Filtros
   const [fechaDesde, setFechaDesde] = useState<string>('');
   const [fechaHasta, setFechaHasta] = useState<string>('');
   const [cursoSeleccionado, setCursoSeleccionado] = useState<string>('');
   const [estadoSeleccionado, setEstadoSeleccionado] = useState<string>('');
 
-  // Data
   const [metricas, setMetricas] = useState<Metricas | null>(null);
   const [cursosRanking, setCursosRanking] = useState<CursoRanking[]>([]);
   const [tendencias, setTendencias] = useState<Tendencia[]>([]);
   const [cursosList, setCursosList] = useState<{codigo: string, nombre: string}[]>([]);
 
-  // Cargar lista de cursos para el filtro (usando RPC)
   useEffect(() => {
     const loadCursos = async () => {
       const { data, error } = await supabase.rpc('get_cursos_lista');
@@ -114,50 +105,15 @@ export default function AlumnosPage() {
     loadCursos();
   }, []);
 
-
-  // Calcular fechas según período
   const getFechasPeriodo = useCallback(() => {
-    const hoy = new Date();
-    let desde: string | null = null;
-    let hasta: string | null = null;
-
-    if (fechaDesde || fechaHasta) {
-      return { desde: fechaDesde || null, hasta: fechaHasta || null };
-    }
-
-    switch (periodo) {
-      case 'hoy':
-        desde = hoy.toISOString().split('T')[0];
-        hasta = desde;
-        break;
-      case 'semana':
-        const inicioSemana = new Date(hoy);
-        inicioSemana.setDate(hoy.getDate() - 7);
-        desde = inicioSemana.toISOString().split('T')[0];
-        break;
-      case 'mes':
-        const inicioMes = new Date(hoy);
-        inicioMes.setMonth(hoy.getMonth() - 1);
-        desde = inicioMes.toISOString().split('T')[0];
-        break;
-      case 'año':
-        // Últimos 12 meses en vez de año calendario
-        const hace12Meses = new Date(hoy);
-        hace12Meses.setMonth(hoy.getMonth() - 12);
-        desde = hace12Meses.toISOString().split('T')[0];
-        break;
-    }
-
-    return { desde, hasta };
+    return parsePeriodo(periodo, fechaDesde, fechaHasta);
   }, [periodo, fechaDesde, fechaHasta]);
 
-  // Cargar datos
   const loadData = useCallback(async () => {
     setIsLoading(true);
     const { desde, hasta } = getFechasPeriodo();
 
     try {
-      // Cargar métricas
       const { data: metricasData } = await supabase.rpc('get_alumnos_metricas', {
         p_fecha_desde: desde,
         p_fecha_hasta: hasta,
@@ -166,7 +122,6 @@ export default function AlumnosPage() {
       });
       if (metricasData) setMetricas(metricasData);
 
-      // Cargar ranking de cursos
       const { data: rankingData } = await supabase.rpc('get_cursos_ranking', {
         p_fecha_desde: desde,
         p_fecha_hasta: hasta,
@@ -174,12 +129,11 @@ export default function AlumnosPage() {
       });
       if (rankingData) setCursosRanking(rankingData);
 
-      // Cargar tendencias
       const { data: tendenciasData } = await supabase.rpc('get_alumnos_tendencias', {
         p_fecha_desde: desde,
         p_fecha_hasta: hasta,
         p_curso_codigo: cursoSeleccionado || null,
-        p_agrupar_por: 'mes'
+        p_agrupar_por: getAgrupacion(periodo)
       });
       if (tendenciasData) setTendencias(tendenciasData);
 
@@ -188,7 +142,7 @@ export default function AlumnosPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [getFechasPeriodo, cursoSeleccionado, estadoSeleccionado]);
+  }, [getFechasPeriodo, cursoSeleccionado, estadoSeleccionado, periodo]);
 
   useEffect(() => {
     loadData();
@@ -196,7 +150,6 @@ export default function AlumnosPage() {
 
   const handleExport = (formato: 'excel' | 'csv' | 'pdf') => {
     console.log('Exportar:', formato);
-    // TODO: Implementar exportación
   };
 
   const handleRefresh = () => {
@@ -212,7 +165,6 @@ export default function AlumnosPage() {
 
   const hasActiveFilters = fechaDesde || fechaHasta || cursoSeleccionado || estadoSeleccionado;
 
-  // KPIs config
   const kpis = metricas ? [
     {
       label: 'Alumnos Activos',
@@ -258,7 +210,6 @@ export default function AlumnosPage() {
     }
   ] : [];
 
-  // Colores para el gráfico de barras de cursos
   const getBarColor = (tasa: number) => {
     if (tasa >= 55) return '#10b981';
     if (tasa >= 45) return '#f59e0b';
@@ -277,7 +228,6 @@ export default function AlumnosPage() {
         onRefresh={handleRefresh}
         isLoading={isLoading}
       >
-        {/* Filtros expandibles */}
         <div className="mt-2">
           <button
             onClick={() => setShowFilters(!showFilters)}
@@ -290,9 +240,7 @@ export default function AlumnosPage() {
             <Filter className="w-3.5 h-3.5" />
             Filtros
             {hasActiveFilters && (
-              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">
-                Activos
-              </span>
+              <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px]">Activos</span>
             )}
             <ChevronDown className={`w-3 h-3 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </button>
@@ -327,9 +275,7 @@ export default function AlumnosPage() {
                   >
                     <option value="">Todos</option>
                     {cursosList.map((curso) => (
-                      <option key={curso.codigo} value={curso.codigo}>
-                        {curso.codigo}
-                      </option>
+                      <option key={curso.codigo} value={curso.codigo}>{curso.codigo}</option>
                     ))}
                   </select>
                 </div>
@@ -364,7 +310,6 @@ export default function AlumnosPage() {
       </DashboardHeader>
 
       <div className="p-3 sm:p-4 lg:p-6 space-y-4">
-        {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 sm:gap-3">
           {isLoading ? (
             Array(6).fill(0).map((_, i) => (
@@ -391,9 +336,7 @@ export default function AlumnosPage() {
           )}
         </div>
 
-        {/* Grid principal */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Gráfico de tendencias */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-4">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">Tendencia de Inscripciones</h3>
             {isLoading ? (
@@ -435,8 +378,8 @@ export default function AlumnosPage() {
                         name === 'finalizados' ? 'Finalizados' : name
                       ]}
                       labelFormatter={(label) => {
-                        if (label && label.includes('-')) {
-                          const [año, mes] = label.split('-');
+                        if (label && String(label).includes('-')) {
+                          const [año, mes] = String(label).split('-');
                           const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
                           return `${meses[parseInt(mes) - 1]} ${año}`;
                         }
@@ -465,7 +408,6 @@ export default function AlumnosPage() {
             )}
           </div>
 
-          {/* Panel Agente IA */}
           <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-sm p-4 text-white">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 bg-gradient-to-br from-[#e63946] to-[#c1121f] rounded-lg">
@@ -522,7 +464,6 @@ export default function AlumnosPage() {
           </div>
         </div>
 
-        {/* Ranking de cursos */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
           <h3 className="text-sm font-semibold text-gray-900 mb-4">Ranking de Cursos por Inscripciones</h3>
           {isLoading ? (
