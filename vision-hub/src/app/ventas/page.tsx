@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import CursosDetalle from '@/components/dashboard/CursosDetalle';
+import AgenteIAPanel from '@/components/dashboard/AgenteIAPanel';
 import { parsePeriodo, getAgrupacion, PERIODO_DEFAULT } from '@/lib/periodo';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -306,61 +307,7 @@ export default function VentasPage() {
           </div>
 
           {/* Agente IA */}
-          <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-sm p-4 text-white">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="p-2 rounded-lg" style={{ background: `linear-gradient(135deg, ${PSI_RED}, #c1121f)` }}>
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold">Agente IA</h3>
-                <p className="text-[10px] text-slate-400">Análisis inteligente</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {metricas && metricas.periodo_actual.tasa_cobro < 50 && (
-                <div className="p-3 bg-white/10 rounded-lg border border-white/10">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-[11px] font-semibold text-amber-400">Tasa de cobro baja</p>
-                      <p className="text-[11px] text-slate-300 mt-1">
-                        Solo se cobró el {metricas.periodo_actual.tasa_cobro}% de lo vendido.
-                        Brecha: {formatCurrency(metricas.periodo_actual.monto_vendido - metricas.periodo_actual.monto_cobrado)}.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {metricas && (
-                <div className="p-3 bg-white/10 rounded-lg border border-white/10">
-                  <div className="flex items-start gap-2">
-                    {calcDelta(metricas.periodo_actual.inscripciones, metricas.periodo_anterior.inscripciones) >= 0
-                      ? <TrendingUp className="w-3.5 h-3.5 text-slate-300 mt-0.5 flex-shrink-0" />
-                      : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
-                    }
-                    <div>
-                      <p className={`text-[11px] font-semibold ${
-                        calcDelta(metricas.periodo_actual.inscripciones, metricas.periodo_anterior.inscripciones) >= 0 ? 'text-slate-200' : 'text-amber-400'
-                      }`}>vs. Período anterior</p>
-                      <p className="text-[11px] text-slate-300 mt-1">
-                        Inscripciones: {formatNumber(metricas.periodo_actual.inscripciones)} vs {formatNumber(metricas.periodo_anterior.inscripciones)}
-                        ({calcDelta(metricas.periodo_actual.inscripciones, metricas.periodo_anterior.inscripciones) >= 0 ? '+' : ''}
-                        {calcDelta(metricas.periodo_actual.inscripciones, metricas.periodo_anterior.inscripciones)}%).
-                        Vendido: {formatCurrency(metricas.periodo_actual.monto_vendido)} vs {formatCurrency(metricas.periodo_anterior.monto_vendido)}.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button className="w-full mt-4 py-2 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2">
-              <Sparkles className="w-3.5 h-3.5" />
-              Generar análisis completo
-            </button>
-          </div>
+          <AgenteIAPanel />
         </div>
 
         {/* ═══ SECCIÓN 3 + 4: Embudo + Vendedoras ═══ */}
