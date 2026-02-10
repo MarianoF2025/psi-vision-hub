@@ -106,7 +106,7 @@ export default function AgenteIAPanel() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/ventas-agent');
+      const res = await fetch('/tableros/api/ventas-agent');
       const data = await res.json();
       if (data.success && data.insights) {
         const sorted = data.insights.sort(
@@ -128,7 +128,7 @@ export default function AgenteIAPanel() {
     setIsGenerating(true);
     setError(null);
     try {
-      const res = await fetch('/api/ventas-agent', {
+      const res = await fetch('/tableros/api/ventas-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),

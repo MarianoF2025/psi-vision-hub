@@ -1,6 +1,6 @@
 // ===========================================
 // PSI ROUTER - SERVIDOR PRINCIPAL
-// Versión 4.3.0 - Con cursos dinámicos para Inscripciones
+// Versión 4.4.0 - Con cursos dinámicos PAGINADOS
 // ===========================================
 import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
@@ -336,12 +336,9 @@ async function procesarMensajeLineaSecundaria(
   try {
     console.log(`[${linea}] Procesando mensaje de ${payload.telefono}`);
 
-    // REGLA: Un contacto = Una conversación
-    // 1. Buscar CUALQUIER conversación activa del teléfono (sin importar línea)
     const conversacionActiva = await conversacionService.buscarActivaPorTelefono(payload.telefono);
 
     if (conversacionActiva) {
-      // Ya existe conversación activa - usar esa, NO enviar educativo
       console.log(`[${linea}] Conversación activa encontrada (${conversacionActiva.id}). Usando existente.`);
 
       const mensajeData: MensajeInsert = {
@@ -362,7 +359,6 @@ async function procesarMensajeLineaSecundaria(
       return { success: true, action: 'mensaje_guardado_en_existente', enviado_educativo: false };
     }
 
-    // 2. Buscar conversación desconectada con inbox_fijo = esta línea
     const conversacionDesconectada = await conversacionService.buscarDesconectadaPorTelefonoEInbox(
       payload.telefono,
       linea
@@ -389,7 +385,6 @@ async function procesarMensajeLineaSecundaria(
       return { success: true, action: 'mensaje_guardado_en_desconectada', enviado_educativo: false };
     }
 
-    // 3. No hay conversación existente - enviar mensaje educativo
     console.log(`[${linea}] Sin conversación existente. Enviando mensaje educativo a ${payload.telefono}`);
 
     await webhookService.enviarMensajeViaWebhook({
@@ -419,7 +414,6 @@ async function procesarSeleccionCurso(
 
     const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
 
-    // Obtener info del curso
     const { data: curso, error: cursoError } = await supabase
       .from('cursos')
       .select('id, codigo, nombre')
@@ -434,7 +428,6 @@ async function procesarSeleccionCurso(
       return { success: false, action: 'curso_no_encontrado' };
     }
 
-    // Registrar interacción en menu_interacciones
     await supabase.from('menu_interacciones').insert({
       telefono: telNormalizado,
       curso_id: cursoId,
@@ -443,7 +436,6 @@ async function procesarSeleccionCurso(
     });
     console.log(`[WSP4-Cursos] Registrado en menu_interacciones: ${telNormalizado} → ${curso.nombre}`);
 
-    // Buscar o crear conversación
     const { conversacion } = await conversacionService.obtenerOCrear({
       telefono: telNormalizado,
       linea_origen: 'wsp4',
@@ -452,13 +444,11 @@ async function procesarSeleccionCurso(
       iniciado_por: 'usuario',
     });
 
-    // Generar ticket
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
     const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
     const ticketId = `TKT-${dateStr}-${randomSuffix}`;
 
-    // Actualizar conversación
     await supabase
       .from('conversaciones')
       .update({
@@ -470,7 +460,6 @@ async function procesarSeleccionCurso(
       })
       .eq('id', conversacion.id);
 
-    // Mensaje de sistema para el agente
     await supabase.from('mensajes').insert({
       conversacion_id: conversacion.id,
       mensaje: `🤖 WSP4 → Ventas → Interesado en: ${curso.nombre} (${curso.codigo})`,
@@ -480,7 +469,6 @@ async function procesarSeleccionCurso(
       remitente_nombre: 'Router WSP4',
     });
 
-    // Crear ticket
     const { data: ticketData } = await supabase.from('tickets').insert({
       conversacion_id: conversacion.id,
       telefono: telNormalizado,
@@ -500,7 +488,6 @@ async function procesarSeleccionCurso(
       },
     }).select('id').single();
 
-    // Registro de derivación
     await supabase.from('derivaciones').insert({
       conversacion_id: conversacion.id,
       telefono: telNormalizado,
@@ -512,11 +499,10 @@ async function procesarSeleccionCurso(
       ticket_id: ticketData?.id,
       status: 'completada',
       ts_derivacion: now.toISOString(),
-      sistema_version: '4.3.0',
+      sistema_version: '4.4.0',
       nodo_procesador: 'centralwap-router',
     });
 
-    // Audit log
     await supabase.from('audit_log').insert({
       accion: 'seleccion_curso_wsp4',
       tabla_afectada: 'menu_interacciones',
@@ -531,7 +517,6 @@ async function procesarSeleccionCurso(
       origen: 'router-wsp4',
     });
 
-    // Confirmación al usuario
     await interactiveService.enviarTexto(telefono,
       `✅ ¡Excelente elección!\n\nTe contactamos en breve con toda la info sobre *${curso.nombre}*.`
     );
@@ -546,6 +531,137 @@ async function procesarSeleccionCurso(
 }
 
 // ===========================================
+// LISTA DE CURSOS PAGINADA (máx 10 opciones WhatsApp)
+// ===========================================
+const CURSOS_POR_PAGINA = 8; // 8 cursos + hasta 2 navegación = 10 (límite WA)
+
+async function enviarListaCursosPaginada(
+  telefono: string,
+  pagina: number
+): Promise<{ success: boolean; action: string }> {
+  try {
+    console.log(`[WSP4-Cursos] Enviando página ${pagina} de cursos a ${telefono}`);
+
+    const { data: cursos, error } = await supabase
+      .from('cursos')
+      .select('id, codigo, nombre')
+      .eq('activo', true)
+      .order('nombre');
+
+    if (error || !cursos || cursos.length === 0) {
+      console.error('[WSP4-Cursos] Error obteniendo cursos o sin cursos activos:', error);
+      const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+
+      const { conversacion } = await conversacionService.obtenerOCrear({
+        telefono: telNormalizado,
+        linea_origen: 'wsp4',
+        area: 'ventas',
+        estado: 'derivada',
+        iniciado_por: 'usuario',
+      });
+
+      await supabase
+        .from('conversaciones')
+        .update({ area: 'ventas', estado: 'derivada', router_estado: 'derivado' })
+        .eq('id', conversacion.id);
+
+      await interactiveService.enviarTexto(telefono,
+        '✅ Te derivamos con nuestro equipo de inscripciones.\n\nEn breve te contactamos.'
+      );
+
+      return { success: true, action: 'derivado_sin_cursos' };
+    }
+
+    // Si caben todos en una página (9 cursos + 1 volver = 10), no paginar
+    if (cursos.length <= 9) {
+      const menuCursos: InteractiveList = {
+        header: '📝 Inscripciones',
+        body: '¿Qué curso te interesa?',
+        footer: 'Elegí una opción',
+        buttonText: 'Ver cursos',
+        sections: [{
+          title: 'Cursos disponibles',
+          rows: [
+            ...cursos.map(c => ({
+              id: `curso_${c.id}`,
+              title: c.nombre.length > 24 ? c.nombre.substring(0, 21) + '...' : c.nombre,
+              description: c.codigo
+            })),
+            { id: 'volver', title: '⬅️ Volver', description: 'Menú principal' }
+          ]
+        }]
+      };
+
+      await interactiveService.enviarListaInteractiva(telefono, menuCursos);
+
+    } else {
+      // Paginación necesaria
+      const totalPaginas = Math.ceil(cursos.length / CURSOS_POR_PAGINA);
+      const paginaActual = Math.max(1, Math.min(pagina, totalPaginas));
+      const inicio = (paginaActual - 1) * CURSOS_POR_PAGINA;
+      const esPrimeraPagina = paginaActual === 1;
+      const esUltimaPagina = paginaActual === totalPaginas;
+
+      const cursosPagina = cursos.slice(inicio, inicio + CURSOS_POR_PAGINA);
+
+      const rows: Array<{ id: string; title: string; description: string }> = cursosPagina.map(c => ({
+        id: `curso_${c.id}`,
+        title: c.nombre.length > 24 ? c.nombre.substring(0, 21) + '...' : c.nombre,
+        description: c.codigo
+      }));
+
+      // Navegación adelante
+      if (!esUltimaPagina) {
+        rows.push({
+          id: `ver_mas_cursos_p${paginaActual + 1}`,
+          title: '➡️ Ver más cursos',
+          description: `Página ${paginaActual + 1} de ${totalPaginas}`
+        });
+      }
+
+      // Navegación atrás o volver al menú principal
+      if (esPrimeraPagina) {
+        rows.push({ id: 'volver', title: '⬅️ Volver', description: 'Menú principal' });
+      } else {
+        rows.push({
+          id: `ver_mas_cursos_p${paginaActual - 1}`,
+          title: '⬅️ Página anterior',
+          description: `Volver a página ${paginaActual - 1}`
+        });
+      }
+
+      const menuCursos: InteractiveList = {
+        header: '📝 Inscripciones',
+        body: `¿Qué curso te interesa? (${paginaActual}/${totalPaginas})`,
+        footer: 'Elegí una opción',
+        buttonText: 'Ver cursos',
+        sections: [{
+          title: `Cursos disponibles (${paginaActual}/${totalPaginas})`,
+          rows
+        }]
+      };
+
+      await interactiveService.enviarListaInteractiva(telefono, menuCursos);
+    }
+
+    // Actualizar estado
+    const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
+    await supabase
+      .from('conversaciones')
+      .update({ menu_actual: 'cursos', router_estado: 'submenu_cursos' })
+      .eq('telefono', telNormalizado)
+      .eq('linea_origen', 'wsp4');
+
+    console.log(`[WSP4-Cursos] Menú de cursos enviado (${cursos.length} cursos, página ${pagina})`);
+    return { success: true, action: 'menu_cursos_enviado' };
+
+  } catch (error) {
+    console.error('[WSP4-Cursos] Error en paginación:', error);
+    return { success: false, action: 'error' };
+  }
+}
+
+// ===========================================
 // PROCESAR MENÚ INTERACTIVO WSP4
 // ===========================================
 async function procesarMenuInteractivo(
@@ -555,6 +671,12 @@ async function procesarMenuInteractivo(
 ): Promise<{ success: boolean; action: string; ticketId?: string }> {
   try {
     console.log(`[WSP4-Interactive] Procesando selección: ${listReplyId} de ${telefono}`);
+
+    // === PAGINACIÓN DE CURSOS ===
+    if (listReplyId.startsWith('ver_mas_cursos_p')) {
+      const page = parseInt(listReplyId.replace('ver_mas_cursos_p', ''));
+      return await enviarListaCursosPaginada(telefono, isNaN(page) ? 1 : page);
+    }
 
     // === DETECTAR SELECCIÓN DE CURSO DINÁMICO ===
     if (listReplyId.startsWith('curso_')) {
@@ -593,79 +715,9 @@ async function procesarMenuInteractivo(
       return { success: true, action: 'menu_enviado' };
     }
 
-    // === MOSTRAR CURSOS DINÁMICOS ===
+    // === MOSTRAR CURSOS DINÁMICOS (PAGINADO) ===
     if (resultado.accion === 'mostrar_cursos') {
-      console.log(`[WSP4-Interactive] Consultando cursos activos...`);
-
-      const { data: cursos, error } = await supabase
-        .from('cursos')
-        .select('id, codigo, nombre')
-        .eq('activo', true)
-        .order('nombre');
-
-      if (error || !cursos || cursos.length === 0) {
-        console.error('[WSP4-Interactive] Error obteniendo cursos o sin cursos activos:', error);
-        // Fallback: derivar directo a ventas sin curso específico
-        const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
-
-        const { conversacion } = await conversacionService.obtenerOCrear({
-          telefono: telNormalizado,
-          linea_origen: 'wsp4',
-          area: 'ventas',
-          estado: 'derivada',
-          iniciado_por: 'usuario',
-        });
-
-        await supabase
-          .from('conversaciones')
-          .update({
-            area: 'ventas',
-            estado: 'derivada',
-            router_estado: 'derivado',
-          })
-          .eq('id', conversacion.id);
-
-        await interactiveService.enviarTexto(telefono,
-          '✅ Te derivamos con nuestro equipo de inscripciones.\n\nEn breve te contactamos.'
-        );
-
-        return { success: true, action: 'derivado_sin_cursos' };
-      }
-
-      // Generar menú dinámico con cursos
-      const menuCursos: InteractiveList = {
-        header: '📝 Inscripciones',
-        body: '¿Qué curso te interesa?',
-        footer: 'Elegí una opción',
-        buttonText: 'Ver cursos',
-        sections: [{
-          title: 'Cursos disponibles',
-          rows: [
-            ...cursos.map(c => ({
-              id: `curso_${c.id}`,
-              title: c.nombre.length > 24 ? c.nombre.substring(0, 21) + '...' : c.nombre,
-              description: c.codigo
-            })),
-            { id: 'volver', title: '⬅️ Volver', description: 'Menú principal' }
-          ]
-        }]
-      };
-
-      await interactiveService.enviarListaInteractiva(telefono, menuCursos);
-
-      // Actualizar estado
-      const telNormalizado = telefono.startsWith('+') ? telefono : '+' + telefono;
-      await supabase
-        .from('conversaciones')
-        .update({
-          menu_actual: 'cursos',
-          router_estado: 'submenu_cursos'
-        })
-        .eq('telefono', telNormalizado)
-        .eq('linea_origen', 'wsp4');
-
-      console.log(`[WSP4-Interactive] Menú de cursos enviado (${cursos.length} cursos)`);
-      return { success: true, action: 'menu_cursos_enviado' };
+      return await enviarListaCursosPaginada(telefono, 1);
     }
 
     // === DERIVAR A ÁREA ===
@@ -734,7 +786,7 @@ async function procesarMenuInteractivo(
         ticket_id: ticketData?.id,
         status: 'completada',
         ts_derivacion: now.toISOString(),
-        sistema_version: '4.3.0',
+        sistema_version: '4.4.0',
         nodo_procesador: 'centralwap-router',
       });
 
@@ -814,9 +866,9 @@ app.get('/health', async (req: Request, res: Response) => {
     const health = await routerController.health();
     res.json({
       ...health,
-      version: '4.3.0',
+      version: '4.4.0',
       environment: NODE_ENV,
-      features: ['interactive_menus_only', 'dynamic_courses', 'no_numeric_menu'],
+      features: ['interactive_menus_only', 'dynamic_courses', 'paginated_courses', 'no_numeric_menu'],
       endpoints: [
         '/webhook/whatsapp/wsp4',
         '/webhook/whatsapp/ventas',
@@ -850,17 +902,14 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
     let contextMessageId: string | undefined;
     let listReplyId: string | undefined;
     let buttonReplyId: string | undefined;
-
     if (body.messages && Array.isArray(body.messages) && body.messages[0]) {
       const msg = body.messages[0];
       wamid = msg.id;
       telefonoExtraido = msg.from;
       const tipo = msg.type;
-
       if (msg.context && msg.context.id) {
         contextMessageId = msg.context.id;
       }
-
       if (tipo === 'text' && msg.text) {
         mensajeTexto = msg.text.body || '';
       } else if (tipo === 'image' && msg.image) {
@@ -982,7 +1031,6 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
       if (ventanaExpiro) {
         console.log(`[WSP4] Ventana 24h expirada - reseteando conversación y mostrando menú`);
 
-        // Resetear conversación
         await supabase
           .from('conversaciones')
           .update({
@@ -994,10 +1042,8 @@ app.post('/webhook/whatsapp/wsp4', async (req: Request, res: Response) => {
           })
           .eq('id', convExistente.id);
 
-        // Guardar mensaje entrante antes de mostrar menú
         await guardarMensajeSimple(convExistente.id, mensaje, nombreContacto, mediaType, mediaUrl, wamid, contextMessageId);
 
-        // Enviar menú interactivo
         await interactiveService.enviarListaInteractiva(telefono, MENU_PRINCIPAL_INTERACTIVO);
         res.json({ success: true, action: 'menu_enviado_ventana_expirada' });
         return;
@@ -1514,7 +1560,7 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 // ===========================================
 async function iniciar() {
   console.log('='.repeat(50));
-  console.log('PSI ROUTER v4.3.0 - Con Cursos Dinámicos');
+  console.log('PSI ROUTER v4.4.0 - Con Cursos Dinámicos Paginados');
   console.log('='.repeat(50));
 
   console.log('[Startup] Verificando conexión a Supabase...');
@@ -1528,7 +1574,7 @@ async function iniciar() {
   app.listen(PORT, () => {
     console.log(`[Startup] ✅ Servidor iniciado en puerto ${PORT}`);
     console.log(`[Startup] Ambiente: ${NODE_ENV}`);
-    console.log(`[Startup] Features: Menú interactivo + Cursos dinámicos`);
+    console.log(`[Startup] Features: Menú interactivo + Cursos dinámicos paginados`);
     console.log(`[Startup] Endpoints:`);
     console.log(`  - /webhook/whatsapp/wsp4 (Router principal)`);
     console.log(`  - /webhook/whatsapp/ventas (Cloud API)`);

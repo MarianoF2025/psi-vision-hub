@@ -132,7 +132,6 @@ class MenuController {
         const { data } = await supabase_1.supabase.from('mensajes').select('id').eq('whatsapp_message_id', whatsappContextId).single();
         return data?.id || null;
     }
-    // CORREGIDO: crear/actualizar sesión
     async crearOActualizarSesion(datos) {
         const telNormalizado = this.normalizarTelefono(datos.telefono);
         const ahora = new Date().toISOString();
@@ -178,7 +177,6 @@ class MenuController {
         console.log(`[Sesión] ✅ Creada: ${telNormalizado}${datos.curso_id ? ` curso:${datos.curso_id}` : ''}`);
         return nueva?.id || null;
     }
-    // CORREGIDO: incrementar interacciones
     async incrementarInteracciones(telefono, cursoId) {
         const telNormalizado = this.normalizarTelefono(telefono);
         const { data: sesion } = await supabase_1.supabase.from('menu_sesiones').select('id, interacciones').eq('telefono', telNormalizado).eq('estado', 'activo').single();
@@ -257,7 +255,6 @@ class MenuController {
             const curso = opcion.curso;
             const telNormalizado = this.normalizarTelefono(body.telefono);
             let { data: sesion } = await supabase_1.supabase.from('menu_sesiones').select('*').eq('telefono', telNormalizado).eq('estado', 'activo').single();
-            // NUEVO: Si no hay sesión, crearla
             if (!sesion) {
                 console.log(`[Sesión] No existe para ${telNormalizado}, creando...`);
                 await this.crearOActualizarSesion({ telefono: telNormalizado, curso_id: curso.id, conversacion_id: body.conversacion_id });
@@ -391,9 +388,12 @@ class MenuController {
             res.status(500).json({ success: false, error: error.message });
         }
     }
+    // =============================================
+    // LISTAR CURSOS POR TIPO — CON PAGINACIÓN
+    // =============================================
     async listarCursosPorTipo(req, res) {
         try {
-            const { telefono, tipo, nombre_contacto } = req.body;
+            const { telefono, tipo, nombre_contacto, pagina } = req.body;
             if (!telefono || !tipo) {
                 res.status(400).json({ success: false, error: 'Teléfono y tipo requeridos' });
                 return;
@@ -405,20 +405,54 @@ class MenuController {
                 res.json({ success: true, data: { tipo: 'derivado_sin_cursos' } });
                 return;
             }
-            const porCat = {};
-            cursos.forEach((c) => { const cat = c.categoria || 'Otros'; if (!porCat[cat])
-                porCat[cat] = []; porCat[cat].push(c); });
-            const sections = Object.entries(porCat).map(([cat, cs]) => ({
-                title: cat.substring(0, 24),
-                rows: cs.slice(0, 10).map((c) => ({ id: `curso_${c.id}`, title: c.nombre.substring(0, 24), description: c.descripcion?.substring(0, 72) || '' }))
-            }));
-            const resultado = await WhatsAppService_1.whatsAppService.enviarMenuGenerico(telefono, tipo === 'curso' ? 'Seleccioná el curso:' : 'Seleccioná la especialización:', sections, tipo === 'curso' ? '📚 Cursos' : '🎓 Especializaciones');
-            if (!resultado.success) {
-                res.status(500).json({ success: false, error: resultado.error });
-                return;
+            const MAX_ROWS_WA = 10;
+            const paginaActual = parseInt(pagina) || 1;
+            // Si caben todos, usar categorías como sections (comportamiento original)
+            if (cursos.length <= MAX_ROWS_WA) {
+                const porCat = {};
+                cursos.forEach((c) => { const cat = c.categoria || 'Otros'; if (!porCat[cat])
+                    porCat[cat] = []; porCat[cat].push(c); });
+                const sections = Object.entries(porCat).map(([cat, cs]) => ({
+                    title: cat.substring(0, 24),
+                    rows: cs.map((c) => ({ id: `curso_${c.id}`, title: c.nombre.substring(0, 24), description: c.descripcion?.substring(0, 72) || '' }))
+                }));
+                const resultado = await WhatsAppService_1.whatsAppService.enviarMenuGenerico(telefono, tipo === 'curso' ? 'Seleccioná el curso:' : 'Seleccioná la especialización:', sections, tipo === 'curso' ? '📚 Cursos' : '🎓 Especializaciones');
+                if (!resultado.success) {
+                    res.status(500).json({ success: false, error: resultado.error });
+                    return;
+                }
+            }
+            else {
+                // Paginación necesaria
+                const CURSOS_POR_PAGINA = 8; // 8 cursos + hasta 2 navegación = 10
+                const totalPaginas = Math.ceil(cursos.length / CURSOS_POR_PAGINA);
+                const pagActual = Math.max(1, Math.min(paginaActual, totalPaginas));
+                const inicio = (pagActual - 1) * CURSOS_POR_PAGINA;
+                const cursosPagina = cursos.slice(inicio, inicio + CURSOS_POR_PAGINA);
+                const rows = cursosPagina.map((c) => ({
+                    id: `curso_${c.id}`,
+                    title: c.nombre.substring(0, 24),
+                    description: c.descripcion?.substring(0, 72) || ''
+                }));
+                // Navegación adelante
+                if (pagActual < totalPaginas) {
+                    rows.push({ id: `nav_mas_${tipo}_p${pagActual + 1}`, title: '➡️ Ver más', description: `Página ${pagActual + 1} de ${totalPaginas}` });
+                }
+                // Navegación atrás
+                if (pagActual > 1) {
+                    rows.push({ id: `nav_anterior_${tipo}_p${pagActual - 1}`, title: '⬅️ Página anterior', description: `Volver a página ${pagActual - 1}` });
+                }
+                const sections = [{ title: `${tipo === 'curso' ? 'Cursos' : 'Especializaciones'} (${pagActual}/${totalPaginas})`, rows }];
+                const headerText = tipo === 'curso' ? '📚 Cursos' : '🎓 Especializaciones';
+                const bodyText = tipo === 'curso' ? `Seleccioná el curso (${pagActual}/${totalPaginas}):` : `Seleccioná la especialización (${pagActual}/${totalPaginas}):`;
+                const resultado = await WhatsAppService_1.whatsAppService.enviarMenuGenerico(telefono, bodyText, sections, headerText);
+                if (!resultado.success) {
+                    res.status(500).json({ success: false, error: resultado.error });
+                    return;
+                }
             }
             await this.incrementarInteracciones(telefono);
-            res.json({ success: true, data: { tipo, cantidad: cursos.length } });
+            res.json({ success: true, data: { tipo, cantidad: cursos.length, pagina: paginaActual } });
         }
         catch (error) {
             res.status(500).json({ success: false, error: error.message });
@@ -445,6 +479,13 @@ class MenuController {
                 await this.incrementarInteracciones(telefono);
                 res.json({ success: true, data: { tipo: 'derivado_agente' } });
                 return;
+            }
+            // === NAVEGACIÓN PAGINACIÓN CURSOS/ESPECIALIZACIONES ===
+            const navMatch = seleccion_id.match(/^nav_(?:mas|anterior)_(curso|especializacion)_p(\d+)$/);
+            if (navMatch) {
+                req.body.tipo = navMatch[1];
+                req.body.pagina = parseInt(navMatch[2]);
+                return this.listarCursosPorTipo(req, res);
             }
             if (seleccion_id.startsWith('curso_')) {
                 const cursoId = seleccion_id.replace('curso_', '');
