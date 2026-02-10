@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { supabase } from '@/lib/supabase';
 import { cn, getInitials, getWindowTimeLeft, formatPhone } from '@/lib/utils';
-import { 
-  X, Clock, Plus, Camera, Edit2, Check, Mail, BookOpen, ChevronDown, 
+import {
+  X, Clock, Plus, Camera, Edit2, Check, Mail, BookOpen, ChevronDown,
   GraduationCap, CreditCard, AlertCircle, CheckCircle, ChevronRight,
-  Calendar, DollarSign, TrendingUp
+  Calendar, DollarSign, TrendingUp, Users, UserCheck, BarChart3, AtSign
 } from 'lucide-react';
 
 const ESTADOS_CONV = ['nueva', 'activa', 'esperando', 'resuelta', 'cerrada'] as const;
@@ -27,18 +27,8 @@ interface Contacto {
   notas: string | null;
 }
 
-interface EtiquetaGlobal {
-  id: string;
-  nombre: string;
-  color: string;
-}
-
-interface EtiquetaAsignada {
-  id: string;
-  etiqueta_id: string;
-  nombre: string;
-  color: string;
-}
+interface EtiquetaGlobal { id: string; nombre: string; color: string; }
+interface EtiquetaAsignada { id: string; etiqueta_id: string; nombre: string; color: string; }
 
 interface InscripcionPSI {
   id: string;
@@ -62,28 +52,30 @@ export default function InfoContactoPanel() {
   const [nota, setNota] = useState('');
   const [notas, setNotas] = useState<{id: string; contenido: string; created_at: string}[]>([]);
 
-  // Campos editables
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
   const [pais, setPais] = useState('');
   const [ciudad, setCiudad] = useState('');
   const [cursoInfo, setCursoInfo] = useState<{nombre: string; codigo: string; cantidad: number} | null>(null);
 
-  // Sistema de etiquetas globales
   const [etiquetasGlobales, setEtiquetasGlobales] = useState<EtiquetaGlobal[]>([]);
   const [etiquetasAsignadas, setEtiquetasAsignadas] = useState<EtiquetaAsignada[]>([]);
   const [mostrarDropdownEtiquetas, setMostrarDropdownEtiquetas] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Datos de alumno PSI
   const [inscripcionesPSI, setInscripcionesPSI] = useState<InscripcionPSI[]>([]);
   const [loadingPSI, setLoadingPSI] = useState(false);
   const [seccionPSIAbierta, setSeccionPSIAbierta] = useState(true);
   const [cursoExpandido, setCursoExpandido] = useState<string | null>(null);
 
+  // Nuevos estados
+  const [comunidadInfo, setComunidadInfo] = useState<{esMiembro: boolean; nombre: string|null; email: string|null; dni: string|null}>({ esMiembro: false, nombre: null, email: null, dni: null });
+  const [datosEnriquecidos, setDatosEnriquecidos] = useState<{email: string|null; telefono: string|null; dni: string|null}>({ email: null, telefono: null, dni: null });
+  const [seccionPerfilAbierta, setSeccionPerfilAbierta] = useState(false);
+  const [seccionComunidadAbierta, setSeccionComunidadAbierta] = useState(true);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -94,7 +86,6 @@ export default function InfoContactoPanel() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Cargar datos del contacto
   useEffect(() => {
     if (!conversacionActual?.contacto_id) {
       setContacto(null);
@@ -105,16 +96,9 @@ export default function InfoContactoPanel() {
     const cargarContacto = async () => {
       setLoading(true);
       const { data, error } = await supabase
-        .from('contactos')
-        .select('*')
-        .eq('id', conversacionActual.contacto_id)
-        .single();
-
+        .from('contactos').select('*').eq('id', conversacionActual.contacto_id).single();
       if (data && !error) {
-        setContacto({
-          ...data,
-          etiquetas: data.etiquetas || []
-        });
+        setContacto({ ...data, etiquetas: data.etiquetas || [] });
         setNombre(data.nombre || '');
         setEmail(data.email || '');
         setPais(data.pais || '');
@@ -124,89 +108,76 @@ export default function InfoContactoPanel() {
     };
 
     const cargarNotas = async () => {
-      const { data } = await supabase
-        .from('notas_internas')
-        .select('*')
-        .eq('conversacion_id', conversacionActual.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      const { data } = await supabase.from('notas_internas').select('*')
+        .eq('conversacion_id', conversacionActual.id).order('created_at', { ascending: false }).limit(5);
       if (data) setNotas(data);
     };
 
     const cargarCursoInteres = async () => {
-      const { data } = await supabase
-        .from('v_contactos_cursos')
+      const { data } = await supabase.from('v_contactos_cursos')
         .select('ultimo_curso_interes, ultimo_curso_codigo, cursos_consultados')
-        .eq('contacto_id', conversacionActual.contacto_id)
-        .single();
+        .eq('contacto_id', conversacionActual.contacto_id).single();
       if (data && data.ultimo_curso_interes) {
-        setCursoInfo({
-          nombre: data.ultimo_curso_interes,
-          codigo: data.ultimo_curso_codigo,
-          cantidad: data.cursos_consultados
-        });
-      } else {
-        setCursoInfo(null);
-      }
+        setCursoInfo({ nombre: data.ultimo_curso_interes, codigo: data.ultimo_curso_codigo, cantidad: data.cursos_consultados });
+      } else { setCursoInfo(null); }
     };
 
     const cargarEtiquetasGlobales = async () => {
-      const { data } = await supabase
-        .from('etiquetas_globales')
-        .select('id, nombre, color')
-        .order('nombre');
+      const { data } = await supabase.from('etiquetas_globales').select('id, nombre, color').order('nombre');
       if (data) setEtiquetasGlobales(data);
     };
 
     const cargarEtiquetasAsignadas = async () => {
-      const { data } = await supabase
-        .from('contacto_etiquetas')
-        .select(`
-          id,
-          etiqueta_id,
-          etiquetas_globales (
-            nombre,
-            color
-          )
-        `)
+      const { data } = await supabase.from('contacto_etiquetas')
+        .select('id, etiqueta_id, etiquetas_globales (nombre, color)')
         .eq('contacto_id', conversacionActual.contacto_id);
-
       if (data) {
-        const asignadas: EtiquetaAsignada[] = data.map((item: any) => ({
-          id: item.id,
-          etiqueta_id: item.etiqueta_id,
+        setEtiquetasAsignadas(data.map((item: any) => ({
+          id: item.id, etiqueta_id: item.etiqueta_id,
           nombre: item.etiquetas_globales?.nombre || 'Sin nombre',
           color: item.etiquetas_globales?.color || '#6b7280'
-        }));
-        setEtiquetasAsignadas(asignadas);
+        })));
       }
     };
 
-    // Cargar datos de alumno PSI
     const cargarDatosPSI = async () => {
       if (!conversacionActual.telefono) return;
-      
       setLoadingPSI(true);
-      
-      // Normalizar teléfono para búsqueda (puede venir con o sin +)
       const telefonoNormalizado = conversacionActual.telefono.replace(/\D/g, '');
-      
-      const { data, error } = await supabase
-        .from('inscripciones_psi')
-        .select('*')
+      const { data, error } = await supabase.from('inscripciones_psi').select('*')
         .or(`telefono.eq.${conversacionActual.telefono},telefono.eq.+${telefonoNormalizado},telefono.eq.${telefonoNormalizado}`)
         .order('fecha_inscripcion', { ascending: false });
-
       if (data && !error) {
         setInscripcionesPSI(data);
-        // Expandir el primer curso por defecto si hay datos
-        if (data.length > 0) {
-          setCursoExpandido(data[0].id);
-        }
-      } else {
-        setInscripcionesPSI([]);
-      }
+        if (data.length > 0) setCursoExpandido(data[0].id);
+      } else { setInscripcionesPSI([]); }
       setLoadingPSI(false);
+    };
+
+    const cargarComunidad = async () => {
+      if (!conversacionActual.telefono) return;
+      const telefonoNormalizado = conversacionActual.telefono.replace(/\D/g, '');
+      const { data } = await supabase.from('comunidad_lc').select('*')
+        .or(`telefono.eq.${conversacionActual.telefono},telefono.eq.+${telefonoNormalizado},telefono.eq.${telefonoNormalizado}`)
+        .limit(1).maybeSingle();
+      if (data) {
+        setComunidadInfo({ esMiembro: true, nombre: data.nombre, email: data.email, dni: data.dni });
+      } else {
+        setComunidadInfo({ esMiembro: false, nombre: null, email: null, dni: null });
+      }
+    };
+
+    const cargarDatosEnriquecidos = async () => {
+      if (!conversacionActual.telefono) return;
+      const telefonoNormalizado = conversacionActual.telefono.replace(/\D/g, '');
+      const { data } = await supabase.from('email_contactos').select('email, telefono, dni')
+        .or(`telefono.eq.${conversacionActual.telefono},telefono.eq.+${telefonoNormalizado},telefono.eq.${telefonoNormalizado}`)
+        .limit(1).maybeSingle();
+      if (data) {
+        setDatosEnriquecidos({ email: data.email, telefono: data.telefono, dni: data.dni });
+      } else {
+        setDatosEnriquecidos({ email: null, telefono: null, dni: null });
+      }
     };
 
     cargarContacto();
@@ -215,72 +186,59 @@ export default function InfoContactoPanel() {
     cargarEtiquetasGlobales();
     cargarEtiquetasAsignadas();
     cargarDatosPSI();
+    cargarComunidad();
+    cargarDatosEnriquecidos();
   }, [conversacionActual?.contacto_id, conversacionActual?.id, conversacionActual?.telefono]);
+
+  // Buscar comunidad por email cuando se carga el contacto
+  useEffect(() => {
+    if (!contacto?.email || comunidadInfo.esMiembro) return;
+    const buscarPorEmail = async () => {
+      const { data } = await supabase.from('comunidad_lc').select('*').eq('email', contacto.email).limit(1).maybeSingle();
+      if (data) setComunidadInfo({ esMiembro: true, nombre: data.nombre, email: data.email, dni: data.dni });
+    };
+    buscarPorEmail();
+  }, [contacto?.email]);
 
   if (!conversacionActual) return null;
 
   const windowTime = getWindowTimeLeft(conversacionActual.ventana_24h_fin, conversacionActual.ventana_72h_fin);
 
-  // Actualizar campo del CONTACTO
   const actualizarContacto = async (campo: string, valor: string | string[] | null) => {
     if (!contacto) return;
     setGuardando(true);
-
-    const { error } = await supabase
-      .from('contactos')
-      .update({ [campo]: valor, updated_at: new Date().toISOString() })
-      .eq('id', contacto.id);
-
+    const { error } = await supabase.from('contactos').update({ [campo]: valor, updated_at: new Date().toISOString() }).eq('id', contacto.id);
     if (!error) {
       setContacto({ ...contacto, [campo]: valor });
-
       if (campo === 'nombre') {
-        await supabase
-          .from('conversaciones')
-          .update({ nombre: valor })
-          .eq('id', conversacionActual.id);
+        await supabase.from('conversaciones').update({ nombre: valor }).eq('id', conversacionActual.id);
         setConversacionActual({ ...conversacionActual, nombre: valor as string });
       }
     }
-
     setGuardando(false);
     setEditando(null);
   };
 
-  // Actualizar campo de la CONVERSACIÓN
   const actualizarConversacion = async (campo: string, valor: string) => {
     await supabase.from('conversaciones').update({ [campo]: valor }).eq('id', conversacionActual.id);
     setConversacionActual({ ...conversacionActual, [campo]: valor });
   };
 
-  // Guardar nota
   const guardarNota = async () => {
     if (!nota.trim()) return;
     setGuardando(true);
-    const { data } = await supabase
-      .from('notas_internas')
-      .insert({ conversacion_id: conversacionActual.id, contenido: nota })
-      .select()
-      .single();
-    if (data) {
-      setNotas([data, ...notas]);
-    }
+    const { data } = await supabase.from('notas_internas').insert({ conversacion_id: conversacionActual.id, contenido: nota }).select().single();
+    if (data) setNotas([data, ...notas]);
     setNota('');
     setGuardando(false);
   };
 
-  // Subir foto
   const handleFotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !contacto) return;
-
     setGuardando(true);
     const fileName = `contactos/${contacto.id}/${Date.now()}.${file.name.split('.').pop()}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from('media')
-      .upload(fileName, file, { cacheControl: '3600', upsert: true });
-
+    const { error: uploadError } = await supabase.storage.from('media').upload(fileName, file, { cacheControl: '3600', upsert: true });
     if (!uploadError) {
       const { data: urlData } = supabase.storage.from('media').getPublicUrl(fileName);
       await actualizarContacto('foto_url', urlData.publicUrl);
@@ -288,51 +246,30 @@ export default function InfoContactoPanel() {
     setGuardando(false);
   };
 
-  // Asignar etiqueta (nuevo sistema)
   const asignarEtiqueta = async (etiquetaId: string) => {
     if (!contacto) return;
-
     const etiqueta = etiquetasGlobales.find(e => e.id === etiquetaId);
     if (!etiqueta) return;
-
-    const { data, error } = await supabase
-      .from('contacto_etiquetas')
-      .insert({
-        contacto_id: contacto.id,
-        etiqueta_id: etiquetaId
-      })
-      .select('id')
-      .single();
-
+    const { data, error } = await supabase.from('contacto_etiquetas').insert({ contacto_id: contacto.id, etiqueta_id: etiquetaId }).select('id').single();
     if (!error && data) {
-      setEtiquetasAsignadas([...etiquetasAsignadas, {
-        id: data.id,
-        etiqueta_id: etiquetaId,
-        nombre: etiqueta.nombre,
-        color: etiqueta.color
-      }]);
+      setEtiquetasAsignadas([...etiquetasAsignadas, { id: data.id, etiqueta_id: etiquetaId, nombre: etiqueta.nombre, color: etiqueta.color }]);
     }
     setMostrarDropdownEtiquetas(false);
   };
 
-  // Quitar etiqueta asignada (nuevo sistema)
   const quitarEtiquetaAsignada = async (asignacionId: string) => {
-    const { error } = await supabase
-      .from('contacto_etiquetas')
-      .delete()
-      .eq('id', asignacionId);
-
-    if (!error) {
-      setEtiquetasAsignadas(etiquetasAsignadas.filter(e => e.id !== asignacionId));
-    }
+    const { error } = await supabase.from('contacto_etiquetas').delete().eq('id', asignacionId);
+    if (!error) setEtiquetasAsignadas(etiquetasAsignadas.filter(e => e.id !== asignacionId));
   };
 
-  // Etiquetas disponibles (no asignadas)
-  const etiquetasDisponibles = etiquetasGlobales.filter(
-    eg => !etiquetasAsignadas.some(ea => ea.etiqueta_id === eg.id)
-  );
+  const etiquetasDisponibles = etiquetasGlobales.filter(eg => !etiquetasAsignadas.some(ea => ea.etiqueta_id === eg.id));
 
-  // Helpers para datos PSI
+  const aplicarEmailEnriquecido = async () => {
+    if (!datosEnriquecidos.email || !contacto) return;
+    await actualizarContacto('email', datosEnriquecidos.email);
+    setEmail(datosEnriquecidos.email);
+  };
+
   const getEstadoColor = (estado: string) => {
     switch (estado?.toLowerCase()) {
       case 'activo': return 'text-emerald-600 bg-emerald-100 dark:bg-emerald-500/20';
@@ -352,7 +289,6 @@ export default function InfoContactoPanel() {
     return inscripcion.cuotas_pagadas < inscripcion.cuotas_total && inscripcion.estado?.toLowerCase() === 'activo';
   };
 
-  // Resumen de datos PSI
   const resumenPSI = {
     totalCursos: inscripcionesPSI.length,
     cursosActivos: inscripcionesPSI.filter(i => i.estado?.toLowerCase() === 'activo').length,
@@ -361,23 +297,38 @@ export default function InfoContactoPanel() {
     totalPagado: inscripcionesPSI.reduce((acc, i) => acc + (i.monto_pagado || 0), 0),
   };
 
+  const perfilAlumno = (() => {
+    if (inscripcionesPSI.length === 0) return null;
+    const fechas = inscripcionesPSI.filter(i => i.fecha_inscripcion).map(i => new Date(i.fecha_inscripcion));
+    const primeraInscripcion = fechas.length > 0 ? new Date(Math.min(...fechas.map(f => f.getTime()))) : null;
+    const finalizados = inscripcionesPSI.filter(i => i.estado?.toLowerCase() === 'finalizado').length;
+    const totalConEstado = inscripcionesPSI.filter(i => ['activo', 'finalizado', 'baja'].includes(i.estado?.toLowerCase())).length;
+    const tasaFinalizacion = totalConEstado > 0 ? Math.round((finalizados / totalConEstado) * 100) : 0;
+    let antiguedad = '';
+    if (primeraInscripcion) {
+      const meses = Math.floor((new Date().getTime() - primeraInscripcion.getTime()) / (1000 * 60 * 60 * 24 * 30));
+      if (meses < 1) antiguedad = 'Nuevo';
+      else if (meses < 12) antiguedad = `${meses} meses`;
+      else { const a = Math.floor(meses / 12); const m = meses % 12; antiguedad = m > 0 ? `${a}a ${m}m` : `${a} año${a > 1 ? 's' : ''}`; }
+    }
+    return { primeraInscripcion, antiguedad, finalizados, tasaFinalizacion, totalPagado: resumenPSI.totalPagado };
+  })();
+
+  const emailSugerido = !contacto?.email && datosEnriquecidos.email ? datosEnriquecidos.email : null;
+  const dniDisponible = datosEnriquecidos.dni || comunidadInfo.dni || null;
+
   return (
     <div className="w-72 h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFotoChange} className="hidden" />
 
-      {/* Header */}
       <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
         <h3 className="font-semibold text-sm text-slate-800 dark:text-white">Info del Contacto</h3>
-        <button onClick={() => setPanelInfoAbierto(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
-          <X size={14} className="text-slate-400" />
-        </button>
+        <button onClick={() => setPanelInfoAbierto(false)} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"><X size={14} className="text-slate-400" /></button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <div className="flex items-center justify-center py-8"><div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>
         ) : (
           <>
             {/* Avatar y nombre */}
@@ -390,255 +341,93 @@ export default function InfoContactoPanel() {
                     {getInitials(contacto?.nombre || conversacionActual.telefono)}
                   </div>
                 )}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white hover:bg-indigo-600 shadow-lg"
-                >
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full flex items-center justify-center text-white hover:bg-indigo-600 shadow-lg">
                   <Camera size={12} />
                 </button>
               </div>
 
-              {/* Nombre editable */}
               {editando === 'nombre' ? (
                 <div className="flex items-center gap-1 justify-center">
-                  <input
-                    type="text"
-                    value={nombre}
-                    onChange={(e) => setNombre(e.target.value)}
-                    className="px-2 py-1 text-sm text-center bg-slate-100 dark:bg-slate-800 rounded border-0 w-32"
-                    autoFocus
-                  />
-                  <button onClick={() => actualizarContacto('nombre', nombre)} className="p-1 text-green-500 hover:bg-green-50 rounded">
-                    <Check size={14} />
-                  </button>
-                  <button onClick={() => setEditando(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded">
-                    <X size={14} />
-                  </button>
+                  <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className="px-2 py-1 text-sm text-center bg-slate-100 dark:bg-slate-800 rounded border-0 w-32" autoFocus />
+                  <button onClick={() => actualizarContacto('nombre', nombre)} className="p-1 text-green-500 hover:bg-green-50 rounded"><Check size={14} /></button>
+                  <button onClick={() => setEditando(null)} className="p-1 text-slate-400 hover:bg-slate-100 rounded"><X size={14} /></button>
                 </div>
               ) : (
                 <div className="flex items-center justify-center gap-1 group">
-                  <p className="font-semibold text-sm text-slate-800 dark:text-white">
-                    {contacto?.nombre || 'Sin nombre'}
-                  </p>
-                  <button onClick={() => setEditando('nombre')} className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
-                    <Edit2 size={10} className="text-slate-400" />
-                  </button>
+                  <p className="font-semibold text-sm text-slate-800 dark:text-white">{contacto?.nombre || 'Sin nombre'}</p>
+                  <button onClick={() => setEditando('nombre')} className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded"><Edit2 size={10} className="text-slate-400" /></button>
                 </div>
               )}
               <p className="text-xs text-slate-500">{formatPhone(conversacionActual.telefono)}</p>
-              
-              {/* Badge de alumno PSI */}
-              {inscripcionesPSI.length > 0 && (
-                <div className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 rounded-full text-[10px] font-medium">
-                  <GraduationCap size={10} />
-                  Alumno PSI
-                </div>
-              )}
+
+              {/* Badges */}
+              <div className="mt-2 flex items-center justify-center gap-1.5 flex-wrap">
+                {inscripcionesPSI.length > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 dark:bg-purple-500/20 text-purple-600 rounded-full text-[10px] font-medium"><GraduationCap size={10} />Alumno PSI</span>
+                )}
+                {comunidadInfo.esMiembro && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-teal-100 dark:bg-teal-500/20 text-teal-600 rounded-full text-[10px] font-medium"><Users size={10} />Comunidad</span>
+                )}
+              </div>
             </div>
 
             {/* ========== SECCIÓN DATOS ALUMNO PSI ========== */}
             {inscripcionesPSI.length > 0 && (
               <div className="border border-purple-200 dark:border-purple-500/30 rounded-lg overflow-hidden">
-                {/* Header colapsable */}
-                <button
-                  onClick={() => setSeccionPSIAbierta(!seccionPSIAbierta)}
-                  className="w-full px-3 py-2 bg-purple-50 dark:bg-purple-500/10 flex items-center justify-between hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors"
-                >
+                <button onClick={() => setSeccionPSIAbierta(!seccionPSIAbierta)}
+                  className="w-full px-3 py-2 bg-purple-50 dark:bg-purple-500/10 flex items-center justify-between hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors">
                   <div className="flex items-center gap-2">
                     <GraduationCap size={14} className="text-purple-600" />
-                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">
-                      Datos Alumno PSI
-                    </span>
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-400">Datos Alumno PSI</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {resumenPSI.conDeuda > 0 && (
-                      <span className="px-1.5 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-600 text-[9px] font-medium rounded">
-                        {resumenPSI.conDeuda} con deuda
-                      </span>
-                    )}
-                    <ChevronDown 
-                      size={14} 
-                      className={cn(
-                        "text-purple-500 transition-transform",
-                        seccionPSIAbierta && "rotate-180"
-                      )} 
-                    />
+                    {resumenPSI.conDeuda > 0 && (<span className="px-1.5 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-600 text-[9px] font-medium rounded">{resumenPSI.conDeuda} con deuda</span>)}
+                    <ChevronDown size={14} className={cn("text-purple-500 transition-transform", seccionPSIAbierta && "rotate-180")} />
                   </div>
                 </button>
 
                 {seccionPSIAbierta && (
                   <div className="p-2 space-y-2">
-                    {/* Resumen general */}
                     <div className="grid grid-cols-3 gap-1 text-center">
-                      <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded">
-                        <p className="text-lg font-bold text-slate-800 dark:text-white">{resumenPSI.totalCursos}</p>
-                        <p className="text-[9px] text-slate-500">Cursos</p>
-                      </div>
-                      <div className="p-1.5 bg-emerald-50 dark:bg-emerald-500/10 rounded">
-                        <p className="text-lg font-bold text-emerald-600">{resumenPSI.cursosActivos}</p>
-                        <p className="text-[9px] text-slate-500">Activos</p>
-                      </div>
-                      <div className="p-1.5 bg-blue-50 dark:bg-blue-500/10 rounded">
-                        <p className="text-lg font-bold text-blue-600">{resumenPSI.cursosFinalizados}</p>
-                        <p className="text-[9px] text-slate-500">Finalizados</p>
-                      </div>
+                      <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded"><p className="text-lg font-bold text-slate-800 dark:text-white">{resumenPSI.totalCursos}</p><p className="text-[9px] text-slate-500">Cursos</p></div>
+                      <div className="p-1.5 bg-emerald-50 dark:bg-emerald-500/10 rounded"><p className="text-lg font-bold text-emerald-600">{resumenPSI.cursosActivos}</p><p className="text-[9px] text-slate-500">Activos</p></div>
+                      <div className="p-1.5 bg-blue-50 dark:bg-blue-500/10 rounded"><p className="text-lg font-bold text-blue-600">{resumenPSI.cursosFinalizados}</p><p className="text-[9px] text-slate-500">Finalizados</p></div>
                     </div>
-
-                    {/* Lista de cursos */}
                     <div className="space-y-1.5">
                       {inscripcionesPSI.map((inscripcion) => {
                         const porcentajePago = calcularPorcentajePago(inscripcion.monto_pagado, inscripcion.monto_total);
                         const estaExpandido = cursoExpandido === inscripcion.id;
                         const deuda = tieneDeuda(inscripcion);
-
                         return (
-                          <div 
-                            key={inscripcion.id} 
-                            className={cn(
-                              "border rounded-lg overflow-hidden transition-all",
-                              deuda 
-                                ? "border-red-200 dark:border-red-500/30" 
-                                : "border-slate-200 dark:border-slate-700"
-                            )}
-                          >
-                            {/* Header del curso */}
-                            <button
-                              onClick={() => setCursoExpandido(estaExpandido ? null : inscripcion.id)}
-                              className="w-full px-2 py-1.5 flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                            >
-                              <ChevronRight 
-                                size={12} 
-                                className={cn(
-                                  "text-slate-400 transition-transform flex-shrink-0",
-                                  estaExpandido && "rotate-90"
-                                )} 
-                              />
+                          <div key={inscripcion.id} className={cn("border rounded-lg overflow-hidden transition-all", deuda ? "border-red-200 dark:border-red-500/30" : "border-slate-200 dark:border-slate-700")}>
+                            <button onClick={() => setCursoExpandido(estaExpandido ? null : inscripcion.id)}
+                              className="w-full px-2 py-1.5 flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                              <ChevronRight size={12} className={cn("text-slate-400 transition-transform flex-shrink-0", estaExpandido && "rotate-90")} />
                               <div className="flex-1 text-left min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
-                                    {inscripcion.curso_codigo}
-                                  </span>
-                                  <span className={cn(
-                                    "px-1 py-0.5 text-[8px] font-medium rounded",
-                                    getEstadoColor(inscripcion.estado)
-                                  )}>
-                                    {inscripcion.estado}
-                                  </span>
-                                  {deuda && (
-                                    <AlertCircle size={10} className="text-red-500" />
-                                  )}
+                                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">{inscripcion.curso_codigo}</span>
+                                  <span className={cn("px-1 py-0.5 text-[8px] font-medium rounded", getEstadoColor(inscripcion.estado))}>{inscripcion.estado}</span>
+                                  {deuda && <AlertCircle size={10} className="text-red-500" />}
                                 </div>
-                                <p className="text-[10px] text-slate-600 dark:text-slate-400 truncate">
-                                  {inscripcion.curso_nombre}
-                                </p>
+                                <p className="text-[10px] text-slate-600 dark:text-slate-400 truncate">{inscripcion.curso_nombre}</p>
                               </div>
                             </button>
-
-                            {/* Detalles expandidos */}
                             {estaExpandido && (
                               <div className="px-2 pb-2 pt-1 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                                {/* Fecha inscripción */}
-                                <div className="flex items-center gap-1.5 text-[10px]">
-                                  <Calendar size={10} className="text-slate-400" />
-                                  <span className="text-slate-500">Inscripción:</span>
-                                  <span className="text-slate-700 dark:text-slate-300">
-                                    {inscripcion.fecha_inscripcion 
-                                      ? new Date(inscripcion.fecha_inscripcion).toLocaleDateString('es-AR', {
-                                          day: '2-digit',
-                                          month: 'short',
-                                          year: 'numeric'
-                                        })
-                                      : '-'
-                                    }
-                                  </span>
-                                </div>
-
-                                {/* Cuotas */}
-                                <div className="flex items-center gap-1.5 text-[10px]">
-                                  <CreditCard size={10} className="text-slate-400" />
-                                  <span className="text-slate-500">Cuotas:</span>
-                                  <span className={cn(
-                                    "font-medium",
-                                    deuda ? "text-red-600" : "text-slate-700 dark:text-slate-300"
-                                  )}>
-                                    {inscripcion.cuotas_pagadas} / {inscripcion.cuotas_total}
-                                  </span>
-                                  {deuda && (
-                                    <span className="text-red-500 text-[9px]">
-                                      (debe {inscripcion.cuotas_total - inscripcion.cuotas_pagadas})
-                                    </span>
-                                  )}
-                                </div>
-
-                                {/* Barra de progreso de pago */}
-                                <div>
-                                  <div className="flex items-center justify-between text-[9px] mb-0.5">
-                                    <span className="text-slate-500">Pago</span>
-                                    <span className={cn(
-                                      "font-medium",
-                                      porcentajePago >= 100 ? "text-emerald-600" :
-                                      porcentajePago >= 50 ? "text-amber-600" : "text-red-600"
-                                    )}>
-                                      {porcentajePago}%
-                                    </span>
-                                  </div>
-                                  <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                                    <div 
-                                      className={cn(
-                                        "h-full rounded-full transition-all",
-                                        porcentajePago >= 100 ? "bg-emerald-500" :
-                                        porcentajePago >= 50 ? "bg-amber-500" : "bg-red-500"
-                                      )}
-                                      style={{ width: `${Math.min(porcentajePago, 100)}%` }}
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Montos */}
-                                <div className="flex items-center gap-1.5 text-[10px]">
-                                  <DollarSign size={10} className="text-slate-400" />
-                                  <span className="text-slate-500">Pagado:</span>
-                                  <span className="text-emerald-600 font-medium">
-                                    ${(inscripcion.monto_pagado || 0).toLocaleString('es-AR')}
-                                  </span>
-                                  <span className="text-slate-400">/</span>
-                                  <span className="text-slate-600 dark:text-slate-400">
-                                    ${(inscripcion.monto_total || 0).toLocaleString('es-AR')}
-                                  </span>
-                                </div>
-
-                                {/* Última cuota pagada */}
-                                {inscripcion.ultima_cuota_pagada && (
-                                  <div className="flex items-center gap-1.5 text-[10px]">
-                                    <CheckCircle size={10} className="text-emerald-500" />
-                                    <span className="text-slate-500">Último pago:</span>
-                                    <span className="text-slate-700 dark:text-slate-300">
-                                      {new Date(inscripcion.ultima_cuota_pagada).toLocaleDateString('es-AR', {
-                                        day: '2-digit',
-                                        month: 'short',
-                                        year: 'numeric'
-                                      })}
-                                    </span>
-                                  </div>
-                                )}
+                                <div className="flex items-center gap-1.5 text-[10px]"><Calendar size={10} className="text-slate-400" /><span className="text-slate-500">Inscripción:</span><span className="text-slate-700 dark:text-slate-300">{inscripcion.fecha_inscripcion ? new Date(inscripcion.fecha_inscripcion).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</span></div>
+                                <div className="flex items-center gap-1.5 text-[10px]"><CreditCard size={10} className="text-slate-400" /><span className="text-slate-500">Cuotas:</span><span className={cn("font-medium", deuda ? "text-red-600" : "text-slate-700 dark:text-slate-300")}>{inscripcion.cuotas_pagadas} / {inscripcion.cuotas_total}</span>{deuda && <span className="text-red-500 text-[9px]">(debe {inscripcion.cuotas_total - inscripcion.cuotas_pagadas})</span>}</div>
+                                <div><div className="flex items-center justify-between text-[9px] mb-0.5"><span className="text-slate-500">Pago</span><span className={cn("font-medium", porcentajePago >= 100 ? "text-emerald-600" : porcentajePago >= 50 ? "text-amber-600" : "text-red-600")}>{porcentajePago}%</span></div><div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden"><div className={cn("h-full rounded-full transition-all", porcentajePago >= 100 ? "bg-emerald-500" : porcentajePago >= 50 ? "bg-amber-500" : "bg-red-500")} style={{ width: `${Math.min(porcentajePago, 100)}%` }} /></div></div>
+                                <div className="flex items-center gap-1.5 text-[10px]"><DollarSign size={10} className="text-slate-400" /><span className="text-slate-500">Pagado:</span><span className="text-emerald-600 font-medium">${(inscripcion.monto_pagado || 0).toLocaleString('es-AR')}</span><span className="text-slate-400">/</span><span className="text-slate-600 dark:text-slate-400">${(inscripcion.monto_total || 0).toLocaleString('es-AR')}</span></div>
+                                {inscripcion.ultima_cuota_pagada && (<div className="flex items-center gap-1.5 text-[10px]"><CheckCircle size={10} className="text-emerald-500" /><span className="text-slate-500">Último pago:</span><span className="text-slate-700 dark:text-slate-300">{new Date(inscripcion.ultima_cuota_pagada).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>)}
                               </div>
                             )}
                           </div>
                         );
                       })}
                     </div>
-
-                    {/* Total histórico */}
                     <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-slate-500 flex items-center gap-1">
-                          <TrendingUp size={10} />
-                          Total histórico pagado:
-                        </span>
-                        <span className="font-bold text-emerald-600">
-                          ${resumenPSI.totalPagado.toLocaleString('es-AR')}
-                        </span>
-                      </div>
+                      <div className="flex items-center justify-between text-[10px]"><span className="text-slate-500 flex items-center gap-1"><TrendingUp size={10} />Total histórico pagado:</span><span className="font-bold text-emerald-600">${resumenPSI.totalPagado.toLocaleString('es-AR')}</span></div>
                     </div>
                   </div>
                 )}
@@ -646,29 +435,76 @@ export default function InfoContactoPanel() {
             )}
             {/* ========== FIN SECCIÓN PSI ========== */}
 
-            {/* Email */}
+            {/* ========== COMUNIDAD PSI ========== */}
+            {comunidadInfo.esMiembro && (
+              <div className="border border-teal-200 dark:border-teal-500/30 rounded-lg overflow-hidden">
+                <button onClick={() => setSeccionComunidadAbierta(!seccionComunidadAbierta)}
+                  className="w-full px-3 py-2 bg-teal-50 dark:bg-teal-500/10 flex items-center justify-between hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-colors">
+                  <div className="flex items-center gap-2"><Users size={14} className="text-teal-600" /><span className="text-xs font-semibold text-teal-700 dark:text-teal-400">Comunidad PSI</span></div>
+                  <div className="flex items-center gap-2">
+                    {resumenPSI.cursosActivos > 0 && (<span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 text-[9px] font-medium rounded">Alumno activo</span>)}
+                    <ChevronDown size={14} className={cn("text-teal-500 transition-transform", seccionComunidadAbierta && "rotate-180")} />
+                  </div>
+                </button>
+                {seccionComunidadAbierta && (
+                  <div className="p-2 space-y-1.5">
+                    <div className="flex items-center gap-2 px-1"><UserCheck size={12} className="text-teal-500" /><span className="text-[10px] text-teal-700 dark:text-teal-400 font-medium">Miembro de Comunidad LC</span></div>
+                    {comunidadInfo.email && (<div className="flex items-center gap-1.5 text-[10px] px-1"><AtSign size={10} className="text-slate-400" /><span className="text-slate-500">Email:</span><span className="text-slate-700 dark:text-slate-300 truncate">{comunidadInfo.email}</span></div>)}
+                    {comunidadInfo.dni && (<div className="flex items-center gap-1.5 text-[10px] px-1"><CreditCard size={10} className="text-slate-400" /><span className="text-slate-500">DNI:</span><span className="text-slate-700 dark:text-slate-300">{comunidadInfo.dni}</span></div>)}
+                    {resumenPSI.cursosActivos > 0 && (<div className="mt-1 p-1.5 bg-emerald-50 dark:bg-emerald-500/10 rounded text-[10px] text-emerald-700 dark:text-emerald-400">✅ Actualmente cursando {resumenPSI.cursosActivos} curso{resumenPSI.cursosActivos > 1 ? 's' : ''}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========== PERFIL ALUMNO ========== */}
+            {perfilAlumno && (
+              <div className="border border-indigo-200 dark:border-indigo-500/30 rounded-lg overflow-hidden">
+                <button onClick={() => setSeccionPerfilAbierta(!seccionPerfilAbierta)}
+                  className="w-full px-3 py-2 bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-between hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors">
+                  <div className="flex items-center gap-2"><BarChart3 size={14} className="text-indigo-600" /><span className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">Perfil Alumno</span></div>
+                  <ChevronDown size={14} className={cn("text-indigo-500 transition-transform", seccionPerfilAbierta && "rotate-180")} />
+                </button>
+                {seccionPerfilAbierta && (
+                  <div className="p-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center"><p className="text-xs font-bold text-slate-800 dark:text-white">{perfilAlumno.antiguedad || '-'}</p><p className="text-[9px] text-slate-500">Antigüedad</p></div>
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center"><p className={cn("text-xs font-bold", perfilAlumno.tasaFinalizacion >= 70 ? "text-emerald-600" : perfilAlumno.tasaFinalizacion >= 40 ? "text-amber-600" : "text-red-600")}>{perfilAlumno.tasaFinalizacion}%</p><p className="text-[9px] text-slate-500">Finalización</p></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center"><p className="text-xs font-bold text-blue-600">{perfilAlumno.finalizados}</p><p className="text-[9px] text-slate-500">Egresados</p></div>
+                      <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center"><p className="text-xs font-bold text-emerald-600">${(perfilAlumno.totalPagado / 1000).toFixed(0)}k</p><p className="text-[9px] text-slate-500">Invertido</p></div>
+                    </div>
+                    {perfilAlumno.primeraInscripcion && (<div className="flex items-center gap-1.5 text-[10px] px-1"><Calendar size={10} className="text-slate-400" /><span className="text-slate-500">Alumno desde:</span><span className="text-slate-700 dark:text-slate-300">{perfilAlumno.primeraInscripcion.toLocaleDateString('es-AR', { month: 'short', year: 'numeric' })}</span></div>)}
+                    {dniDisponible && (<div className="flex items-center gap-1.5 text-[10px] px-1"><CreditCard size={10} className="text-slate-400" /><span className="text-slate-500">DNI:</span><span className="text-slate-700 dark:text-slate-300">{dniDisponible}</span></div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Email con sugerencia de enriquecimiento */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Email</p>
               {editando === 'email' ? (
                 <div className="flex items-center gap-1">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="correo@ejemplo.com"
-                    className="flex-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0"
-                    autoFocus
-                  />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com"
+                    className="flex-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0" autoFocus />
                   <button onClick={() => actualizarContacto('email', email || null)} className="p-1 text-green-500"><Check size={12} /></button>
                   <button onClick={() => setEditando(null)} className="p-1 text-slate-400"><X size={12} /></button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setEditando('email')}>
-                  <Mail size={12} className="text-slate-400" />
-                  <span className="text-xs text-slate-600 dark:text-slate-300 flex-1">
-                    {contacto?.email || 'Sin email'}
-                  </span>
-                  <Edit2 size={10} className="text-slate-400 opacity-0 group-hover:opacity-100" />
+                <div>
+                  <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setEditando('email')}>
+                    <Mail size={12} className="text-slate-400" />
+                    <span className="text-xs text-slate-600 dark:text-slate-300 flex-1">{contacto?.email || 'Sin email'}</span>
+                    <Edit2 size={10} className="text-slate-400 opacity-0 group-hover:opacity-100" />
+                  </div>
+                  {emailSugerido && (
+                    <button onClick={aplicarEmailEnriquecido}
+                      className="mt-1 w-full flex items-center gap-1.5 px-2 py-1 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded text-[10px] text-amber-700 dark:text-amber-400 hover:bg-amber-100 transition-colors">
+                      <AtSign size={10} /><span className="truncate">Encontrado: {emailSugerido}</span><Check size={10} className="flex-shrink-0 ml-auto" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -677,11 +513,8 @@ export default function InfoContactoPanel() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">País</p>
-                <select
-                  value={contacto?.pais || ''}
-                  onChange={(e) => actualizarContacto('pais', e.target.value || null)}
-                  className="w-full px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0"
-                >
+                <select value={contacto?.pais || ''} onChange={(e) => actualizarContacto('pais', e.target.value || null)}
+                  className="w-full px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0">
                   <option value="">-</option>
                   {PAISES.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
@@ -690,44 +523,30 @@ export default function InfoContactoPanel() {
                 <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Ciudad</p>
                 {editando === 'ciudad' ? (
                   <div className="flex items-center gap-1">
-                    <input
-                      type="text"
-                      value={ciudad}
-                      onChange={(e) => setCiudad(e.target.value)}
-                      className="flex-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0"
-                      autoFocus
-                    />
+                    <input type="text" value={ciudad} onChange={(e) => setCiudad(e.target.value)} className="flex-1 px-2 py-1 text-xs bg-slate-100 dark:bg-slate-800 rounded border-0" autoFocus />
                     <button onClick={() => actualizarContacto('ciudad', ciudad || null)} className="p-0.5 text-green-500"><Check size={10} /></button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-1 group cursor-pointer px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded" onClick={() => setEditando('ciudad')}>
-                    <span className="text-xs text-slate-600 dark:text-slate-300 flex-1 truncate">
-                      {contacto?.ciudad || '-'}
-                    </span>
+                    <span className="text-xs text-slate-600 dark:text-slate-300 flex-1 truncate">{contacto?.ciudad || '-'}</span>
                     <Edit2 size={8} className="text-slate-400 opacity-0 group-hover:opacity-100" />
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Curso de interés - desde menu_interacciones */}
+            {/* Curso de interés */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Curso de Interés</p>
               <div className="flex items-center gap-2">
                 <BookOpen size={12} className="text-slate-400" />
                 {cursoInfo ? (
                   <div className="flex-1">
-                    <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
-                      {cursoInfo.nombre}
-                    </span>
+                    <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{cursoInfo.nombre}</span>
                     <span className="text-[10px] text-slate-400 ml-1">({cursoInfo.codigo})</span>
-                    {cursoInfo.cantidad > 1 && (
-                      <span className="text-[10px] text-purple-500 ml-2">+{cursoInfo.cantidad - 1} más</span>
-                    )}
+                    {cursoInfo.cantidad > 1 && <span className="text-[10px] text-purple-500 ml-2">+{cursoInfo.cantidad - 1} más</span>}
                   </div>
-                ) : (
-                  <span className="text-xs text-slate-400 italic">Sin interacción aún</span>
-                )}
+                ) : (<span className="text-xs text-slate-400 italic">Sin interacción aún</span>)}
               </div>
             </div>
 
@@ -746,26 +565,19 @@ export default function InfoContactoPanel() {
                     cerrada: { active: 'border-slate-500 bg-slate-200 dark:bg-slate-500/20 text-slate-600', inactive: 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400' },
                   };
                   const color = colores[e] || colores.nueva;
-                  return (
-                    <button key={e} onClick={() => actualizarConversacion('estado', e)}
-                      className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors',
-                        conversacionActual.estado === e ? color.active : color.inactive
-                      )}>{e}</button>
-                  );
+                  return (<button key={e} onClick={() => actualizarConversacion('estado', e)} className={cn('px-2 py-0.5 text-[10px] font-medium rounded-full border transition-colors', conversacionActual.estado === e ? color.active : color.inactive)}>{e}</button>);
                 })}
               </div>
             </div>
 
-            {/* Resultado (en contacto) */}
+            {/* Resultado */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Resultado</p>
               <div className="flex gap-1">
                 {RESULTADOS.map((r) => (
                   <button key={r} onClick={() => actualizarContacto('resultado', contacto?.resultado === r ? null : r)}
                     className={cn('flex-1 px-1 py-1 text-[10px] font-medium rounded-md border transition-colors',
-                      contacto?.resultado === r
-                        ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300'
+                      contacto?.resultado === r ? 'border-indigo-500 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600' : 'border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300'
                     )}>{r}</button>
                 ))}
               </div>
@@ -778,112 +590,61 @@ export default function InfoContactoPanel() {
                 windowTime.color.includes('amber') ? 'border-amber-200 bg-amber-50 dark:bg-amber-500/10' :
                 'border-red-200 bg-red-50 dark:bg-red-500/10'
               )}>
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
-                  <Clock size={10} />
-                  {windowTime.tipo === '72H' ? 'VENTANA 72H META' : 'VENTANA 24H'}
-                </div>
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-500"><Clock size={10} />{windowTime.tipo === '72H' ? 'VENTANA 72H META' : 'VENTANA 24H'}</div>
                 <div className={cn('text-xl font-bold mt-0.5', windowTime.color)}>{windowTime.texto}</div>
                 <p className="text-[9px] text-slate-500 mt-0.5">Mensajes gratuitos</p>
               </div>
             )}
 
-            {/* Etiquetas - Nuevo sistema con dropdown */}
+            {/* Etiquetas */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <p className="text-[10px] font-semibold text-slate-400 uppercase">Etiquetas</p>
                 <div className="relative" ref={dropdownRef}>
-                  <button
-                    onClick={() => setMostrarDropdownEtiquetas(!mostrarDropdownEtiquetas)}
-                    className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded flex items-center gap-0.5"
-                    disabled={etiquetasDisponibles.length === 0}
-                  >
-                    <Plus size={12} className="text-slate-400" />
-                    <ChevronDown size={10} className="text-slate-400" />
+                  <button onClick={() => setMostrarDropdownEtiquetas(!mostrarDropdownEtiquetas)}
+                    className="p-0.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded flex items-center gap-0.5" disabled={etiquetasDisponibles.length === 0}>
+                    <Plus size={12} className="text-slate-400" /><ChevronDown size={10} className="text-slate-400" />
                   </button>
-
-                  {/* Dropdown de etiquetas */}
                   {mostrarDropdownEtiquetas && etiquetasDisponibles.length > 0 && (
                     <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 py-1 max-h-48 overflow-y-auto">
                       {etiquetasDisponibles.map((etiqueta) => (
-                        <button
-                          key={etiqueta.id}
-                          onClick={() => asignarEtiqueta(etiqueta.id)}
-                          className="w-full px-2 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                        >
-                          <span
-                            className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: etiqueta.color }}
-                          />
-                          <span className="text-xs text-slate-700 dark:text-slate-300 truncate">
-                            {etiqueta.nombre}
-                          </span>
+                        <button key={etiqueta.id} onClick={() => asignarEtiqueta(etiqueta.id)}
+                          className="w-full px-2 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: etiqueta.color }} />
+                          <span className="text-xs text-slate-700 dark:text-slate-300 truncate">{etiqueta.nombre}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
-
-              {/* Etiquetas asignadas */}
               <div className="flex flex-wrap gap-1">
                 {etiquetasAsignadas.map((et) => (
-                  <span
-                    key={et.id}
-                    className="px-1.5 py-0.5 text-[10px] rounded flex items-center gap-1 group"
-                    style={{
-                      backgroundColor: `${et.color}20`,
-                      color: et.color,
-                      border: `1px solid ${et.color}40`
-                    }}
-                  >
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ backgroundColor: et.color }}
-                    />
-                    {et.nombre}
-                    <button
-                      onClick={() => quitarEtiquetaAsignada(et.id)}
-                      className="opacity-0 group-hover:opacity-100 hover:text-red-500 ml-0.5"
-                    >
-                      <X size={8} />
-                    </button>
+                  <span key={et.id} className="px-1.5 py-0.5 text-[10px] rounded flex items-center gap-1 group"
+                    style={{ backgroundColor: `${et.color}20`, color: et.color, border: `1px solid ${et.color}40` }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: et.color }} />{et.nombre}
+                    <button onClick={() => quitarEtiquetaAsignada(et.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-500 ml-0.5"><X size={8} /></button>
                   </span>
                 ))}
-                {etiquetasAsignadas.length === 0 && (
-                  <span className="text-[10px] text-slate-400 italic">
-                    {etiquetasGlobales.length > 0 ? 'Clic en + para agregar' : 'Sin etiquetas disponibles'}
-                  </span>
-                )}
+                {etiquetasAsignadas.length === 0 && (<span className="text-[10px] text-slate-400 italic">{etiquetasGlobales.length > 0 ? 'Clic en + para agregar' : 'Sin etiquetas disponibles'}</span>)}
               </div>
             </div>
 
             {/* Notas */}
             <div>
               <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Notas Internas</p>
-              <textarea
-                value={nota}
-                onChange={(e) => setNota(e.target.value)}
-                placeholder="Agregar nota..."
-                rows={2}
-                className="w-full px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-slate-800 dark:text-white resize-none"
-              />
-              <button
-                onClick={guardarNota}
-                disabled={guardando || !nota.trim()}
-                className="w-full mt-1 py-1 bg-indigo-500 text-white text-[10px] font-medium rounded-md disabled:opacity-50 hover:bg-indigo-600"
-              >
+              <textarea value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Agregar nota..." rows={2}
+                className="w-full px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border-0 rounded-md text-slate-800 dark:text-white resize-none" />
+              <button onClick={guardarNota} disabled={guardando || !nota.trim()}
+                className="w-full mt-1 py-1 bg-indigo-500 text-white text-[10px] font-medium rounded-md disabled:opacity-50 hover:bg-indigo-600">
                 {guardando ? 'Guardando...' : 'Guardar nota'}
               </button>
-
-              {/* Notas guardadas */}
               {notas.length > 0 && (
                 <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
                   {notas.map((n) => (
                     <div key={n.id} className="p-1.5 bg-yellow-50 dark:bg-yellow-500/10 rounded text-[10px]">
                       <p className="text-slate-700 dark:text-slate-300">{n.contenido}</p>
-                      <p className="text-[8px] text-slate-400 mt-0.5">
-                        {new Date(n.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </p>
+                      <p className="text-[8px] text-slate-400 mt-0.5">{new Date(n.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
                     </div>
                   ))}
                 </div>
