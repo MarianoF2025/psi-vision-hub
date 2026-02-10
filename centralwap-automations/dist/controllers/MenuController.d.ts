@@ -10,6 +10,9 @@ export declare class MenuController {
     private buscarMensajeCitadoId;
     private crearOActualizarSesion;
     private incrementarInteracciones;
+    private normalizarTexto;
+    private extraerNombreCursoDeWeb;
+    private matchearCursoPorNombre;
     enviarMenu(req: Request, res: Response): Promise<void>;
     procesarSeleccion(req: Request, res: Response): Promise<void>;
     webhookRespuestaMenu(req: Request, res: Response): Promise<void>;

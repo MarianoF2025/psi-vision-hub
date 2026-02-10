@@ -187,6 +187,115 @@ class MenuController {
             await this.crearOActualizarSesion({ telefono: telNormalizado, curso_id: cursoId });
         }
     }
+    // =============================================
+    // DETECTAR MENSAJE WEB Y MATCHEAR CURSO
+    // =============================================
+    normalizarTexto(texto) {
+        return texto
+            .toUpperCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar acentos
+            .replace(/[^A-Z0-9\s]/g, ' ') // solo letras, números, espacios
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+    extraerNombreCursoDeWeb(mensaje) {
+        // Patrón: "sobre el curso [NOMBRE] en la web"
+        const match = mensaje.match(/sobre el curso\s+(.+?)\s+en la web/i);
+        if (match && match[1]) {
+            return match[1].trim();
+        }
+        return null;
+    }
+    async matchearCursoPorNombre(nombreWeb) {
+        const nombreNorm = this.normalizarTexto(nombreWeb);
+        console.log(`[Web Match] Buscando curso para: "${nombreNorm}"`);
+        // 1. Buscar nombres base en cursos_cohortes (los más limpios)
+        const { data: cohortes } = await supabase_1.supabase
+            .from('cursos_cohortes')
+            .select('curso_codigo, nombre')
+            .order('cohorte_anio', { ascending: false });
+        if (cohortes) {
+            // Agrupar por curso_codigo, quedarnos con el nombre más reciente
+            const nombresPorCodigo = {};
+            for (const c of cohortes) {
+                if (!nombresPorCodigo[c.curso_codigo]) {
+                    // Limpiar: quitar "Curso ", "ATF - ", y la fecha al final (- Mes Año)
+                    let nombreLimpio = c.nombre
+                        .replace(/^(Curso|ATF\s*-\s*Curso|Curso de)\s+/i, '')
+                        .replace(/\s*-\s*(Enero|Febrero|Marzo|Abril|Mayo|Junio|Julio|Agosto|Septiembre|Octubre|Noviembre|Diciembre)\s+\d{4}\s*$/i, '')
+                        .replace(/\s*-\s*ON DEMAND\s*$/i, '')
+                        .trim();
+                    nombresPorCodigo[c.curso_codigo] = nombreLimpio;
+                }
+            }
+            // Buscar match: el nombre de la web debe coincidir con algún nombre de cohorte
+            let mejorMatch = null;
+            for (const [codigo, nombre] of Object.entries(nombresPorCodigo)) {
+                const cohorteNorm = this.normalizarTexto(nombre);
+                if (!cohorteNorm)
+                    continue;
+                // Match exacto
+                if (nombreNorm === cohorteNorm) {
+                    console.log(`[Web Match] ✅ Match exacto cohorte: "${nombre}" → ${codigo}`);
+                    mejorMatch = { codigo, score: 1000 };
+                    break;
+                }
+                // Match parcial: el nombre web contiene el de cohorte o viceversa
+                if (nombreNorm.includes(cohorteNorm) || cohorteNorm.includes(nombreNorm)) {
+                    // Score = longitud del match (preferir matches más largos para evitar falsos positivos)
+                    const score = cohorteNorm.length;
+                    if (!mejorMatch || score > mejorMatch.score) {
+                        mejorMatch = { codigo, score };
+                        console.log(`[Web Match] 🔍 Match parcial cohorte: "${nombre}" → ${codigo} (score: ${score})`);
+                    }
+                }
+            }
+            if (mejorMatch) {
+                // Buscar el curso en tabla cursos por codigo
+                const { data: curso } = await supabase_1.supabase
+                    .from('cursos')
+                    .select('*')
+                    .eq('codigo', mejorMatch.codigo)
+                    .single();
+                if (curso) {
+                    console.log(`[Web Match] ✅ Curso encontrado: ${curso.codigo} - ${curso.nombre} (activo: ${curso.activo})`);
+                    return curso;
+                }
+            }
+        }
+        // 2. Fallback: buscar directo en tabla cursos (nombre, psi_nombre)
+        const { data: todosLosCursos } = await supabase_1.supabase
+            .from('cursos')
+            .select('*')
+            .order('codigo');
+        if (todosLosCursos) {
+            let mejorMatch = null;
+            for (const curso of todosLosCursos) {
+                const nombres = [curso.nombre, curso.psi_nombre].filter(Boolean);
+                for (const nom of nombres) {
+                    const cursoNorm = this.normalizarTexto(nom);
+                    if (!cursoNorm)
+                        continue;
+                    if (nombreNorm === cursoNorm) {
+                        console.log(`[Web Match] ✅ Match exacto cursos: "${nom}" → ${curso.codigo}`);
+                        return curso;
+                    }
+                    if (nombreNorm.includes(cursoNorm) || cursoNorm.includes(nombreNorm)) {
+                        const score = cursoNorm.length;
+                        if (!mejorMatch || score > mejorMatch.score) {
+                            mejorMatch = { curso, score };
+                        }
+                    }
+                }
+            }
+            if (mejorMatch) {
+                console.log(`[Web Match] ✅ Match parcial cursos: ${mejorMatch.curso.codigo} (score: ${mejorMatch.score})`);
+                return mejorMatch.curso;
+            }
+        }
+        console.log(`[Web Match] ❌ No se encontró curso para: "${nombreWeb}"`);
+        return null;
+    }
     async enviarMenu(req, res) {
         try {
             const body = req.body;
@@ -342,6 +451,9 @@ class MenuController {
         }
         res.json({ success: true, data, message: 'Sesión finalizada' });
     }
+    // =============================================
+    // ENTRADA DIRECTA — CON DETECCIÓN WEB
+    // =============================================
     async enviarMenuDirecto(req, res) {
         try {
             const { telefono, nombre_contacto } = req.body;
@@ -353,10 +465,11 @@ class MenuController {
                 return;
             }
             const telNormalizado = this.normalizarTelefono(telefono);
+            const contenido = req.body.contenido || req.body.messages?.[0]?.text?.body || req.body.mensaje || '';
+            // === VERIFICAR SI YA ESTÁ EN VENTAS ===
             const { data: conv } = await supabase_1.supabase.from('conversaciones').select('id, desconectado_wsp4, inbox_fijo').eq('telefono', telNormalizado).single();
             if (conv?.desconectado_wsp4 && conv?.inbox_fijo === 'ventas_api') {
                 const ahora = new Date().toISOString();
-                const contenido = req.body.contenido || req.body.messages?.[0]?.text?.body || '';
                 let timestamp = ahora;
                 if (req.body.timestamp) {
                     const ts = parseInt(req.body.timestamp);
@@ -376,6 +489,56 @@ class MenuController {
                 res.json({ success: true, message: 'Mensaje guardado', data: { tipo: 'guardado_directo', conversacion_id: conv.id } });
                 return;
             }
+            // === DETECTAR MENSAJE DESDE WEB DE PSI ===
+            const nombreCursoWeb = this.extraerNombreCursoDeWeb(contenido);
+            if (nombreCursoWeb) {
+                console.log(`[Web] 🌐 Mensaje web detectado: "${nombreCursoWeb}" de ${telNormalizado}`);
+                const curso = await this.matchearCursoPorNombre(nombreCursoWeb);
+                if (curso && curso.activo) {
+                    // Curso activo → enviar menú interactivo (mismo flujo CTWA)
+                    const { data: opciones } = await supabase_1.supabase.from('menu_opciones').select('*').eq('curso_id', curso.id).eq('activo', true).order('orden');
+                    if (opciones?.length) {
+                        const resultado = await WhatsAppService_1.whatsAppService.enviarMenuInteractivo(telefono, curso, opciones);
+                        if (!resultado.success) {
+                            res.status(500).json({ success: false, error: resultado.error });
+                            return;
+                        }
+                        await this.fijarConversacionEnVentas(telefono, `Ingreso Web - Curso: ${curso.codigo}`, nombre_contacto, false);
+                        await this.crearOActualizarSesion({ telefono: telNormalizado, curso_id: curso.id, origen: 'web', mensaje_inicial: contenido });
+                        console.log(`[Web] ✅ Menú enviado: ${telNormalizado} → ${curso.codigo} (origen: web)`);
+                        res.json({ success: true, data: { tipo: 'web_menu_curso', curso: curso.codigo, origen: 'web' } });
+                        return;
+                    }
+                    else {
+                        // Curso activo pero sin opciones de menú → derivar directo
+                        await WhatsAppService_1.whatsAppService.enviarTexto(telefono, `¡Hola! 👋 Gracias por tu interés en *${curso.nombre}*.\n\nEn breve te contacta un asesor con toda la info.`);
+                        await this.fijarConversacionEnVentas(telefono, `Ingreso Web - Curso: ${curso.codigo} (sin menú)`, nombre_contacto, false);
+                        await this.crearOActualizarSesion({ telefono: telNormalizado, curso_id: curso.id, origen: 'web', mensaje_inicial: contenido });
+                        console.log(`[Web] ✅ Derivado sin menú: ${telNormalizado} → ${curso.codigo}`);
+                        res.json({ success: true, data: { tipo: 'web_derivado_sin_menu', curso: curso.codigo, origen: 'web' } });
+                        return;
+                    }
+                }
+                else if (curso && !curso.activo) {
+                    // Curso inactivo → derivar con contexto
+                    await WhatsAppService_1.whatsAppService.enviarTexto(telefono, `¡Hola! 👋 Gracias por tu interés en *${curso.nombre}*.\n\nEn este momento no hay cohorte abierta, pero un asesor te puede informar sobre las próximas fechas.`);
+                    await this.fijarConversacionEnVentas(telefono, `Ingreso Web - Curso INACTIVO: ${curso.codigo}`, nombre_contacto, false);
+                    await this.crearOActualizarSesion({ telefono: telNormalizado, curso_id: curso.id, origen: 'web', mensaje_inicial: contenido });
+                    console.log(`[Web] ⚠️ Curso inactivo: ${telNormalizado} → ${curso.codigo}`);
+                    res.json({ success: true, data: { tipo: 'web_curso_inactivo', curso: curso.codigo, origen: 'web' } });
+                    return;
+                }
+                else {
+                    // No matcheó ningún curso → derivar con el mensaje original
+                    console.log(`[Web] ❌ No matcheó curso. Derivando con mensaje original.`);
+                    await WhatsAppService_1.whatsAppService.enviarTexto(telefono, `¡Hola! 👋 Gracias por contactarnos.\n\nEn breve te atiende un asesor.`);
+                    await this.fijarConversacionEnVentas(telefono, `Ingreso Web - Curso no identificado: "${nombreCursoWeb}"`, nombre_contacto, false);
+                    await this.crearOActualizarSesion({ telefono: telNormalizado, origen: 'web', mensaje_inicial: contenido });
+                    res.json({ success: true, data: { tipo: 'web_sin_match', origen: 'web' } });
+                    return;
+                }
+            }
+            // === FLUJO NORMAL: Botones Cursos/Especializaciones/Asesor ===
             const resultado = await WhatsAppService_1.whatsAppService.enviarBotones(telefono, '¡Hola! 👋 Gracias por escribirnos a PSI.\n\n¿Qué tipo de formación te interesa?', [{ id: 'tipo_curso', titulo: '📚 Cursos' }, { id: 'tipo_especializacion', titulo: '🎓 Especializaciones' }, { id: 'hablar_agente', titulo: '💬 Hablar c/asesor' }], '🎓 PSI Asociación');
             if (!resultado.success) {
                 res.status(500).json({ success: false, error: resultado.error });
@@ -407,7 +570,6 @@ class MenuController {
             }
             const MAX_ROWS_WA = 10;
             const paginaActual = parseInt(pagina) || 1;
-            // Si caben todos, usar categorías como sections (comportamiento original)
             if (cursos.length <= MAX_ROWS_WA) {
                 const porCat = {};
                 cursos.forEach((c) => { const cat = c.categoria || 'Otros'; if (!porCat[cat])
@@ -423,8 +585,7 @@ class MenuController {
                 }
             }
             else {
-                // Paginación necesaria
-                const CURSOS_POR_PAGINA = 8; // 8 cursos + hasta 2 navegación = 10
+                const CURSOS_POR_PAGINA = 8;
                 const totalPaginas = Math.ceil(cursos.length / CURSOS_POR_PAGINA);
                 const pagActual = Math.max(1, Math.min(paginaActual, totalPaginas));
                 const inicio = (pagActual - 1) * CURSOS_POR_PAGINA;
@@ -434,11 +595,9 @@ class MenuController {
                     title: c.nombre.substring(0, 24),
                     description: c.descripcion?.substring(0, 72) || ''
                 }));
-                // Navegación adelante
                 if (pagActual < totalPaginas) {
                     rows.push({ id: `nav_mas_${tipo}_p${pagActual + 1}`, title: '➡️ Ver más', description: `Página ${pagActual + 1} de ${totalPaginas}` });
                 }
-                // Navegación atrás
                 if (pagActual > 1) {
                     rows.push({ id: `nav_anterior_${tipo}_p${pagActual - 1}`, title: '⬅️ Página anterior', description: `Volver a página ${pagActual - 1}` });
                 }
@@ -480,7 +639,6 @@ class MenuController {
                 res.json({ success: true, data: { tipo: 'derivado_agente' } });
                 return;
             }
-            // === NAVEGACIÓN PAGINACIÓN CURSOS/ESPECIALIZACIONES ===
             const navMatch = seleccion_id.match(/^nav_(?:mas|anterior)_(curso|especializacion)_p(\d+)$/);
             if (navMatch) {
                 req.body.tipo = navMatch[1];
