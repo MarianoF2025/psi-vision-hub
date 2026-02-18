@@ -25,7 +25,6 @@ import {
 
 const menuItems = [
   { icon: Home, label: 'Inicio', href: '/' },
-  { icon: LayoutDashboard, label: 'Overview', href: '/overview' },
   { icon: Megaphone, label: 'Marketing', href: '/marketing' },
   { icon: ShoppingCart, label: 'Ventas', href: '/ventas' },
   { icon: GraduationCap, label: 'Alumnos', href: '/alumnos' },

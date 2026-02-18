@@ -95,7 +95,11 @@ function InsightCard({ insight }: { insight: Insight }) {
   );
 }
 
-export default function AgenteIAPanel() {
+interface AgenteIAPanelProps {
+  endpoint?: string;
+}
+
+export default function AgenteIAPanel({ endpoint = "/tableros/api/ventas-agent" }: AgenteIAPanelProps) {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -106,7 +110,7 @@ export default function AgenteIAPanel() {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/tableros/api/ventas-agent');
+      const res = await fetch(endpoint);
       const data = await res.json();
       if (data.success && data.insights) {
         const sorted = data.insights.sort(
@@ -128,7 +132,7 @@ export default function AgenteIAPanel() {
     setIsGenerating(true);
     setError(null);
     try {
-      const res = await fetch('/tableros/api/ventas-agent', {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),

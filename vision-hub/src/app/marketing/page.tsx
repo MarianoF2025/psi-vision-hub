@@ -1,861 +1,826 @@
 'use client';
-import { useState, useRef, useEffect } from 'react';
+
+import { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import AgenteIAPanel from '@/components/dashboard/AgenteIAPanel';
+import { parsePeriodo, getAgrupacion, PERIODO_DEFAULT } from '@/lib/periodo';
 import {
-  DollarSign,
-  Users,
-  TrendingUp,
-  Target,
-  MousePointer,
-  Eye,
-  ChevronRight,
-  ChevronDown,
-  AlertTriangle,
-  Zap,
-  BarChart3,
-  PieChart,
-  ArrowUpRight,
-  ArrowDownRight,
-  Megaphone,
-  Filter,
-  Search,
-  Check,
-  X,
-  Calendar,
-  GitCompare
-} from 'lucide-react';
-import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  ScatterChart, Scatter, ZAxis, Cell,
-  PieChart as RechartsPie, Pie
+  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, BarChart, Bar, PieChart as RechartsPie, Pie, Cell,
 } from 'recharts';
+import {
+  Megaphone, DollarSign, MessageCircle, Target, MousePointer, Eye,
+  ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, RefreshCw,
+  AlertTriangle, CheckCircle, Clock, Zap, TrendingUp, TrendingDown,
+  Activity, Layers, BarChart3,
+} from 'lucide-react';
 
-// ============================================
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// ─── Paleta PSI ───
+const PSI_RED = '#e63946';
+const SLATE_700 = '#334155';
+const SLATE_600 = '#475569';
+const SLATE_800 = '#1e293b';
+const SLATE_500 = '#64748b';
+
+// ─── Colores para pie charts ───
+const PIE_COLORS = [PSI_RED, SLATE_700, SLATE_600, SLATE_800, SLATE_500, '#94a3b8', '#cbd5e1'];
+
+// ─── Helpers ───
+const formatUSD = (v: number | null | undefined) => {
+  if (v === null || v === undefined) return '—';
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
+  return `$${v.toFixed(2)}`;
+};
+const formatNumber = (v: number | null | undefined) => (v !== null && v !== undefined) ? new Intl.NumberFormat('es-AR').format(v) : '—';
+const formatPct = (v: number | null | undefined) => (v !== null && v !== undefined) ? `${v.toFixed(2)}%` : '—';
+const calcDelta = (actual: number, anterior: number): number | null => {
+  if (!anterior || anterior === 0) return actual > 0 ? 100 : null;
+  return Math.round(((actual - anterior) / anterior) * 100);
+};
+
+const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+// ─── Semáforo creative health ───
+const HEALTH_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  winner:   { label: 'Winner',   color: 'text-emerald-600', bg: 'bg-emerald-50',  border: 'border-emerald-200' },
+  testing:  { label: 'Testing',  color: 'text-amber-600',   bg: 'bg-amber-50',    border: 'border-amber-200' },
+  fatigued: { label: 'Fatigado', color: 'text-orange-600',  bg: 'bg-orange-50',   border: 'border-orange-200' },
+  dead:     { label: 'Pausar',   color: 'text-red-600',     bg: 'bg-red-50',      border: 'border-red-200' },
+};
+
+// ══════════════════════════════════════════════
 // TIPOS
-// ============================================
+// ══════════════════════════════════════════════
 
-interface Curso {
-  id: string;
-  nombre: string;
-  campañas: number;
+interface KPIData {
+  actual: {
+    spend: number; impressions: number; reach: number; clicks: number;
+    conversaciones_wa: number; cpl: number | null; ctr: number; cpc: number;
+    cpm: number; frequency: number; dias: number;
+  };
+  anterior: {
+    spend: number; impressions: number; clicks: number;
+    conversaciones_wa: number; cpl: number | null; ctr: number; cpc: number; cpm: number;
+  };
+  deltas: Record<string, number | null>;
 }
 
-interface DatosCurso {
-  inversion: number;
-  leads: number;
-  cpl: number;
-  roas: number;
-  ctr: number;
-  cpc: number;
-  impresiones: number;
-  deltaInversion: number;
-  deltaLeads: number;
-  deltaCpl: number;
-  deltaRoas: number;
-  evolucion: { mes: string; inversion: number; leads: number }[];
-  campañas: { nombre: string; estado: string; invertido: number; leads: number; cpl: number; ctr: number; cpc: number; impresiones: number }[];
+interface Campana {
+  campaign_id: string; nombre: string; status: string; objective: string;
+  buying_type: string; daily_budget: number | null; lifetime_budget: number | null;
+  spend: number; impressions: number; reach: number; clicks: number;
+  conversaciones_wa: number; cpl: number | null; ctr: number; cpc: number;
+  cpm: number; frequency: number; dias_activos: number;
+  adsets_count: number; ads_count: number;
 }
 
-// ============================================
-// DATOS MOCK
-// ============================================
+interface AdSet {
+  adset_id: string; nombre: string; status: string;
+  daily_budget: number | null; lifetime_budget: number | null;
+  targeting: any; learning_phase_info: string | null;
+  spend: number; impressions: number; clicks: number;
+  conversaciones_wa: number; cpl: number | null; ctr: number; cpc: number;
+  frequency: number; ads_count: number;
+}
 
-const cursosData: Curso[] = [
-  { id: 'todos', nombre: 'Todos los cursos', campañas: 24 },
-  { id: 'at', nombre: 'Acompañante Terapéutico', campañas: 4 },
-  { id: 'apa', nombre: 'Apego y Parentalidad', campañas: 3 },
-  { id: 'tea', nombre: 'Trastorno Espectro Autista', campañas: 2 },
-  { id: 'trauma', nombre: 'Trauma y Disociación', campañas: 2 },
-  { id: 'perinatal', nombre: 'Salud Mental Perinatal', campañas: 1 },
-  { id: 'adicciones', nombre: 'Adicciones', campañas: 1 },
-  { id: 'infantil', nombre: 'Psicología Infantil', campañas: 2 },
-  { id: 'adultos', nombre: 'Psicoterapia Adultos', campañas: 3 },
-  { id: 'parejas', nombre: 'Terapia de Parejas', campañas: 1 },
-  { id: 'geriatria', nombre: 'Psicogeriatría', campañas: 1 },
-  { id: 'forense', nombre: 'Psicología Forense', campañas: 2 },
-  { id: 'laboral', nombre: 'Psicología Laboral', campañas: 1 },
-  { id: 'neuropsico', nombre: 'Neuropsicología', campañas: 1 },
-];
+interface AdPerformance {
+  ad_id: string; ad_name: string; status: string;
+  campaign_id: string; campaign_name: string; adset_id: string;
+  creative_body: string | null; creative_title: string | null;
+  creative_image_url: string | null; creative_video_url: string | null;
+  spend: number; impressions: number; reach: number; clicks: number;
+  conversaciones_wa: number; cpl: number | null; ctr: number; cpc: number;
+  frequency: number; quality_ranking: string | null;
+  engagement_ranking: string | null; conversion_ranking: string | null;
+  dias_activos: number; primer_dia: string; ultimo_dia: string;
+}
 
-const datosPorCurso: Record<string, DatosCurso> = {
-  todos: {
-    inversion: 1200000, leads: 456, cpl: 2631, roas: 312, ctr: 2.4, cpc: 850, impresiones: 1450000,
-    deltaInversion: 8, deltaLeads: 15, deltaCpl: -12, deltaRoas: 23,
-    evolucion: [
-      { mes: 'Jul', inversion: 180000, leads: 65 },
-      { mes: 'Ago', inversion: 195000, leads: 72 },
-      { mes: 'Sep', inversion: 210000, leads: 78 },
-      { mes: 'Oct', inversion: 185000, leads: 68 },
-      { mes: 'Nov', inversion: 220000, leads: 85 },
-      { mes: 'Dic', inversion: 210000, leads: 88 },
-    ],
-    campañas: []
-  },
-  at: {
-    inversion: 450000, leads: 180, cpl: 2500, roas: 385, ctr: 2.8, cpc: 780, impresiones: 580000,
-    deltaInversion: 12, deltaLeads: 18, deltaCpl: -8, deltaRoas: 15,
-    evolucion: [
-      { mes: 'Jul', inversion: 70000, leads: 28 },
-      { mes: 'Ago', inversion: 75000, leads: 30 },
-      { mes: 'Sep', inversion: 80000, leads: 32 },
-      { mes: 'Oct', inversion: 72000, leads: 28 },
-      { mes: 'Nov', inversion: 78000, leads: 31 },
-      { mes: 'Dic', inversion: 75000, leads: 31 },
-    ],
-    campañas: [
-      { nombre: 'AT - Prospección Mayo', estado: 'activa', invertido: 180000, leads: 72, cpl: 2500, ctr: 2.3, cpc: 720, impresiones: 250000 },
-      { nombre: 'AT - Retargeting', estado: 'activa', invertido: 120000, leads: 65, cpl: 1846, ctr: 4.1, cpc: 580, impresiones: 145000 },
-      { nombre: 'AT - Lookalike Psicólogos', estado: 'activa', invertido: 100000, leads: 28, cpl: 3571, ctr: 1.9, cpc: 890, impresiones: 112000 },
-      { nombre: 'AT - Intereses Salud Mental', estado: 'pausada', invertido: 50000, leads: 15, cpl: 3333, ctr: 1.5, cpc: 950, impresiones: 73000 },
-    ]
-  },
-  apa: {
-    inversion: 380000, leads: 95, cpl: 4000, roas: 245, ctr: 1.8, cpc: 1200, impresiones: 420000,
-    deltaInversion: 5, deltaLeads: -8, deltaCpl: 15, deltaRoas: -12,
-    evolucion: [
-      { mes: 'Jul', inversion: 55000, leads: 14 },
-      { mes: 'Ago', inversion: 60000, leads: 15 },
-      { mes: 'Sep', inversion: 68000, leads: 17 },
-      { mes: 'Oct', inversion: 65000, leads: 16 },
-      { mes: 'Nov', inversion: 70000, leads: 17 },
-      { mes: 'Dic', inversion: 62000, leads: 16 },
-    ],
-    campañas: [
-      { nombre: 'APA - Prospección', estado: 'activa', invertido: 180000, leads: 45, cpl: 4000, ctr: 1.8, cpc: 1100, impresiones: 180000 },
-      { nombre: 'APA - Retargeting', estado: 'activa', invertido: 80000, leads: 30, cpl: 2666, ctr: 3.2, cpc: 850, impresiones: 94000 },
-      { nombre: 'APA - Lookalike', estado: 'pausada', invertido: 120000, leads: 20, cpl: 6000, ctr: 1.2, cpc: 1450, impresiones: 146000 },
-    ]
-  },
-  tea: {
-    inversion: 250000, leads: 116, cpl: 2155, roas: 298, ctr: 2.7, cpc: 720, impresiones: 350000,
-    deltaInversion: 10, deltaLeads: 22, deltaCpl: -15, deltaRoas: 28,
-    evolucion: [
-      { mes: 'Jul', inversion: 38000, leads: 17 },
-      { mes: 'Ago', inversion: 40000, leads: 18 },
-      { mes: 'Sep', inversion: 42000, leads: 19 },
-      { mes: 'Oct', inversion: 43000, leads: 20 },
-      { mes: 'Nov', inversion: 45000, leads: 21 },
-      { mes: 'Dic', inversion: 42000, leads: 21 },
-    ],
-    campañas: [
-      { nombre: 'TEA - Prospección', estado: 'activa', invertido: 150000, leads: 70, cpl: 2142, ctr: 2.8, cpc: 680, impresiones: 220000 },
-      { nombre: 'TEA - Awareness', estado: 'activa', invertido: 100000, leads: 46, cpl: 2173, ctr: 2.5, cpc: 780, impresiones: 130000 },
-    ]
-  },
-  trauma: {
-    inversion: 60000, leads: 32, cpl: 1875, roas: 420, ctr: 3.1, cpc: 620, impresiones: 52000,
-    deltaInversion: 0, deltaLeads: 12, deltaCpl: -18, deltaRoas: 35,
-    evolucion: [
-      { mes: 'Jul', inversion: 8000, leads: 4 },
-      { mes: 'Ago', inversion: 9000, leads: 5 },
-      { mes: 'Sep', inversion: 10000, leads: 5 },
-      { mes: 'Oct', inversion: 11000, leads: 6 },
-      { mes: 'Nov', inversion: 12000, leads: 6 },
-      { mes: 'Dic', inversion: 10000, leads: 6 },
-    ],
-    campañas: [
-      { nombre: 'Trauma - Lanzamiento', estado: 'activa', invertido: 60000, leads: 32, cpl: 1875, ctr: 3.1, cpc: 620, impresiones: 52000 },
-    ]
-  },
-  perinatal: {
-    inversion: 35000, leads: 18, cpl: 1944, roas: 380, ctr: 2.9, cpc: 650, impresiones: 28000,
-    deltaInversion: 5, deltaLeads: 8, deltaCpl: -5, deltaRoas: 12,
-    evolucion: [
-      { mes: 'Jul', inversion: 5000, leads: 2 },
-      { mes: 'Ago', inversion: 5500, leads: 3 },
-      { mes: 'Sep', inversion: 6000, leads: 3 },
-      { mes: 'Oct', inversion: 6000, leads: 3 },
-      { mes: 'Nov', inversion: 6500, leads: 4 },
-      { mes: 'Dic', inversion: 6000, leads: 3 },
-    ],
-    campañas: [
-      { nombre: 'Perinatal - Prospección', estado: 'activa', invertido: 35000, leads: 18, cpl: 1944, ctr: 2.9, cpc: 650, impresiones: 28000 },
-    ]
-  },
-  adicciones: {
-    inversion: 25000, leads: 15, cpl: 1666, roas: 450, ctr: 3.4, cpc: 580, impresiones: 20000,
-    deltaInversion: 15, deltaLeads: 25, deltaCpl: -20, deltaRoas: 40,
-    evolucion: [
-      { mes: 'Jul', inversion: 3000, leads: 2 },
-      { mes: 'Ago', inversion: 3500, leads: 2 },
-      { mes: 'Sep', inversion: 4000, leads: 2 },
-      { mes: 'Oct', inversion: 4500, leads: 3 },
-      { mes: 'Nov', inversion: 5000, leads: 3 },
-      { mes: 'Dic', inversion: 5000, leads: 3 },
-    ],
-    campañas: [
-      { nombre: 'Adicciones - Test', estado: 'activa', invertido: 25000, leads: 15, cpl: 1666, ctr: 3.4, cpc: 580, impresiones: 20000 },
-    ]
-  },
-};
+interface AdTrend {
+  ad_id: string; ad_name: string; campaign_name: string;
+  dias: number; fatigue_score: 'alto' | 'medio' | 'bajo';
+  tendencia: {
+    ctr_inicio: number; ctr_fin: number; ctr_cambio_pct: number | null;
+    cpc_inicio: number; cpc_fin: number; cpc_cambio_pct: number | null;
+    frequency_inicio: number; frequency_fin: number; frequency_cambio_pct: number | null;
+  };
+}
 
-const defaultDatos: DatosCurso = {
-  inversion: 50000, leads: 25, cpl: 2000, roas: 300, ctr: 2.5, cpc: 700, impresiones: 60000,
-  deltaInversion: 5, deltaLeads: 10, deltaCpl: -5, deltaRoas: 8,
-  evolucion: [
-    { mes: 'Jul', inversion: 7000, leads: 3 },
-    { mes: 'Ago', inversion: 8000, leads: 4 },
-    { mes: 'Sep', inversion: 8500, leads: 4 },
-    { mes: 'Oct', inversion: 9000, leads: 5 },
-    { mes: 'Nov', inversion: 9000, leads: 5 },
-    { mes: 'Dic', inversion: 8500, leads: 4 },
-  ],
-  campañas: [
-    { nombre: 'Campaña Principal', estado: 'activa', invertido: 50000, leads: 25, cpl: 2000, ctr: 2.5, cpc: 700, impresiones: 60000 },
-  ]
-};
+interface Estructura {
+  resumen: {
+    campanas_total: number; campanas_activas: number;
+    adsets_total: number; adsets_activos: number;
+    ads_total: number; ads_activos: number;
+  };
+}
 
-const comparativaCursos = [
-  { curso: 'AT', id: 'at', inversion: 450000, leads: 180, cpl: 2500, porcentaje: 39 },
-  { curso: 'APA', id: 'apa', inversion: 380000, leads: 95, cpl: 4000, porcentaje: 21 },
-  { curso: 'TEA', id: 'tea', inversion: 250000, leads: 116, cpl: 2155, porcentaje: 25 },
-  { curso: 'Trauma', id: 'trauma', inversion: 60000, leads: 32, cpl: 1875, porcentaje: 7 },
-  { curso: 'Perinatal', id: 'perinatal', inversion: 35000, leads: 18, cpl: 1944, porcentaje: 4 },
-  { curso: 'Adicciones', id: 'adicciones', inversion: 25000, leads: 15, cpl: 1666, porcentaje: 4 },
-];
+interface Embudo {
+  periodo: { desde: string; hasta: string };
+  embudo: {
+    impresiones: number; clicks: number; conversaciones_wa: number;
+    leads_ctwa: number; inscriptos: number; revenue_total: number;
+  };
+  conversiones: {
+    click_to_conv_wa: number; conv_wa_to_lead: number;
+    lead_to_inscripto: number; click_to_inscripto: number;
+  };
+  tiene_datos_cruce: boolean;
+}
 
-const comparativaTemporal = {
-  inversion: { actual: 210000, anterior: 195000, añoAnterior: 180000 },
-  leads: { actual: 88, anterior: 76, añoAnterior: 62 },
-  cpl: { actual: 2386, anterior: 2565, añoAnterior: 2903 },
-};
+interface Distribucion {
+  campaign_id: string; nombre: string; status: string;
+  spend: number; spend_pct: number;
+  conversaciones_wa: number; conversaciones_pct: number;
+}
 
-const scatterData = [
-  { curso: 'AT', inversion: 450, leads: 180, cpl: 2500 },
-  { curso: 'APA', inversion: 380, leads: 95, cpl: 4000 },
-  { curso: 'TEA', inversion: 250, leads: 116, cpl: 2155 },
-  { curso: 'Trauma', inversion: 60, leads: 32, cpl: 1875 },
-  { curso: 'Perinatal', inversion: 35, leads: 18, cpl: 1944 },
-  { curso: 'Adicciones', inversion: 25, leads: 15, cpl: 1666 },
-];
+interface EvolucionPoint {
+  periodo: string; spend: number; impressions: number; clicks: number;
+  conversaciones_wa: number; cpl: number | null; ctr: number; cpc: number;
+}
 
-const distribucionInversion = [
-  { name: 'AT', value: 37.5, color: '#e63946' },
-  { name: 'APA', value: 31.7, color: '#3b82f6' },
-  { name: 'TEA', value: 20.8, color: '#10b981' },
-  { name: 'Otros', value: 10, color: '#9ca3af' },
-];
 
-const distribucionLeads = [
-  { name: 'AT', value: 39.5, color: '#e63946' },
-  { name: 'APA', value: 20.8, color: '#3b82f6' },
-  { name: 'TEA', value: 25.4, color: '#10b981' },
-  { name: 'Otros', value: 14.3, color: '#9ca3af' },
-];
-
-const alertas = [
-  { tipo: 'warning', mensaje: 'CPL de APA subió 15% vs mes anterior', curso: 'apa' },
-  { tipo: 'success', mensaje: 'TEA tiene el mejor rendimiento del mes', curso: 'tea' },
-  { tipo: 'info', mensaje: 'Frecuencia alta en campaña AT - Intereses', curso: 'at' },
-];
-
-// ============================================
-// COMPONENTES
-// ============================================
-
-const Sparkline = ({ data, color, height = 24 }: { data: number[]; color: string; height?: number }) => {
-  const max = Math.max(...data);
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  const points = data.map((value, index) => {
-    const x = (index / (data.length - 1)) * 100;
-    const y = 100 - ((value - min) / range) * 100;
-    return `${x},${y}`;
-  }).join(' ');
-  const areaPoints = `0,100 ${points} 100,100`;
-
+// ─── Tooltip de sección ───
+function SectionTooltip({ text }: { text: string }) {
+  const [show, setShow] = useState(false);
   return (
-    <svg width="100%" height={height} viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
-      <defs>
-        <linearGradient id={`gradient-${color.replace('#', '')}`} x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon fill={`url(#gradient-${color.replace('#', '')})`} points={areaPoints} />
-      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={points} vectorEffect="non-scaling-stroke" />
-    </svg>
+    <span className="relative inline-block ml-1.5">
+      <span
+        className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-100 text-slate-400 text-[9px] font-bold cursor-help hover:bg-slate-200 transition-colors"
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+      >i</span>
+      {show && (
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-[10px] rounded-lg shadow-lg whitespace-normal w-56 z-50 leading-relaxed">
+          {text}
+          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+        </span>
+      )}
+    </span>
   );
-};
+}
 
-const formatCurrency = (value: number) => {
-  if (value >= 1000000) return `$${(value / 1000000).toFixed(1)}M`;
-  if (value >= 1000) return `$${(value / 1000).toFixed(0)}K`;
-  return `$${value.toLocaleString()}`;
-};
+// ══════════════════════════════════════════════
+// COMPONENTE PRINCIPAL
+// ══════════════════════════════════════════════
 
-const CursoSelector = ({
-  lista,
-  seleccionado,
-  onSelect
-}: {
-  lista: Curso[];
-  seleccionado: string;
-  onSelect: (id: string) => void;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const dropdownRef = useRef<HTMLDivElement>(null);
+export default function MarketingPage() {
+  const [periodo, setPeriodo] = useState(PERIODO_DEFAULT);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const cursoActual = lista.find(c => c.id === seleccionado);
-  const cursosFiltrados = lista.filter(c => c.nombre.toLowerCase().includes(search.toLowerCase()));
+  // Data states
+  const [kpis, setKpis] = useState<KPIData | null>(null);
+  const [evolucion, setEvolucion] = useState<EvolucionPoint[]>([]);
+  const [campanas, setCampanas] = useState<Campana[]>([]);
+  const [estructura, setEstructura] = useState<Estructura | null>(null);
+  const [distribucion, setDistribucion] = useState<Distribucion[]>([]);
+  const [adsPerformance, setAdsPerformance] = useState<AdPerformance[]>([]);
+  const [adsTrends, setAdsTrends] = useState<AdTrend[]>([]);
+  const [embudo, setEmbudo] = useState<Embudo | null>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-        setSearch('');
+  // UI states
+  const [expandedCampaign, setExpandedCampaign] = useState<string | null>(null);
+  const [adsets, setAdsets] = useState<Record<string, AdSet[]>>({});
+  const [loadingAdsets, setLoadingAdsets] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<string | null>(null);
+
+  const getFechas = useCallback(() => {
+    return parsePeriodo(periodo);
+  }, [periodo]);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    const { desde, hasta } = getFechas();
+
+    try {
+      const [kpisRes, evoRes, campRes, estrRes, distRes, adsRes, trendsRes, syncRes, embudoRes] = await Promise.all([
+        supabase.rpc('get_marketing_kpis', { fecha_desde: desde, fecha_hasta: hasta }),
+        supabase.rpc('get_marketing_evolucion', { fecha_desde: desde, fecha_hasta: hasta, granularidad: getAgrupacion(periodo) }),
+        supabase.rpc('get_marketing_campanas', { fecha_desde: desde, fecha_hasta: hasta }),
+        supabase.rpc('get_marketing_estructura'),
+        supabase.rpc('get_marketing_distribucion', { fecha_desde: desde, fecha_hasta: hasta }),
+        supabase.rpc('get_marketing_ads_performance', { fecha_desde: desde, fecha_hasta: hasta, limite: 20 }),
+        supabase.rpc('get_marketing_ads_trends'),
+        supabase.from('meta_sync_log').select('finished_at').order('finished_at', { ascending: false }).limit(1),
+        supabase.rpc('get_marketing_embudo', { fecha_desde: desde, fecha_hasta: hasta }),
+      ]);
+
+      if (kpisRes.data) setKpis(kpisRes.data);
+      if (evoRes.data?.serie) setEvolucion(evoRes.data.serie);
+      if (campRes.data?.campanas) setCampanas(campRes.data.campanas);
+      if (estrRes.data) setEstructura(estrRes.data);
+      if (distRes.data?.distribucion) setDistribucion(distRes.data.distribucion);
+      if (adsRes.data?.ads) setAdsPerformance(adsRes.data.ads);
+      if (trendsRes.data?.ads) setAdsTrends(trendsRes.data.ads);
+      if (syncRes.data?.[0]) setLastSync(syncRes.data[0].finished_at);
+      if (embudoRes.data) setEmbudo(embudoRes.data);
+    } catch (error) {
+      console.error('Error cargando datos de marketing:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getFechas, periodo]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Cargar ad sets al expandir campaña
+  const toggleCampaign = async (campaignId: string) => {
+    if (expandedCampaign === campaignId) {
+      setExpandedCampaign(null);
+      return;
+    }
+    setExpandedCampaign(campaignId);
+    if (!adsets[campaignId]) {
+      setLoadingAdsets(campaignId);
+      const { desde, hasta } = getFechas();
+      const res = await supabase.rpc('get_marketing_adsets', {
+        p_campaign_id: campaignId, fecha_desde: desde, fecha_hasta: hasta,
+      });
+      if (res.data?.adsets) {
+        setAdsets(prev => ({ ...prev, [campaignId]: res.data.adsets }));
       }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+      setLoadingAdsets(null);
+    }
+  };
+
+  const handleExport = (formato: 'excel' | 'csv' | 'pdf') => {
+    console.log('Exportar marketing:', formato);
+  };
+
+  // ─── Calcular health de un ad basado en trends ───
+  const getAdHealth = (ad: AdPerformance): string => {
+    const trend = adsTrends.find(t => t.ad_id === ad.ad_id);
+    if (!trend) {
+      if (ad.conversaciones_wa >= 10 && ad.cpl !== null && ad.cpl <= 0.50) return 'winner';
+      if (ad.spend > 1.0 && ad.conversaciones_wa === 0) return 'dead';
+      return 'testing';
+    }
+    if (trend.fatigue_score === 'alto') return 'fatigued';
+    if (ad.spend > 1.0 && ad.conversaciones_wa === 0) return 'dead';
+    if (ad.conversaciones_wa >= 10 && ad.cpl !== null && ad.cpl <= 0.50) return 'winner';
+    return 'testing';
+  };
+
+  // ─── KPI cards config ───
+  const kpiCards = kpis ? [
+    { label: 'Inversión', value: formatUSD(kpis.actual.spend), delta: kpis.deltas.spend_pct, icon: DollarSign, color: PSI_RED, invertDelta: true },
+    { label: 'Consultas WA', value: formatNumber(kpis.actual.conversaciones_wa), delta: kpis.deltas.conversaciones_wa_pct, icon: MessageCircle, color: SLATE_700 },
+    { label: 'Costo por Consulta', value: kpis.actual.cpl !== null ? formatUSD(kpis.actual.cpl) : '—', delta: kpis.deltas.cpl_pct, icon: Target, color: SLATE_600, invertDelta: true },
+    { label: 'CTR', value: formatPct(kpis.actual.ctr), delta: kpis.deltas.ctr_pct, icon: MousePointer, color: SLATE_700 },
+    { label: 'CPC', value: formatUSD(kpis.actual.cpc), delta: kpis.deltas.cpc_pct, icon: MousePointer, color: SLATE_800, invertDelta: true },
+    { label: 'Impresiones', value: formatNumber(kpis.actual.impressions), delta: kpis.deltas.impressions_pct, icon: Eye, color: SLATE_500 },
+  ] : [];
+
+  // ─── Learning phase helpers ───
+  const isLearning = (info: string | null) => info && info !== 'LEARNING_PHASE_OVER';
 
   return (
-    <div className="relative" ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-all ${
-          isOpen ? 'border-[#e63946] bg-red-50' : 'border-gray-200 bg-white hover:border-gray-300'
-        }`}
+    <div className="min-h-screen bg-gray-50/50">
+      <DashboardHeader
+        titulo="Marketing"
+        subtitulo="Meta Ads Performance · Andromeda"
+        icono={<Megaphone className="w-5 h-5 text-white" />}
+        periodo={periodo}
+        onPeriodoChange={setPeriodo}
+        onExport={handleExport}
+        onRefresh={() => loadData()}
+        isLoading={isLoading}
       >
-        <BarChart3 className="w-4 h-4 text-gray-500" />
-        <span className="font-medium text-gray-900">{cursoActual?.nombre}</span>
-        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">{cursoActual?.campañas}</span>
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
+        {/* Badge de estructura + frescura */}
+        {estructura && (
+          <div className="mt-2 flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+              <Layers className="w-3 h-3" />
+              <span>{estructura.resumen.campanas_activas} campañas · {estructura.resumen.adsets_activos} grupos · {estructura.resumen.ads_activos} anuncios activos</span>
+            </div>
+            {lastSync && (
+              <div className="flex items-center gap-1 text-[10px] text-slate-400">
+                <Clock className="w-3 h-3" />
+                <span>Sync: {new Date(lastSync).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 ml-0.5" />
+              </div>
+            )}
+          </div>
+        )}
+      </DashboardHeader>
 
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
-          <div className="p-3 border-b border-gray-100">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar curso..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#e63946] focus:ring-2 focus:ring-red-100"
-                autoFocus
-              />
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <X className="w-4 h-4" />
-                </button>
-              )}
+      <div className="p-3 sm:p-4 lg:p-6 space-y-4">
+
+        {/* ═══ SECCIÓN 1: KPIs ═══ */}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 sm:gap-3">
+          {isLoading ? (
+            Array(6).fill(0).map((_, i) => (
+              <div key={i} className="bg-white rounded-xl p-3 sm:p-4 animate-pulse">
+                <div className="h-8 bg-gray-200 rounded mb-2" />
+                <div className="h-4 bg-gray-200 rounded w-2/3" />
+              </div>
+            ))
+          ) : (
+            kpiCards.map((kpi, i) => {
+              const delta = kpi.delta;
+              const hasDelta = delta !== null && delta !== undefined;
+              // Para spend, CPL, CPC: subir es malo (invertDelta)
+              const isGood = hasDelta ? (kpi.invertDelta ? delta < 0 : delta > 0) : false;
+              const isBad = hasDelta ? (kpi.invertDelta ? delta > 0 : delta < 0) : false;
+
+              return (
+                <div key={i} className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${kpi.color}15` }}>
+                      <kpi.icon className="w-[18px] h-[18px]" style={{ color: kpi.color }} />
+                    </div>
+                    {hasDelta && (
+                      <div className={`flex items-center gap-0.5 text-[10px] font-semibold ${isGood ? 'text-green-600' : isBad ? 'text-red-500' : 'text-slate-400'}`}>
+                        {delta > 0 ? <ArrowUpRight className="w-3 h-3" /> : delta < 0 ? <ArrowDownRight className="w-3 h-3" /> : null}
+                        {delta !== null ? `${Math.abs(delta)}%` : ''}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">{kpi.label}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-0.5">{kpi.value}</p>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ═══ SECCIÓN 2: Evolución + Agente IA ═══ */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Evolución · Inversión vs Consultas WA<SectionTooltip text="Muestra la inversión en dólares y las consultas de WhatsApp generadas por día, semana o mes según el período seleccionado." /></h3>
+            {isLoading ? (
+              <div className="h-52 bg-gray-100 rounded-lg animate-pulse" />
+            ) : evolucion.length === 0 ? (
+              <div className="h-52 flex items-center justify-center text-xs text-slate-400">Sin datos para el período seleccionado</div>
+            ) : (
+              <div className="h-52">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={evolucion} barGap={1}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="periodo" tick={{ fontSize: 10 }}
+                      tickFormatter={(v) => {
+                        if (v?.includes('-')) {
+                          const p = v.split('-');
+                          if (p.length === 3) return `${p[2]}/${p[1]}`;
+                          return MESES[parseInt(p[1]) - 1] || v;
+                        }
+                        return v;
+                      }}
+                    />
+                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+                    <Tooltip
+                      contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                      formatter={(value: number, name: string) => {
+                        if (name === 'spend') return [formatUSD(value), 'Inversión'];
+                        if (name === 'conversaciones_wa') return [formatNumber(value), 'Consultas WA'];
+                        return [value, name];
+                      }}
+                      labelFormatter={(v) => {
+                        if (v && String(v).includes('-')) {
+                          const p = String(v).split('-');
+                          if (p.length === 3) return `${p[2]}/${p[1]}/${p[0]}`;
+                          return `${MESES[parseInt(p[1]) - 1]} ${p[0]}`;
+                        }
+                        return v;
+                      }}
+                    />
+                    <Bar yAxisId="left" dataKey="spend" fill={SLATE_700} radius={[3, 3, 0, 0]} opacity={0.85} name="spend" />
+                    <Bar yAxisId="right" dataKey="conversaciones_wa" fill={PSI_RED} radius={[3, 3, 0, 0]} opacity={0.7} name="conversaciones_wa" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            <div className="flex items-center justify-center gap-6 mt-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: SLATE_700 }} />
+                <span className="text-[10px] text-slate-500">Inversión (USD)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: PSI_RED }} />
+                <span className="text-[10px] text-slate-500">Consultas WA</span>
+              </div>
             </div>
           </div>
 
-          <div className="max-h-80 overflow-y-auto">
-            {cursosFiltrados.length > 0 ? (
-              cursosFiltrados.map((curso, index) => (
-                <button
-                  key={curso.id}
-                  onClick={() => { onSelect(curso.id); setIsOpen(false); setSearch(''); }}
-                  className={`w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors ${
-                    index === 0 ? 'border-b border-gray-100' : ''
-                  } ${seleccionado === curso.id ? 'bg-red-50' : ''}`}
-                >
-                  <div className="flex items-center gap-3">
-                    {curso.id === 'todos' ? (
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center">
-                        <BarChart3 className="w-4 h-4 text-white" />
-                      </div>
-                    ) : (
-                      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                        <span className="text-xs font-bold text-gray-600">{curso.nombre.substring(0, 2).toUpperCase()}</span>
-                      </div>
-                    )}
-                    <div className="text-left">
-                      <p className={`text-sm font-medium ${seleccionado === curso.id ? 'text-[#e63946]' : 'text-gray-900'}`}>{curso.nombre}</p>
-                      <p className="text-xs text-gray-500">{curso.campañas} campañas activas</p>
-                    </div>
+          {/* Agente IA */}
+          <AgenteIAPanel endpoint="/tableros/api/marketing-agent" />
+        </div>
+
+        {/* ═══ SECCIÓN 3: Campañas ═══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4">
+            Rendimiento por Campaña
+            <SectionTooltip text="Campañas activas con inversión en el período. Hacé clic en una campaña para ver sus grupos de anuncios. Las campañas sin inversión se ocultan." />
+          </h3>
+          {isLoading ? (
+            <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
+          ) : (() => {
+            const campanasConSpend = campanas.filter(c => c.spend > 0);
+            const campanasResto = campanas.filter(c => c.spend === 0);
+            if (campanasConSpend.length === 0) return <p className="text-xs text-slate-400 text-center py-8">Sin campañas con inversión en el período</p>;
+            return (
+              <div className="space-y-4">
+                {/* Gráfico de barras horizontales */}
+                <div className="h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={campanasConSpend.slice(0, 8)} layout="vertical" barGap={2} margin={{ left: 10, right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="nombre" tick={{ fontSize: 10 }} width={180}
+                        tickFormatter={(v: string) => v.length > 28 ? v.substring(0, 28) + '...' : v} />
+                      <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                        formatter={(value: number, name: string) => {
+                          if (name === 'spend') return [formatUSD(value), 'Inversión'];
+                          if (name === 'conversaciones_wa') return [formatNumber(value), 'Consultas WA'];
+                          return [value, name];
+                        }} />
+                      <Bar dataKey="spend" fill={SLATE_700} radius={[0, 3, 3, 0]} barSize={14} name="spend" />
+                      <Bar dataKey="conversaciones_wa" fill={PSI_RED} radius={[0, 3, 3, 0]} barSize={14} name="conversaciones_wa" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex items-center justify-center gap-6">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: SLATE_700 }} />
+                    <span className="text-[10px] text-slate-500">Inversión (USD)</span>
                   </div>
-                  {seleccionado === curso.id && <Check className="w-5 h-5 text-[#e63946]" />}
-                </button>
-              ))
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: PSI_RED }} />
+                    <span className="text-[10px] text-slate-500">Consultas WA</span>
+                  </div>
+                </div>
+
+                {/* Tabla compacta */}
+                <div className="space-y-0.5">
+                  <div className="grid grid-cols-8 gap-2 px-3 py-2 text-[9px] font-semibold text-slate-400 uppercase tracking-wider">
+                    <div className="col-span-3">Campaña</div>
+                    <div className="text-right">Inversión</div>
+                    <div className="text-right">Consultas</div>
+                    <div className="text-right">CPL</div>
+                    <div className="text-right">CTR</div>
+                    <div className="text-right">Estructura</div>
+                  </div>
+                  {campanasConSpend.map((camp) => {
+                    const isExpanded = expandedCampaign === camp.campaign_id;
+                    const campAdsets = adsets[camp.campaign_id] || [];
+                    return (
+                      <div key={camp.campaign_id}>
+                        <div onClick={() => toggleCampaign(camp.campaign_id)}
+                          className={`grid grid-cols-8 gap-2 px-3 py-2 rounded-lg cursor-pointer transition-all text-xs ${isExpanded ? 'bg-slate-50 border border-slate-200' : 'hover:bg-slate-50'}`}>
+                          <div className="col-span-3 flex items-center gap-2 min-w-0">
+                            {isExpanded ? <ChevronDown className="w-3 h-3 text-slate-400 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-slate-400 flex-shrink-0" />}
+                            <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${camp.status === 'ACTIVE' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                            <span className="truncate font-medium text-slate-900">{camp.nombre}</span>
+                          </div>
+                          <div className="text-right font-medium text-slate-900">{formatUSD(camp.spend)}</div>
+                          <div className="text-right font-medium" style={{ color: camp.conversaciones_wa > 0 ? PSI_RED : SLATE_500 }}>{formatNumber(camp.conversaciones_wa)}</div>
+                          <div className="text-right text-slate-700">{camp.cpl !== null ? formatUSD(camp.cpl) : '—'}</div>
+                          <div className="text-right text-slate-700">{formatPct(camp.ctr)}</div>
+                          <div className="text-right text-slate-400 text-[10px]">{camp.adsets_count}g · {camp.ads_count}a</div>
+                        </div>
+                        {isExpanded && (
+                          <div className="ml-8 mt-1 mb-2 space-y-1">
+                            {loadingAdsets === camp.campaign_id ? (
+                              <div className="py-3 text-center text-[10px] text-slate-400">Cargando grupos...</div>
+                            ) : campAdsets.length === 0 ? (
+                              <div className="py-3 text-center text-[10px] text-slate-400">Sin ad sets en este período</div>
+                            ) : (
+                              <>
+                                <div className="grid grid-cols-7 gap-2 px-3 py-1 text-[9px] font-semibold text-slate-400 uppercase">
+                                  <div className="col-span-3">Grupo de Anuncios</div>
+                                  <div className="text-right">Inversión</div>
+                                  <div className="text-right">Consultas</div>
+                                  <div className="text-right">CPL</div>
+                                  <div className="text-right">Estado</div>
+                                </div>
+                                {campAdsets.map((as) => (
+                                  <div key={as.adset_id} className="grid grid-cols-7 gap-2 px-3 py-2 rounded-md hover:bg-slate-50 text-[11px]">
+                                    <div className="col-span-3 flex items-center gap-1.5 min-w-0">
+                                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${as.status === 'ACTIVE' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                                      <span className="truncate text-slate-800">{as.nombre}</span>
+                                    </div>
+                                    <div className="text-right text-slate-700">{formatUSD(as.spend)}</div>
+                                    <div className="text-right font-medium" style={{ color: as.conversaciones_wa > 0 ? PSI_RED : SLATE_500 }}>{formatNumber(as.conversaciones_wa)}</div>
+                                    <div className="text-right text-slate-700">{as.cpl !== null ? formatUSD(as.cpl) : '—'}</div>
+                                    <div className="text-right">
+                                      {isLearning(as.learning_phase_info) ? (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium">Learning</span>
+                                      ) : (
+                                        <span className={`text-[9px] ${as.status === 'ACTIVE' ? 'text-emerald-600' : 'text-slate-400'}`}>{as.status === 'ACTIVE' ? 'Activo' : 'Pausado'}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {campanasResto.length > 0 && (
+                    <p className="text-[10px] text-slate-400 text-center pt-2">{campanasResto.length} campañas sin inversión en el período</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+
+        {/* ═══ SECCIÓN 3.5: Embudo de Conversión ═══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4">
+            Embudo de Conversión
+            <SectionTooltip text="Muestra el recorrido completo: desde que alguien ve el anuncio hasta que se inscribe y paga. Los datos de inscripción y revenue vienen del cruce con la API de PSI." />
+          </h3>
+          {isLoading || !embudo ? (
+            <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
+          ) : (() => {
+            const e = embudo.embudo;
+            const steps = [
+              { label: 'Impresiones', value: e.impresiones, color: SLATE_500 },
+              { label: 'Clicks', value: e.clicks, color: SLATE_600 },
+              { label: 'Consultas WA', value: e.conversaciones_wa, color: PSI_RED },
+              { label: 'Leads CTWA', value: e.leads_ctwa, color: '#d97706' },
+              { label: 'Inscriptos', value: e.inscriptos, color: '#16a34a' },
+            ];
+            const maxVal = steps[0].value || 1;
+
+            // Calcular ROAS y métricas derivadas
+            const spend = kpis?.actual.spend || 0;
+            const roas = spend > 0 ? (e.revenue_total / spend) : 0;
+            const cpa = e.inscriptos > 0 ? (spend / e.inscriptos) : null;
+
+            return (
+              <div className="space-y-4">
+                {/* Funnel visual */}
+                <div className="space-y-1.5">
+                  {steps.map((step, i) => {
+                    const widthPct = Math.max((step.value / maxVal) * 100, 4);
+                    const prevValue = i > 0 ? steps[i - 1].value : null;
+                    const convRate = prevValue && prevValue > 0 ? ((step.value / prevValue) * 100).toFixed(1) : null;
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-24 text-right">
+                          <p className="text-[10px] text-slate-500">{step.label}</p>
+                        </div>
+                        <div className="flex-1 relative">
+                          <div className="h-7 bg-slate-50 rounded-md overflow-hidden">
+                            <div
+                              className="h-full rounded-md flex items-center px-2 transition-all duration-700"
+                              style={{ width: `${widthPct}%`, backgroundColor: step.color, opacity: 0.85 }}
+                            >
+                              <span className="text-[11px] font-bold text-white whitespace-nowrap">
+                                {formatNumber(step.value)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="w-14 text-right">
+                          {convRate && (
+                            <span className="text-[10px] text-slate-400">{convRate}%</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* KPIs del embudo */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+                  <div className="text-center p-2 rounded-lg bg-emerald-50">
+                    <p className="text-[9px] text-emerald-600 font-medium uppercase">Revenue Atribuido</p>
+                    <p className="text-lg font-bold text-emerald-700">{formatUSD(e.revenue_total)}</p>
+                  </div>
+                  <div className="text-center p-2 rounded-lg bg-slate-50">
+                    <p className="text-[9px] text-slate-500 font-medium uppercase">ROAS</p>
+                    <p className={`text-lg font-bold ${roas >= 1 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {roas > 0 ? `${roas.toFixed(1)}x` : '—'}
+                    </p>
+                  </div>
+                  <div className="text-center p-2 rounded-lg bg-slate-50">
+                    <p className="text-[9px] text-slate-500 font-medium uppercase">CPA Real</p>
+                    <p className="text-lg font-bold text-slate-900">{cpa !== null ? formatUSD(cpa) : '—'}</p>
+                  </div>
+                  <div className="text-center p-2 rounded-lg bg-slate-50">
+                    <p className="text-[9px] text-slate-500 font-medium uppercase">Click → Inscripción</p>
+                    <p className="text-lg font-bold text-slate-900">
+                      {e.inscriptos > 0 && e.clicks > 0 ? `${((e.inscriptos / e.clicks) * 100).toFixed(3)}%` : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {!embudo.tiene_datos_cruce && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg border border-amber-200">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                    <p className="text-[10px] text-amber-700">Los datos de leads CTWA, inscriptos y revenue requieren el cruce con la API de PSI. Verificá que la sincronización esté activa.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* ═══ SECCIÓN 4: Salud de Creatividades ═══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+          <h3 className="text-sm font-semibold text-slate-900 mb-4">
+            Salud de Creatividades
+            <SectionTooltip text="Cada anuncio se clasifica según su rendimiento: Winner (10+ consultas al CPL objetivo), Testing (sin datos suficientes), Fatigado (frecuencia alta + CTR cayendo) o Pausar (gasta sin generar consultas)." />
+          </h3>
+          {isLoading ? (
+            <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
+          ) : adsPerformance.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-8">Sin anuncios con datos en el período</p>
+          ) : (() => {
+            const adsWithHealth = adsPerformance.map(ad => ({ ...ad, health: getAdHealth(ad) }));
+            const counts = { winner: 0, testing: 0, fatigued: 0, dead: 0 };
+            adsWithHealth.forEach(a => { counts[a.health as keyof typeof counts]++; });
+            const total = adsWithHealth.length;
+            const top5 = adsWithHealth.slice(0, 5);
+
+            const donutData = Object.entries(counts)
+              .filter(([_, v]) => v > 0)
+              .map(([key, value]) => ({ name: HEALTH_CONFIG[key].label, value, key }));
+
+            const HEALTH_COLORS: Record<string, string> = { winner: '#16a34a', testing: '#d97706', fatigued: '#ea580c', dead: '#dc2626' };
+
+            return (
+              <div className="space-y-4">
+                {/* Resumen visual: donut + conteos */}
+                <div className="flex items-center gap-6">
+                  <div className="w-32 h-32 flex-shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RechartsPie>
+                        <Pie data={donutData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={28} outerRadius={50} paddingAngle={3}>
+                          {donutData.map((d, i) => <Cell key={i} fill={HEALTH_COLORS[d.key]} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                      </RechartsPie>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex-1 grid grid-cols-2 gap-3">
+                    {Object.entries(counts).map(([key, value]) => {
+                      const cfg = HEALTH_CONFIG[key];
+                      const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+                      return (
+                        <div key={key} className={`p-3 rounded-lg border ${cfg.border} ${cfg.bg}`}>
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[11px] font-semibold ${cfg.color}`}>{cfg.label}</span>
+                            <span className="text-lg font-bold text-slate-900">{value}</span>
+                          </div>
+                          <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: HEALTH_COLORS[key] }} />
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-1">{pct}% del total</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Top 5 anuncios */}
+                <div>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Top 5 por inversión</p>
+                  <div className="space-y-1">
+                    {top5.map((ad) => {
+                      const cfg = HEALTH_CONFIG[ad.health];
+                      const trend = adsTrends.find(t => t.ad_id === ad.ad_id);
+                      return (
+                        <div key={ad.ad_id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors">
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${cfg.color} ${cfg.bg} border ${cfg.border} flex-shrink-0`}>{cfg.label}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-slate-900 truncate">{ad.ad_name}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{ad.campaign_name}</p>
+                          </div>
+                          <div className="flex items-center gap-4 flex-shrink-0 text-[11px]">
+                            <div className="text-right w-14">
+                              <p className="text-[9px] text-slate-400">Inv.</p>
+                              <p className="font-semibold text-slate-800">{formatUSD(ad.spend)}</p>
+                            </div>
+                            <div className="text-right w-12">
+                              <p className="text-[9px] text-slate-400">Cons.</p>
+                              <p className="font-semibold" style={{ color: ad.conversaciones_wa > 0 ? PSI_RED : SLATE_500 }}>{ad.conversaciones_wa}</p>
+                            </div>
+                            <div className="text-right w-12">
+                              <p className="text-[9px] text-slate-400">CPL</p>
+                              <p className="font-semibold text-slate-800">{ad.cpl !== null ? formatUSD(ad.cpl) : '—'}</p>
+                            </div>
+                            <div className="text-right w-10">
+                              <p className="text-[9px] text-slate-400">Freq.</p>
+                              <p className={`font-semibold ${ad.frequency > 3.5 ? 'text-orange-600' : 'text-slate-800'}`}>{ad.frequency?.toFixed(1) || '—'}</p>
+                            </div>
+                            {trend && trend.fatigue_score !== 'bajo' && (
+                              <div className="flex items-center gap-1">
+                                <Activity className="w-3 h-3 text-orange-500" />
+                                <span className="text-[9px] text-orange-500">Fatigue</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {adsPerformance.length > 5 && (
+                    <p className="text-[10px] text-slate-400 text-center pt-2">+{adsPerformance.length - 5} anuncios más</p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* ═══ SECCIÓN 5: Comparativa y Distribución ═══ */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Distribución de Spend */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Distribución de Inversión<SectionTooltip text="Porcentaje de la inversión total que se destina a cada campaña. Permite detectar si la plata está concentrada o dispersa." /></h3>
+            {isLoading ? (
+              <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
+            ) : distribucion.filter(d => d.spend > 0).length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-xs text-slate-400">Sin datos</div>
             ) : (
-              <div className="px-4 py-8 text-center text-gray-500">
-                <Search className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No se encontraron cursos</p>
+              <div className="flex items-center gap-4">
+                <div className="w-40 h-40">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={distribucion.filter(d => d.spend > 0)}
+                        dataKey="spend"
+                        nameKey="nombre"
+                        cx="50%" cy="50%"
+                        innerRadius={30} outerRadius={60}
+                        paddingAngle={2}
+                      >
+                        {distribucion.filter(d => d.spend > 0).map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => formatUSD(v)} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  {distribucion.filter(d => d.spend > 0).map((d, i) => (
+                    <div key={d.campaign_id} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <span className="text-[11px] text-slate-700 flex-1 truncate">{d.nombre}</span>
+                      <span className="text-[11px] font-semibold text-slate-900">{d.spend_pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Distribución de Conversaciones */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+            <h3 className="text-sm font-semibold text-slate-900 mb-4">Distribución de Consultas WA<SectionTooltip text="Porcentaje de consultas de WhatsApp que genera cada campaña. Si una campaña gasta mucho pero genera pocas consultas, hay desbalance." /></h3>
+            {isLoading ? (
+              <div className="h-48 bg-gray-100 rounded-lg animate-pulse" />
+            ) : distribucion.filter(d => d.conversaciones_wa > 0).length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-xs text-slate-400">Sin conversaciones en el período</div>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className="w-40 h-40">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RechartsPie>
+                      <Pie
+                        data={distribucion.filter(d => d.conversaciones_wa > 0)}
+                        dataKey="conversaciones_wa"
+                        nameKey="nombre"
+                        cx="50%" cy="50%"
+                        innerRadius={30} outerRadius={60}
+                        paddingAngle={2}
+                      >
+                        {distribucion.filter(d => d.conversaciones_wa > 0).map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => formatNumber(v)} contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                    </RechartsPie>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  {distribucion.filter(d => d.conversaciones_wa > 0).map((d, i) => (
+                    <div key={d.campaign_id} className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                      <span className="text-[11px] text-slate-700 flex-1 truncate">{d.nombre}</span>
+                      <span className="text-[11px] font-semibold" style={{ color: PSI_RED }}>{d.conversaciones_pct}%</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
-      )}
-    </div>
-  );
-};
 
-const KPICard = ({ title, value, delta, icon: Icon, color, sparklineData }: {
-  title: string; value: string; delta: number; icon: any; color: string; sparklineData: number[];
-}) => {
-  const isPositive = delta >= 0;
-  const colorClasses: Record<string, { bg: string; icon: string; spark: string }> = {
-    emerald: { bg: 'bg-emerald-50', icon: 'text-emerald-600', spark: '#10b981' },
-    blue: { bg: 'bg-blue-50', icon: 'text-blue-600', spark: '#3b82f6' },
-    amber: { bg: 'bg-amber-50', icon: 'text-amber-600', spark: '#f59e0b' },
-    purple: { bg: 'bg-purple-50', icon: 'text-purple-600', spark: '#8b5cf6' },
-  };
-  const colors = colorClasses[color] || colorClasses.blue;
-
-  return (
-    <div className="bg-white/95 backdrop-blur-xl rounded-2xl p-4 shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100/50 group">
-      <div className="flex items-start justify-between mb-2">
-        <div className={`p-2 rounded-xl ${colors.bg} group-hover:scale-110 transition-transform`}>
-          <Icon className={`w-4 h-4 ${colors.icon}`} />
-        </div>
-        <div className={`flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-          isPositive ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'
-        }`}>
-          {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-          {Math.abs(delta)}%
-        </div>
-      </div>
-      <p className="text-xs text-gray-500 mb-1">{title}</p>
-      <p className="text-xl font-bold text-gray-900">{value}</p>
-      <div className="mt-2 h-5">
-        <Sparkline data={sparklineData} color={colors.spark} height={20} />
-      </div>
-    </div>
-  );
-};
-
-const CampaignRow = ({ campaña, index }: { campaña: any; index: number }) => {
-  const isActive = campaña.estado === 'activa';
-  return (
-    <div className={`grid grid-cols-7 gap-3 p-3 rounded-xl transition-all duration-200 hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
-      <div className="col-span-2 flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-        <span className="text-sm font-medium text-gray-900 truncate">{campaña.nombre}</span>
-      </div>
-      <div className="text-sm text-gray-600 flex items-center">{formatCurrency(campaña.invertido)}</div>
-      <div className="text-sm font-semibold text-gray-900 flex items-center">{campaña.leads}</div>
-      <div className="text-sm text-gray-600 flex items-center">{formatCurrency(campaña.cpl)}</div>
-      <div className="text-sm text-gray-600 flex items-center">{campaña.ctr}%</div>
-      <div className="text-sm text-gray-600 flex items-center">{(campaña.impresiones / 1000).toFixed(0)}K</div>
-    </div>
-  );
-};
-
-const ComparativaRow = ({ curso, index, onSelect }: { curso: any; index: number; onSelect: (id: string) => void }) => {
-  const colors = ['#e63946', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
-  const color = colors[index % colors.length];
-  return (
-    <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-50 transition-all cursor-pointer group" onClick={() => onSelect(curso.id)}>
-      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-medium text-gray-900 text-sm">{curso.curso}</span>
-          <span className="text-xs text-gray-500">{curso.leads} leads</span>
-        </div>
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${curso.porcentaje}%`, backgroundColor: color }} />
-        </div>
-      </div>
-      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600 group-hover:translate-x-1 transition-all" />
-    </div>
-  );
-};
-
-const CustomTooltipScatter = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    return (
-      <div className="bg-white p-3 rounded-xl shadow-lg border border-gray-100">
-        <p className="font-semibold text-gray-900">{data.curso}</p>
-        <p className="text-sm text-gray-600">Inversión: {formatCurrency(data.inversion * 1000)}</p>
-        <p className="text-sm text-gray-600">Leads: {data.leads}</p>
-        <p className="text-sm text-gray-600">CPL: {formatCurrency(data.cpl)}</p>
-      </div>
-    );
-  }
-  return null;
-};
-
-const ComparativaTemporalCard = ({
-  titulo,
-  actual,
-  anterior,
-  añoAnterior,
-  formato = 'numero',
-  invertirColor = false
-}: {
-  titulo: string;
-  actual: number;
-  anterior: number;
-  añoAnterior: number;
-  formato?: 'moneda' | 'numero';
-  invertirColor?: boolean;
-}) => {
-  const cambioMes = ((actual - anterior) / anterior * 100).toFixed(1);
-  const cambioAño = ((actual - añoAnterior) / añoAnterior * 100).toFixed(1);
-  const maxVal = Math.max(actual, anterior, añoAnterior);
-
-  const formatVal = (v: number) => formato === 'moneda' ? formatCurrency(v) : v.toLocaleString();
-
-  const getColor = (cambio: number) => {
-    if (invertirColor) {
-      return cambio <= 0 ? 'text-emerald-600' : 'text-red-600';
-    }
-    return cambio >= 0 ? 'text-emerald-600' : 'text-red-600';
-  };
-
-  return (
-    <div className="bg-gray-50 rounded-xl p-3">
-      <p className="text-xs font-medium text-gray-500 mb-3">{titulo}</p>
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="w-16 text-xs text-gray-500">Actual</div>
-          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-[#e63946] rounded-full" style={{ width: `${(actual / maxVal) * 100}%` }} />
-          </div>
-          <div className="w-16 text-right text-sm font-semibold text-gray-900">{formatVal(actual)}</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-16 text-xs text-gray-500">Mes ant.</div>
-          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-[#f59e0b] rounded-full" style={{ width: `${(anterior / maxVal) * 100}%` }} />
-          </div>
-          <div className="w-16 text-right text-sm text-gray-600">{formatVal(anterior)}</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-16 text-xs text-gray-500">Año ant.</div>
-          <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-[#9ca3af] rounded-full" style={{ width: `${(añoAnterior / maxVal) * 100}%` }} />
-          </div>
-          <div className="w-16 text-right text-sm text-gray-600">{formatVal(añoAnterior)}</div>
-        </div>
-      </div>
-      <div className="flex justify-between mt-3 pt-2 border-t border-gray-200">
-        <span className={`text-xs font-medium ${getColor(parseFloat(cambioMes))}`}>
-          {parseFloat(cambioMes) >= 0 ? '+' : ''}{cambioMes}% vs mes
-        </span>
-        <span className={`text-xs font-medium ${getColor(parseFloat(cambioAño))}`}>
-          {parseFloat(cambioAño) >= 0 ? '+' : ''}{cambioAño}% vs año
-        </span>
-      </div>
-    </div>
-  );
-};
-
-// ============================================
-// PÁGINA PRINCIPAL
-// ============================================
-
-export default function MarketingPage() {
-  const [cursoSeleccionado, setCursoSeleccionado] = useState('todos');
-  const [periodo, setPeriodo] = useState('mes');
-  const [isLoading, setIsLoading] = useState(false);
-
-  const datos = datosPorCurso[cursoSeleccionado] || defaultDatos;
-  const cursoInfo = cursosData.find(c => c.id === cursoSeleccionado);
-  const scatterColors = ['#e63946', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
-
-  const handleRefresh = () => {
-    setIsLoading(true);
-    setTimeout(() => setIsLoading(false), 1500);
-  };
-
-  const handleExport = (formato: 'excel' | 'csv' | 'pdf') => {
-    const cursoNombre = cursoInfo?.nombre || 'todos';
-    const fecha = new Date().toISOString().split('T')[0];
-    
-    if (formato === 'csv') {
-      // Generar CSV
-      const headers = ['Métrica', 'Valor', 'Cambio %'];
-      const rows = [
-        ['Inversión', datos.inversion.toString(), `${datos.deltaInversion}%`],
-        ['Leads', datos.leads.toString(), `${datos.deltaLeads}%`],
-        ['CPL', datos.cpl.toString(), `${datos.deltaCpl}%`],
-        ['ROAS', `${datos.roas}%`, `${datos.deltaRoas}%`],
-        ['CTR', `${datos.ctr}%`, ''],
-        ['CPC', datos.cpc.toString(), ''],
-        ['Impresiones', datos.impresiones.toString(), ''],
-      ];
-      
-      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `marketing_${cursoNombre}_${fecha}.csv`;
-      link.click();
-    } else if (formato === 'excel') {
-      // Para Excel real necesitaríamos xlsx library, por ahora CSV con extensión xlsx
-      const headers = ['Métrica', 'Valor', 'Cambio %'];
-      const rows = [
-        ['Inversión', datos.inversion.toString(), `${datos.deltaInversion}%`],
-        ['Leads', datos.leads.toString(), `${datos.deltaLeads}%`],
-        ['CPL', datos.cpl.toString(), `${datos.deltaCpl}%`],
-        ['ROAS', `${datos.roas}%`, `${datos.deltaRoas}%`],
-        ['CTR', `${datos.ctr}%`, ''],
-        ['CPC', datos.cpc.toString(), ''],
-        ['Impresiones', datos.impresiones.toString(), ''],
-      ];
-      
-      const csvContent = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
-      const blob = new Blob([csvContent], { type: 'application/vnd.ms-excel' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `marketing_${cursoNombre}_${fecha}.xlsx`;
-      link.click();
-    } else if (formato === 'pdf') {
-      // Para PDF real necesitaríamos jspdf, por ahora abrimos ventana de impresión
-      window.print();
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-gray-50 to-gray-100">
-      {/* Header con DashboardHeader */}
-      <DashboardHeader
-        titulo="Marketing"
-        subtitulo="Meta Ads Performance"
-        icono={<Megaphone className="w-5 h-5 text-white" />}
-        periodo={periodo}
-        onPeriodoChange={setPeriodo}
-        onRefresh={handleRefresh}
-        onExport={handleExport}
-        isLoading={isLoading}
-      >
-        <CursoSelector lista={cursosData} seleccionado={cursoSeleccionado} onSelect={setCursoSeleccionado} />
-      </DashboardHeader>
-
-      <div className="p-4 space-y-4">
-        {/* KPIs Principales */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <KPICard title="Inversión" value={formatCurrency(datos.inversion)} delta={datos.deltaInversion} icon={DollarSign} color="emerald" sparklineData={datos.evolucion.map(e => e.inversion)} />
-          <KPICard title="Leads" value={datos.leads.toString()} delta={datos.deltaLeads} icon={Users} color="blue" sparklineData={datos.evolucion.map(e => e.leads)} />
-          <KPICard title="CPL" value={formatCurrency(datos.cpl)} delta={datos.deltaCpl} icon={Target} color="amber" sparklineData={datos.evolucion.map(e => e.inversion / (e.leads || 1))} />
-          <KPICard title="ROAS" value={`${datos.roas}%`} delta={datos.deltaRoas} icon={TrendingUp} color="purple" sparklineData={[280, 295, 310, 298, 320, datos.roas]} />
-        </div>
-
-        {/* KPIs Secundarios */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 text-gray-500 mb-1"><MousePointer className="w-3.5 h-3.5" /><span className="text-xs">CTR</span></div>
-            <p className="text-lg font-bold text-gray-900">{datos.ctr}%</p>
-          </div>
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 text-gray-500 mb-1"><DollarSign className="w-3.5 h-3.5" /><span className="text-xs">CPC</span></div>
-            <p className="text-lg font-bold text-gray-900">{formatCurrency(datos.cpc)}</p>
-          </div>
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 text-gray-500 mb-1"><Eye className="w-3.5 h-3.5" /><span className="text-xs">Impresiones</span></div>
-            <p className="text-lg font-bold text-gray-900">{(datos.impresiones / 1000).toFixed(0)}K</p>
-          </div>
-        </div>
-
-        {/* Fila 1: Evolución + Comparativa Temporal */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Evolución General */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900 text-sm">Evolución {cursoSeleccionado !== 'todos' ? cursoInfo?.nombre : 'General'}</h3>
-              <div className="flex items-center gap-3 text-xs">
-                <div className="flex items-center gap-1"><div className="w-2.5 h-0.5 bg-[#e63946] rounded-full" /><span className="text-gray-500">Inversión</span></div>
-                <div className="flex items-center gap-1"><div className="w-2.5 h-0.5 bg-[#3b82f6] rounded-full" /><span className="text-gray-500">Leads</span></div>
-              </div>
-            </div>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={datos.evolucion}>
-                  <defs>
-                    <linearGradient id="colorInversion" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e63946" stopOpacity={0.2}/><stop offset="95%" stopColor="#e63946" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <XAxis dataKey="mes" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                  <YAxis yAxisId="inversion" orientation="left" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(v) => `$${(v/1000).toFixed(0)}K`} width={45} />
-                  <YAxis yAxisId="leads" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} width={30} />
-                  <Tooltip contentStyle={{ backgroundColor: 'white', border: 'none', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: '12px' }} formatter={(value: any, name: string) => [name === 'inversion' ? formatCurrency(value) : value, name === 'inversion' ? 'Inversión' : 'Leads']} />
-                  <Area yAxisId="inversion" type="monotone" dataKey="inversion" stroke="#e63946" strokeWidth={2} fill="url(#colorInversion)" />
-                  <Area yAxisId="leads" type="monotone" dataKey="leads" stroke="#3b82f6" strokeWidth={2} fill="url(#colorLeads)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Comparativa Temporal */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 mb-4">
-              <Calendar className="w-4 h-4 text-gray-400" />
-              <h3 className="font-semibold text-gray-900 text-sm">Comparativa Temporal</h3>
-            </div>
-            <div className="space-y-4">
-              <ComparativaTemporalCard titulo="INVERSIÓN" actual={comparativaTemporal.inversion.actual} anterior={comparativaTemporal.inversion.anterior} añoAnterior={comparativaTemporal.inversion.añoAnterior} formato="moneda" />
-              <ComparativaTemporalCard titulo="LEADS" actual={comparativaTemporal.leads.actual} anterior={comparativaTemporal.leads.anterior} añoAnterior={comparativaTemporal.leads.añoAnterior} formato="numero" />
-              <ComparativaTemporalCard titulo="CPL" actual={comparativaTemporal.cpl.actual} anterior={comparativaTemporal.cpl.anterior} añoAnterior={comparativaTemporal.cpl.añoAnterior} formato="moneda" invertirColor={true} />
-            </div>
-          </div>
-        </div>
-
-        {/* Fila 2: Rendimiento por Curso / Scatter */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {cursoSeleccionado === 'todos' ? (
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-                  <PieChart className="w-4 h-4 text-gray-400" />
-                  Rendimiento por Curso
-                </h3>
-                <span className="text-xs text-gray-500">Click para detalle</span>
-              </div>
-              <div className="space-y-1">
-                {comparativaCursos.map((curso, index) => (
-                  <ComparativaRow key={curso.curso} curso={curso} index={index} onSelect={setCursoSeleccionado} />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-4 border-b border-gray-100">
-                <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-gray-400" />
-                  Campañas de {cursoInfo?.nombre}
-                </h3>
-              </div>
-              <div className="grid grid-cols-7 gap-2 p-2 bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <div className="col-span-2 pl-2">Campaña</div><div>Invertido</div><div>Leads</div><div>CPL</div><div>CTR</div><div>Impr.</div>
-              </div>
-              <div className="max-h-48 overflow-y-auto">
-                {datos.campañas.length > 0 ? datos.campañas.map((campaña, index) => (
-                  <CampaignRow key={campaña.nombre} campaña={campaña} index={index} />
-                )) : <div className="p-6 text-center text-gray-500 text-sm">No hay campañas</div>}
-              </div>
-            </div>
-          )}
-
-          {/* Scatter */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-                <GitCompare className="w-4 h-4 text-gray-400" />
-                Eficiencia por Curso
-              </h3>
-              <span className="text-xs text-gray-500">Inversión vs Leads</span>
-            </div>
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
-                  <XAxis type="number" dataKey="inversion" name="Inversión" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} tickFormatter={(v) => `$${v}K`} domain={[0, 'dataMax + 50']} />
-                  <YAxis type="number" dataKey="leads" name="Leads" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#9ca3af' }} domain={[0, 'dataMax + 20']} width={35} />
-                  <ZAxis type="number" dataKey="cpl" range={[100, 500]} />
-                  <Tooltip content={<CustomTooltipScatter />} />
-                  <Scatter data={scatterData} shape="circle">
-                    {scatterData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={scatterColors[index % scatterColors.length]} fillOpacity={0.8} />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2 justify-center">
-              {scatterData.map((item, index) => (
-                <div key={item.curso} className="flex items-center gap-1 text-xs">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: scatterColors[index] }} />
-                  <span className="text-gray-600">{item.curso}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Fila 3: Distribución */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-              <PieChart className="w-4 h-4 text-gray-400" />
-              Distribución: ¿Dónde va la plata vs dónde vienen los leads?
-            </h3>
-          </div>
-          <div className="grid grid-cols-2 gap-8">
-            <div>
-              <p className="text-xs text-center text-gray-500 mb-2">% Inversión</p>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPie>
-                    <Pie data={distribucionInversion} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={2} dataKey="value">
-                      {distribucionInversion.map((entry, index) => (<Cell key={`cell-inv-${index}`} fill={entry.color} />))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                  </RechartsPie>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap justify-center gap-3 mt-2">
-                {distribucionInversion.map((item) => (
-                  <div key={item.name} className="flex items-center gap-1 text-xs">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="text-gray-600">{item.name}: {item.value}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-center text-gray-500 mb-2">% Leads</p>
-              <div className="h-40">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RechartsPie>
-                    <Pie data={distribucionLeads} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={2} dataKey="value">
-                      {distribucionLeads.map((entry, index) => (<Cell key={`cell-leads-${index}`} fill={entry.color} />))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                  </RechartsPie>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap justify-center gap-3 mt-2">
-                {distribucionLeads.map((item) => (
-                  <div key={item.name} className="flex items-center gap-1 text-xs">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                    <span className="text-gray-600">{item.name}: {item.value}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <span className="font-medium text-amber-800">APA tiene desbalance:</span>
-                <span className="text-amber-700"> Recibe 31.7% de inversión pero solo genera 20.8% de leads. Revisar segmentación.</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Agente IA */}
-        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-4 text-white">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 bg-gradient-to-br from-[#e63946] to-[#c1121f] rounded-lg">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold">Agente IA</h3>
-              <p className="text-[10px] text-gray-400">Análisis inteligente</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            {alertas.filter(a => cursoSeleccionado === 'todos' || a.curso === cursoSeleccionado).map((alerta, index) => (
-              <div key={index} className="p-3 bg-white/10 rounded-lg border border-white/10">
-                <div className="flex items-start gap-2">
-                  <div className={`mt-0.5 flex-shrink-0 ${alerta.tipo === 'warning' ? 'text-amber-400' : alerta.tipo === 'success' ? 'text-emerald-400' : 'text-blue-400'}`}>
-                    {alerta.tipo === 'warning' ? <AlertTriangle className="w-4 h-4" /> : alerta.tipo === 'success' ? <TrendingUp className="w-4 h-4" /> : <Target className="w-4 h-4" />}
-                  </div>
-                  <div>
-                    <p className={`text-xs font-medium ${alerta.tipo === 'warning' ? 'text-amber-400' : alerta.tipo === 'success' ? 'text-emerald-400' : 'text-blue-400'}`}>
-                      {alerta.tipo === 'warning' ? 'Alerta' : alerta.tipo === 'success' ? 'Destacado' : 'Info'}
-                    </p>
-                    <p className="text-[11px] text-gray-300 mt-1">{alerta.mensaje}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <button className="w-full mt-4 py-2 px-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-2">
-            <Zap className="w-3.5 h-3.5" />
-            Generar análisis completo
-          </button>
-        </div>
       </div>
     </div>
   );
