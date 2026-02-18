@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { Metrica, AgentInsight, PupiConversation } from '@/types';
+import type { Metrica, AgentInsight, PupyConversation } from '@/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -34,8 +34,8 @@ export async function getInsightsActivos(agente?: string, severidad?: string) {
   return data as AgentInsight[];
 }
 
-// Helper para conversaciones de Pupi
-export async function getPupiConversation(userEmail: string) {
+// Helper para conversaciones de Pupy
+export async function getPupyConversation(userEmail: string) {
   const { data, error } = await supabase
     .from('pupi_conversations')
     .select('*')
@@ -43,10 +43,10 @@ export async function getPupiConversation(userEmail: string) {
     .single();
   
   if (error && error.code !== 'PGRST116') throw error;
-  return data as PupiConversation | null;
+  return data as PupyConversation | null;
 }
 
-export async function savePupiConversation(userEmail: string, messages: PupiConversation['messages']) {
+export async function savePupyConversation(userEmail: string, messages: PupyConversation['messages']) {
   const { data, error } = await supabase
     .from('pupi_conversations')
     .upsert({
@@ -58,5 +58,5 @@ export async function savePupiConversation(userEmail: string, messages: PupiConv
     .single();
   
   if (error) throw error;
-  return data as PupiConversation;
+  return data as PupyConversation;
 }

@@ -31,7 +31,7 @@ const menuItems = [
   { icon: Building2, label: 'Administracion', href: '/administracion' },
   { icon: Users, label: 'Comunidad', href: '/comunidad' },
   { icon: Bell, label: 'Alertas', href: '/alertas', badge: 3 },
-  { icon: Bot, label: 'Pupi', href: '/pupi' },
+  { icon: Bot, label: 'Pupy', href: '/pupi' },
 ];
 
 export default function Sidebar() {

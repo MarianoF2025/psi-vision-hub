@@ -55,15 +55,15 @@ export interface AdsData {
   created_at: string;
 }
 
-export interface PupiConversation {
+export interface PupyConversation {
   id: string;
   user_email: string;
-  messages: PupiMessage[];
+  messages: PupyMessage[];
   created_at: string;
   updated_at: string;
 }
 
-export interface PupiMessage {
+export interface PupyMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;

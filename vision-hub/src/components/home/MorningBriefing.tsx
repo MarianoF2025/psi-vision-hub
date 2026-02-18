@@ -521,11 +521,11 @@ export default function MorningBriefing() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
               <Sparkles className="w-3 h-3 text-[#e63946]" />
-              <span>Pupi puede ayudarte a priorizar</span>
+              <span>Pupy puede ayudarte a priorizar</span>
             </div>
             <Link href="/pupi">
               <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#e63946] to-[#d62839] text-white text-xs font-semibold rounded-lg hover:shadow-md transition-all">
-                <Sparkles className="w-3 h-3" /> Preguntale a Pupi <ChevronRight className="w-3 h-3" />
+                <Sparkles className="w-3 h-3" /> Preguntale a Pupy <ChevronRight className="w-3 h-3" />
               </button>
             </Link>
           </div>

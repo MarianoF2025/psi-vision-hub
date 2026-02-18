@@ -17,7 +17,7 @@ export default function HomePage() {
   }
   return (
     <div className="min-h-screen">
-      <Header titulo="Dashboard" subtitulo="Centro de comando PSI" />
+      <Header titulo="Home" subtitulo="Centro de comando PSI" />
       <div className="p-3 lg:p-4 space-y-3 lg:space-y-4">
         <MorningBriefing />
       </div>
