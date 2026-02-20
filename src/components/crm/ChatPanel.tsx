@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useCRMStore } from '@/stores/crm-store';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -624,7 +624,7 @@ export default function ChatPanel() {
     const match = texto.match(/\/(\S*)$/);
     if (match) {
       const busqueda = match[1].toLowerCase();
-      const filtradas = respuestasRapidas.filter(r => r.atajo?.toLowerCase().includes(busqueda) || r.titulo?.toLowerCase().includes(busqueda) || r.contenido?.toLowerCase().includes(busqueda)).slice(0, 5);
+      const filtradas = busqueda ? respuestasRapidas.filter(r => r.atajo?.toLowerCase().includes(busqueda) || r.titulo?.toLowerCase().includes(busqueda) || r.contenido?.toLowerCase().includes(busqueda)) : respuestasRapidas;
       setSugerenciasFiltradas(filtradas);
       setMostrarSugerencias(filtradas.length > 0);
       setIndiceSugerencia(0);
@@ -1027,6 +1027,24 @@ export default function ChatPanel() {
         {despues}
       </>
     );
+  };
+
+
+  // Renderizar mensaje con links clickeables y coloreados
+  const renderMensajeConLinks = (texto: string, isOut: boolean, msgId: string) => {
+    const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;\"'\)\]\s])/g;
+    const parts = texto.split(urlRegex);
+    return parts.map((part, idx) => {
+      urlRegex.lastIndex = 0;
+      if (urlRegex.test(part)) {
+        urlRegex.lastIndex = 0;
+        const linkClass = isOut
+          ? "underline break-all hover:opacity-80 text-indigo-100 underline-offset-2"
+          : "underline break-all hover:opacity-80 text-indigo-600 dark:text-indigo-400 underline-offset-2";
+        return React.createElement("a", { key: idx, href: part, target: "_blank", rel: "noopener noreferrer", onClick: (e: React.MouseEvent) => e.stopPropagation(), className: linkClass }, part);
+      }
+      return terminoBusqueda ? resaltarTexto(part, msgId) : part;
+    });
   };
 
   // Obtener área actual para mostrar en header
@@ -1434,25 +1452,11 @@ export default function ChatPanel() {
                   {renderMultimedia(msg)}
                   {msg.mensaje && (() => {
                     const urls = extractUrls(msg.mensaje);
-                    let displayText = msg.mensaje;
-
-                    if (urls.length > 0) {
-                      let textWithoutUrls = msg.mensaje;
-                      urls.forEach(u => { textWithoutUrls = textWithoutUrls.replace(u, '').trim(); });
-
-                      if (!textWithoutUrls) {
-                        displayText = '';
-                      } else if (textWithoutUrls.length > 100) {
-                        displayText = textWithoutUrls.substring(0, 97) + '...';
-                      } else {
-                        displayText = textWithoutUrls;
-                      }
-                    }
 
                     return (
                       <>
-                        {displayText && <p className="whitespace-pre-wrap break-words">{terminoBusqueda ? resaltarTexto(displayText, msg.id) : displayText}</p>}
-                        {urls.slice(0, 1).map((linkUrl) => (
+                        <p className="whitespace-pre-wrap break-words">{renderMensajeConLinks(msg.mensaje, isOut, msg.id)}</p>
+                                        {urls.slice(0, 1).map((linkUrl) => (
                           <LinkPreview key={linkUrl} url={linkUrl} isOutgoing={isOut} />
                         ))}
                       </>
@@ -1530,14 +1534,40 @@ export default function ChatPanel() {
 
       <div className="px-3 py-2 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center gap-1.5 flex-shrink-0 relative">
         {mostrarSugerencias && (
-          <div className="absolute bottom-full left-3 right-3 mb-1 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden z-10">
-            <div className="p-1.5 border-b border-slate-100 dark:border-slate-700 flex items-center gap-1.5"><MessageSquare size={10} className="text-indigo-500" /><span className="text-[10px] font-medium text-slate-500">Respuestas rápidas</span></div>
-            {sugerenciasFiltradas.map((r, idx) => (
-              <button key={r.id} onClick={() => insertarRespuesta(r)} className={cn('w-full px-2 py-1 text-left hover:bg-slate-50 dark:hover:bg-slate-700', idx === indiceSugerencia && 'bg-indigo-50 dark:bg-indigo-500/20')}>
-                <div className="flex items-center gap-1.5"><code className="px-1 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-[9px] rounded font-mono">{r.atajo}</code>{r.titulo && <span className="text-[10px] font-medium text-slate-700 dark:text-slate-200">{r.titulo}</span>}</div>
-                <p className="text-[9px] text-slate-500 mt-0.5 truncate">{r.contenido}</p>
-              </button>
-            ))}
+          <div className="absolute bottom-full left-3 right-3 mb-1 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden z-10">
+            <div className="p-2 border-b border-slate-100 dark:border-slate-700">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <MessageSquare size={12} className="text-indigo-500" />
+                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">Respuestas rápidas</span>
+                <span className="text-[10px] text-slate-400 ml-auto">{sugerenciasFiltradas.length} resultado{sugerenciasFiltradas.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="relative">
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar respuesta..."
+                  className="w-full pl-7 pr-2 py-1 bg-slate-100 dark:bg-slate-700 border-0 rounded text-[11px] text-slate-800 dark:text-white placeholder-slate-400 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  onChange={(e) => {
+                    const val = e.target.value.toLowerCase();
+                    const filtradas = val ? respuestasRapidas.filter(r => r.atajo?.toLowerCase().includes(val) || r.titulo?.toLowerCase().includes(val) || r.contenido?.toLowerCase().includes(val)) : respuestasRapidas;
+                    setSugerenciasFiltradas(filtradas);
+                    setIndiceSugerencia(0);
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="max-h-52 overflow-y-auto">
+              {sugerenciasFiltradas.map((r, idx) => (
+                <button key={r.id} onClick={() => insertarRespuesta(r)} className={cn('w-full px-2 py-1.5 text-left hover:bg-slate-50 dark:hover:bg-slate-700 border-b border-slate-50 dark:border-slate-700/50 last:border-0', idx === indiceSugerencia && 'bg-indigo-50 dark:bg-indigo-500/20')}>
+                  <div className="flex items-center gap-1.5"><code className="px-1 py-0.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 text-[9px] rounded font-mono">{r.atajo}</code>{r.titulo && <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200">{r.titulo}</span>}</div>
+                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">{r.contenido}</p>
+                </button>
+              ))}
+              {sugerenciasFiltradas.length === 0 && (
+                <div className="px-3 py-4 text-center text-[11px] text-slate-400">No se encontraron respuestas</div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1573,7 +1603,7 @@ export default function ChatPanel() {
               <button onClick={cancelarGrabacion} className="ml-auto p-1 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-full"><X size={16} className="text-red-500" /></button>
             </div>
           ) : (
-            <textarea ref={textareaRef} value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={handleKeyDown} placeholder={archivoSeleccionado ? "Añade un mensaje (opcional)" : "Escribe un mensaje"} rows={1} className="w-full px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg resize-none text-[13px] text-slate-800 dark:text-white placeholder-slate-400 focus:ring-0 focus:outline-none" style={{ minHeight: '34px', maxHeight: '80px' }} />
+            <textarea ref={textareaRef} value={texto} onChange={(e) => { setTexto(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 150) + 'px'; }} onKeyDown={handleKeyDown} placeholder={archivoSeleccionado ? "Añade un mensaje (opcional)" : "Escribe un mensaje"} rows={1} className="w-full px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg resize-none text-[13px] text-slate-800 dark:text-white placeholder-slate-400 focus:ring-0 focus:outline-none overflow-y-auto" style={{ minHeight: '34px', maxHeight: '150px' }} />
           )}
         </div>
 

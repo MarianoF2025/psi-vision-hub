@@ -281,6 +281,7 @@ export default function AjustesPage() {
       const { error } = await supabase
         .from('config_autorespuestas')
         .update({
+          activo: nuevoEstado,
           corte_activo: nuevoEstado,
           corte_timestamp: nuevoEstado ? new Date().toISOString() : null,
           corte_usuario_id: usuario?.id || null,
@@ -301,6 +302,7 @@ export default function AjustesPage() {
 
       setConfigAuto({
         ...configAuto,
+        activo: nuevoEstado,
         corte_activo: nuevoEstado,
         corte_timestamp: nuevoEstado ? new Date().toISOString() : null,
         corte_usuario_nombre: usuario?.nombre || 'Sistema',

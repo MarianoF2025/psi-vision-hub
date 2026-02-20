@@ -259,13 +259,13 @@ export class ConversacionService {
   /**
    * Reactivar una conversación existente (cuando expira ventana 24h)
    */
-  async reactivar(id: string): Promise<Conversacion> {
+  async reactivar(id: string, lineaOrigen?: string): Promise<Conversacion> {
     const ahora = new Date().toISOString();
     const fin24h = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
-    console.log(`[ConversacionService] Reactivando conversación ${id}`);
+    console.log(`[ConversacionService] Reactivando conversación ${id}` + (lineaOrigen ? ` con linea_origen=${lineaOrigen}` : ''));
 
-    return this.actualizar(id, {
+    const updateData: Record<string, any> = {
       estado: 'activa',
       router_estado: 'menu_principal',
       menu_actual: 'principal',
@@ -274,7 +274,14 @@ export class ConversacionService {
       ventana_24h_inicio: ahora,
       ventana_24h_fin: fin24h,
       leida: false,
-    });
+    };
+
+    // "Por donde entra, sale" - actualizar linea_origen si cambió
+    if (lineaOrigen) {
+      updateData.linea_origen = lineaOrigen;
+    }
+
+    return this.actualizar(id, updateData);
   }
 
   /**
@@ -322,7 +329,7 @@ export class ConversacionService {
           .eq('id', previa.id);
       }
 
-      const reactivada = await this.reactivar(previa.id);
+      const reactivada = await this.reactivar(previa.id, datos.linea_origen || undefined);
       return { conversacion: reactivada, esNueva: false };
     }
 

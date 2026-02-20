@@ -12,6 +12,7 @@ import { buildSystemPrompt, MORNING_BRIEFING_PROMPT } from '@/lib/pupi/system-pr
 import {
   cargarContextoCompleto,
   guardarConversacion,
+  actualizarConversacion,
   guardarDecision,
   guardarAprendizaje,
 } from '@/lib/pupi/context-builder';
@@ -420,30 +421,29 @@ export async function GET(request: NextRequest) {
 }
 
 // ============================================
-// PUT — Guardar conversación (botón Nueva)
+// ============================================
+// PUT — Guardar/Actualizar conversación
 // ============================================
 
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { mensajes, usuario } = body;
-
+    const { mensajes, usuario, conversacion_id } = body;
     if (!mensajes || mensajes.length < 2) {
-      return NextResponse.json({ success: true, message: 'Conversación muy corta, no se guarda' });
+      return NextResponse.json({ success: true, message: 'Conversación muy corta' });
     }
-
     const userEmail = usuario || 'nina@psi.com.ar';
-    console.log('[Pupy API] PUT - Guardando conversación (' + mensajes.length + ' mensajes)');
-
+    console.log('[Pupy API] PUT -', mensajes.length, 'msgs, id:', conversacion_id || 'nueva');
     const { titulo, resumen } = await generarTituloResumen(mensajes);
-    await guardarConversacion(userEmail, formatearMensajes(mensajes), titulo, resumen);
-
-    return NextResponse.json({ success: true, titulo, resumen });
+    if (conversacion_id) {
+      await actualizarConversacion(conversacion_id, formatearMensajes(mensajes), titulo, resumen);
+      return NextResponse.json({ success: true, conversacion_id, titulo, resumen });
+    } else {
+      const nuevoId = await guardarConversacion(userEmail, formatearMensajes(mensajes), titulo, resumen);
+      return NextResponse.json({ success: true, conversacion_id: nuevoId, titulo, resumen });
+    }
   } catch (error: any) {
     console.error('[Pupy API] Error PUT:', error);
-    return NextResponse.json(
-      { success: false, error: error.message || 'Error interno' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: error.message || 'Error interno' }, { status: 500 });
   }
 }

@@ -94,20 +94,20 @@ class AutorespuestasController {
      * Determina la franja horaria actual
      */
     determinarFranja(corteActivo) {
-        if (corteActivo) {
-            return 4; // Post Atención
-        }
         const ahora = new Date();
-        // Ajustar a hora Argentina (UTC-3)
         const horaArgentina = new Date(ahora.toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
         const hora = horaArgentina.getHours();
+        if (!corteActivo) {
+            return 3; // No cortado = Atención Activa (no envía autorespuesta)
+        }
+        // Cortado manualmente: usar franja según horario
         if (hora >= 22 || hora < 7) {
             return 1; // Descanso
         }
         if (hora >= 7 && hora < 9) {
             return 2; // Preparación
         }
-        return 3; // Atención Activa
+        return 3; // Atención Activa (cortada)
     }
     /**
      * Procesa variables dinámicas en el mensaje

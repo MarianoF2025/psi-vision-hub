@@ -2,18 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  Send,
-  Sparkles,
-  Copy,
-  Check,
-  Paperclip,
-  X,
-  FileText,
-  Image as ImageIcon,
-  Loader2,
-  Plus,
-  MessageSquare,
-  ChevronLeft,
+  Send, Sparkles, Copy, Check, Paperclip, X, FileText,
+  Image as ImageIcon, Loader2, Plus, MessageSquare, ChevronLeft,
 } from 'lucide-react';
 
 // ============================================
@@ -40,6 +30,7 @@ interface ConversacionHistorial {
   titulo: string;
   resumen: string;
   created_at: string;
+  updated_at: string;
 }
 
 // ============================================
@@ -47,63 +38,63 @@ interface ConversacionHistorial {
 // ============================================
 
 export default function PupyPage() {
-  // Estado del chat
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Estado de archivos adjuntos
   const [archivosAdjuntos, setArchivosAdjuntos] = useState<ArchivoAdjunto[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Estado del sidebar de historial
   const [historial, setHistorial] = useState<ConversacionHistorial[]>([]);
   const [showHistorial, setShowHistorial] = useState(false);
-
-  // Morning briefing
-  const [briefingCargado, setBriefingCargado] = useState(false);
-
-  // Auto-guardado
+  const [conversacionId, setConversacionId] = useState<string | null>(null);
+  const [guardadoEnCurso, setGuardadoEnCurso] = useState(false);
   const [ultimoGuardado, setUltimoGuardado] = useState(0);
-  const mensajesRef = useRef<Mensaje[]>([]);
+  const [inicializado, setInicializado] = useState(false);
 
-  // Refs
+  const mensajesRef = useRef<Mensaje[]>([]);
+  const conversacionIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Mantener ref sincronizado para beforeunload
-  useEffect(() => {
-    mensajesRef.current = mensajes;
-  }, [mensajes]);
+  useEffect(() => { mensajesRef.current = mensajes; }, [mensajes]);
+  useEffect(() => { conversacionIdRef.current = conversacionId; }, [conversacionId]);
 
   // ============================================
-  // AUTO-GUARDADO
+  // GUARDAR / ACTUALIZAR CONVERSACIÓN
   // ============================================
 
   const guardarConversacionActual = useCallback(async (msgs?: Mensaje[]) => {
     const mensajesAGuardar = msgs || mensajesRef.current;
-    if (mensajesAGuardar.length < 2) return;
+    if (mensajesAGuardar.length < 2 || guardadoEnCurso) return null;
 
+    setGuardadoEnCurso(true);
     try {
-      await fetch('/tableros/api/pupi', {
+      const res = await fetch('/tableros/api/pupi', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mensajes: mensajesAGuardar.map(m => ({
-            rol: m.rol,
-            contenido: m.contenido,
-            timestamp: m.timestamp.toISOString(),
+            rol: m.rol, contenido: m.contenido, timestamp: m.timestamp.toISOString(),
           })),
           usuario: 'nina@psi.com.ar',
-          accion: 'guardar',
+          conversacion_id: conversacionIdRef.current,
         }),
       });
-      setUltimoGuardado(mensajesAGuardar.length);
-    } catch {
-      // Silencioso
+      const data = await res.json();
+      if (data.success && data.conversacion_id) {
+        setConversacionId(data.conversacion_id);
+        conversacionIdRef.current = data.conversacion_id;
+        setUltimoGuardado(mensajesAGuardar.length);
+        console.log('[Pupy UI] Guardado OK:', data.conversacion_id);
+        return data.conversacion_id;
+      }
+    } catch (e) {
+      console.error('[Pupy UI] Error guardando:', e);
+    } finally {
+      setGuardadoEnCurso(false);
     }
-  }, []);
+    return null;
+  }, [guardadoEnCurso]);
 
   // Auto-guardar cada 4 mensajes nuevos
   useEffect(() => {
@@ -112,102 +103,70 @@ export default function PupyPage() {
     }
   }, [mensajes.length, ultimoGuardado, guardarConversacionActual, mensajes]);
 
-  // Guardar al cerrar pestaña / navegar fuera
+  // Guardar al cerrar pestaña
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (mensajesRef.current.length >= 2 && mensajesRef.current.length !== ultimoGuardado) {
         const payload = JSON.stringify({
           mensajes: mensajesRef.current.map(m => ({
-            rol: m.rol,
-            contenido: m.contenido,
-            timestamp: m.timestamp.toISOString(),
+            rol: m.rol, contenido: m.contenido, timestamp: m.timestamp.toISOString(),
           })),
           usuario: 'nina@psi.com.ar',
           accion: 'guardar',
+          conversacion_id: conversacionIdRef.current,
         });
-        // sendBeacon es fire-and-forget, funciona al cerrar pestaña
         navigator.sendBeacon('/tableros/api/pupi', payload);
       }
     };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [ultimoGuardado]);
 
   // ============================================
-  // SCROLL Y TEXTAREA AUTO-RESIZE
+  // SCROLL Y TEXTAREA
   // ============================================
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [mensajes, scrollToBottom]);
+  useEffect(() => { scrollToBottom(); }, [mensajes, scrollToBottom]);
 
   const ajustarTextarea = useCallback(() => {
     const el = textareaRef.current;
-    if (el) {
-      el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-    }
+    if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 200) + 'px'; }
   }, []);
 
-  useEffect(() => {
-    ajustarTextarea();
-  }, [input, ajustarTextarea]);
+  useEffect(() => { ajustarTextarea(); }, [input, ajustarTextarea]);
 
   // ============================================
-  // MORNING BRIEFING AL ABRIR
+  // INICIALIZACIÓN: cargar historial + última conversación
   // ============================================
 
   useEffect(() => {
-    if (!briefingCargado) {
-      cargarBriefing();
-      cargarHistorial();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    inicializar();
   }, []);
 
-  const cargarBriefing = async () => {
-    setBriefingCargado(true);
-    setIsLoading(true);
-
+  const inicializar = async () => {
     try {
-      const res = await fetch('/tableros/api/pupi?usuario=nina@psi.com.ar');
+      // 1. Cargar historial
+      const res = await fetch('/tableros/api/pupi?usuario=nina@psi.com.ar&modo=historial&limit=20');
       const data = await res.json();
+      if (data.success && data.conversaciones) {
+        setHistorial(data.conversaciones);
 
-      if (data.success && data.briefing) {
-        setMensajes([{
-          id: 'briefing-' + Date.now(),
-          rol: 'assistant',
-          contenido: data.briefing,
-          timestamp: new Date(),
-        }]);
-      } else {
-        setMensajes([{
-          id: 'welcome-' + Date.now(),
-          rol: 'assistant',
-          contenido: '¡Hola! Soy **Pupy**, tu asesora estratégica. ¿En qué puedo ayudarte hoy?',
-          timestamp: new Date(),
-        }]);
+        // 2. Si hay conversaciones, cargar la más reciente
+        if (data.conversaciones.length > 0) {
+          const ultima = data.conversaciones[0];
+          await cargarConversacionPorId(ultima.id);
+        }
       }
     } catch {
-      setMensajes([{
-        id: 'welcome-' + Date.now(),
-        rol: 'assistant',
-        contenido: '¡Hola! Soy **Pupy**, tu asesora estratégica. ¿En qué puedo ayudarte hoy?',
-        timestamp: new Date(),
-      }]);
+      // Silencioso
     } finally {
-      setIsLoading(false);
+      setInicializado(true);
     }
   };
-
-  // ============================================
-  // HISTORIAL DE CONVERSACIONES
-  // ============================================
 
   const cargarHistorial = async () => {
     try {
@@ -216,19 +175,11 @@ export default function PupyPage() {
       if (data.success && data.conversaciones) {
         setHistorial(data.conversaciones);
       }
-    } catch {
-      // Silencioso
-    }
+    } catch { /* silencioso */ }
   };
 
-  const cargarConversacion = async (convId: string) => {
-    // Guardar conversación actual antes de cambiar
-    if (mensajes.length >= 2 && mensajes.length !== ultimoGuardado) {
-      await guardarConversacionActual(mensajes);
-    }
-
+  const cargarConversacionPorId = async (convId: string) => {
     try {
-      setIsLoading(true);
       const res = await fetch('/tableros/api/pupi?modo=cargar&id=' + convId);
       const data = await res.json();
       if (data.success && data.conversacion?.mensajes) {
@@ -239,15 +190,22 @@ export default function PupyPage() {
           timestamp: new Date(m.timestamp || data.conversacion.created_at),
         }));
         setMensajes(msgs);
-        setUltimoGuardado(msgs.length); // Ya está guardada, no re-guardar
-        setBriefingCargado(true);
-        setShowHistorial(false);
+        setConversacionId(convId);
+        conversacionIdRef.current = convId;
+        setUltimoGuardado(msgs.length);
       }
-    } catch {
-      // Silencioso
-    } finally {
-      setIsLoading(false);
+    } catch { /* silencioso */ }
+  };
+
+  const cargarConversacion = async (convId: string) => {
+    // Guardar actual antes de cambiar
+    if (mensajes.length >= 2 && mensajes.length !== ultimoGuardado) {
+      await guardarConversacionActual(mensajes);
     }
+    await cargarConversacionPorId(convId);
+    setShowHistorial(false);
+    // Refrescar historial
+    cargarHistorial();
   };
 
   // ============================================
@@ -271,71 +229,55 @@ export default function PupyPage() {
     setInput('');
     setArchivosAdjuntos([]);
     setIsLoading(true);
-
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     try {
-      const mensajesParaApi = [...mensajes, mensajeUsuario]
-        .filter(m => m.id !== mensajes[0]?.id || mensajes[0]?.rol !== 'assistant')
-        .map(m => {
-          const msg: any = { rol: m.rol, contenido: m.contenido };
-
-          if (m.archivos && m.archivos.length > 0) {
-            const partes: any[] = [];
-            for (const archivo of m.archivos) {
-              if (archivo.tipo.startsWith('image/')) {
-                partes.push({
-                  type: 'image',
-                  source: { type: 'base64', media_type: archivo.tipo, data: archivo.base64 }
-                });
-              } else if (archivo.tipo === 'application/pdf') {
-                partes.push({
-                  type: 'document',
-                  source: { type: 'base64', media_type: archivo.tipo, data: archivo.base64 }
-                });
-              }
+      const todosLosMensajes = [...mensajes, mensajeUsuario];
+      const mensajesParaApi = todosLosMensajes.map(m => {
+        const msg: any = { rol: m.rol, contenido: m.contenido };
+        if (m.archivos && m.archivos.length > 0) {
+          const partes: any[] = [];
+          for (const archivo of m.archivos) {
+            if (archivo.tipo.startsWith('image/')) {
+              partes.push({ type: 'image', source: { type: 'base64', media_type: archivo.tipo, data: archivo.base64 } });
+            } else if (archivo.tipo === 'application/pdf') {
+              partes.push({ type: 'document', source: { type: 'base64', media_type: archivo.tipo, data: archivo.base64 } });
             }
-            if (m.contenido) {
-              partes.push({ type: 'text', text: m.contenido });
-            }
-            msg.contenido_multimodal = partes;
           }
-          return msg;
-        });
+          if (m.contenido) partes.push({ type: 'text', text: m.contenido });
+          msg.contenido_multimodal = partes;
+        }
+        return msg;
+      });
 
       const res = await fetch('/tableros/api/pupi', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mensajes: mensajesParaApi,
-          usuario: 'nina@psi.com.ar',
-        }),
+        body: JSON.stringify({ mensajes: mensajesParaApi, usuario: 'nina@psi.com.ar' }),
       });
 
       const data = await res.json();
 
       if (data.success && data.respuesta) {
         setMensajes(prev => [...prev, {
-          id: 'assistant-' + Date.now(),
+          id: 'asst-' + Date.now(),
           rol: 'assistant',
           contenido: data.respuesta,
           timestamp: new Date(),
         }]);
       } else {
         setMensajes(prev => [...prev, {
-          id: 'error-' + Date.now(),
+          id: 'err-' + Date.now(),
           rol: 'assistant',
-          contenido: 'Perdón, tuve un problema procesando tu consulta. ¿Podés intentar de nuevo?',
+          contenido: 'Perdón, tuve un problema procesando tu mensaje. ¿Podés intentar de nuevo?',
           timestamp: new Date(),
         }]);
       }
     } catch {
       setMensajes(prev => [...prev, {
-        id: 'error-' + Date.now(),
+        id: 'err-' + Date.now(),
         rol: 'assistant',
-        contenido: 'Hubo un error de conexión. Verificá que el servidor esté funcionando.',
+        contenido: 'Error de conexión. Verificá que el servidor esté corriendo.',
         timestamp: new Date(),
       }]);
     } finally {
@@ -344,51 +286,40 @@ export default function PupyPage() {
   };
 
   // ============================================
-  // MANEJO DE ARCHIVOS
+  // ARCHIVOS ADJUNTOS
   // ============================================
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
-
-    for (const file of Array.from(files)) {
-      const tiposPermitidos = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
-      if (!tiposPermitidos.includes(file.type)) {
-        alert(`Tipo no soportado: ${file.type}. Pupy acepta imágenes (JPG, PNG, GIF, WEBP) y PDFs.`);
-        continue;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-        alert(`${file.name} es demasiado grande. Máximo 20MB.`);
-        continue;
-      }
-
-      const base64 = await fileToBase64(file);
-      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
-
-      setArchivosAdjuntos(prev => [...prev, { nombre: file.name, tipo: file.type, base64, preview }]);
-    }
-
+    Array.from(files).forEach(file => {
+      if (file.size > 10 * 1024 * 1024) { alert('El archivo ' + file.name + ' supera los 10MB.'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Full = reader.result as string;
+        setArchivosAdjuntos(prev => [...prev, {
+          nombre: file.name, tipo: file.type,
+          base64: base64Full.split(',')[1],
+          preview: file.type.startsWith('image/') ? base64Full : undefined,
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        resolve(result.split(',')[1]);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const removeArchivo = (index: number) => {
+    setArchivosAdjuntos(prev => prev.filter((_, i) => i !== index));
   };
 
-  const removerArchivo = (index: number) => {
-    setArchivosAdjuntos(prev => {
-      const nuevo = [...prev];
-      if (nuevo[index]?.preview) URL.revokeObjectURL(nuevo[index].preview!);
-      nuevo.splice(index, 1);
-      return nuevo;
+  // ============================================
+  // COPIAR
+  // ============================================
+
+  const copiarTexto = (texto: string, id: string) => {
+    navigator.clipboard.writeText(texto).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
     });
   };
 
@@ -397,226 +328,167 @@ export default function PupyPage() {
   // ============================================
 
   const nuevaConversacion = async () => {
-    // Guardar conversación actual
     if (mensajes.length >= 2 && mensajes.length !== ultimoGuardado) {
       await guardarConversacionActual(mensajes);
     }
-
-    // Reset
     setMensajes([]);
-    setBriefingCargado(false);
-    setArchivosAdjuntos([]);
-    setInput('');
+    setConversacionId(null);
+    conversacionIdRef.current = null;
     setUltimoGuardado(0);
-
-    // Refrescar historial y cargar nuevo briefing
+    setArchivosAdjuntos([]);
     cargarHistorial();
-    cargarBriefing();
   };
 
   // ============================================
-  // COPIAR MENSAJE
+  // FORMATEO MARKDOWN SIMPLE
   // ============================================
 
-  const copiarMensaje = (id: string, contenido: string) => {
-    navigator.clipboard.writeText(contenido);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  // ============================================
-  // HANDLE SUBMIT
-  // ============================================
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      enviarMensaje();
-    }
-  };
-
-  // ============================================
-  // RENDER MARKDOWN BÁSICO
-  // ============================================
-
-  const renderMarkdown = (text: string): string => {
-    return text
-      .split('\n')
-      .map(line => {
-        if (line.startsWith('### ')) return `<h4 class="text-sm font-semibold text-gray-900 mt-3 mb-1">${line.slice(4)}</h4>`;
-        if (line.startsWith('## ')) return `<h3 class="text-sm font-semibold text-gray-900 mt-4 mb-1">${line.slice(3)}</h3>`;
-        if (line.startsWith('- ')) return `<div class="flex gap-2 ml-1 my-0.5"><span class="text-gray-400 mt-px">•</span><span>${line.slice(2)}</span></div>`;
-        if (line.trim() === '') return '<div class="h-2"></div>';
-        return `<p class="my-1">${line}</p>`;
-      })
-      .join('')
+  const formatearMd = (texto: string) => {
+    if (!texto) return '';
+    return texto
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/⚠️/g, '<span class="text-amber-500">⚠️</span>');
+      .replace(/`([^`]+)`/g, '<code class="bg-slate-700 px-1 py-0.5 rounded text-sm">$1</code>')
+      .replace(/^### (.*$)/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
+      .replace(/^## (.*$)/gm, '<h2 class="text-lg font-semibold mt-4 mb-1">$1</h2>')
+      .replace(/^# (.*$)/gm, '<h1 class="text-xl font-bold mt-4 mb-2">$1</h1>')
+      .replace(/^- (.*$)/gm, '<li class="ml-4 list-disc">$1</li>')
+      .replace(/^(\d+)\. (.*$)/gm, '<li class="ml-4 list-decimal">$1. $2</li>')
+      .replace(/\n/g, '<br/>');
   };
 
   // ============================================
   // RENDER
   // ============================================
 
-  return (
-    <div className="flex h-screen bg-white">
-      {/* Sidebar de historial */}
-      {showHistorial && (
-        <div className="w-64 border-r border-gray-200 bg-gray-50 flex flex-col">
-          <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-700">Conversaciones</span>
-            <button
-              onClick={() => setShowHistorial(false)}
-              className="p-1 text-gray-400 hover:text-gray-600 rounded"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            {historial.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center mt-4">Las conversaciones guardadas aparecerán acá</p>
-            ) : (
-              historial.map(conv => (
-                <button
-                  key={conv.id}
-                  onClick={() => cargarConversacion(conv.id)}
-                  className="w-full text-left p-2 rounded-lg hover:bg-gray-100 mb-1 transition-colors"
-                >
-                  <p className="text-xs font-medium text-gray-700 truncate">{conv.titulo}</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5 truncate">{conv.resumen}</p>
-                  <p className="text-[9px] text-gray-300 mt-0.5">
-                    {new Date(conv.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+  const mensajeVacio = mensajes.length === 0 && inicializado;
 
-      {/* Chat principal */}
+  return (
+    <div className="flex h-screen bg-[#0a0a0f] text-white overflow-hidden">
+      {/* SIDEBAR HISTORIAL */}
+      <div className={`${showHistorial ? 'w-80' : 'w-0'} transition-all duration-300 bg-[#0f0f18] border-r border-slate-800/50 overflow-hidden flex flex-col`}>
+        <div className="p-4 border-b border-slate-800/50 flex items-center justify-between">
+          <h3 className="text-sm font-medium text-slate-300">Conversaciones</h3>
+          <button onClick={() => setShowHistorial(false)} className="text-slate-500 hover:text-slate-300">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {historial.map(conv => (
+            <button
+              key={conv.id}
+              onClick={() => cargarConversacion(conv.id)}
+              className={`w-full text-left p-3 rounded-lg text-sm transition-colors ${
+                conversacionId === conv.id
+                  ? 'bg-[#e63946]/20 text-white'
+                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
+              }`}
+            >
+              <div className="font-medium truncate">{conv.titulo || 'Sin título'}</div>
+              <div className="text-xs text-slate-500 mt-1">
+                {new Date(conv.updated_at || conv.created_at).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </button>
+          ))}
+          {historial.length === 0 && (
+            <div className="text-center text-slate-600 text-sm py-8">Sin conversaciones previas</div>
+          )}
+        </div>
+      </div>
+
+      {/* CHAT PRINCIPAL */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4 flex-shrink-0">
+        <div className="px-6 py-3 border-b border-slate-800/50 flex items-center justify-between bg-[#0a0a0f]/80 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            {!showHistorial && (
-              <button
-                onClick={() => setShowHistorial(true)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Ver historial"
-              >
-                <MessageSquare className="w-4 h-4" />
-              </button>
-            )}
+            <button onClick={() => setShowHistorial(!showHistorial)} className="text-slate-400 hover:text-white transition-colors" title="Historial">
+              <MessageSquare className="w-5 h-5" />
+            </button>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#e63946] to-[#c62d3a] flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
               <div>
-                <h1 className="text-sm font-semibold text-gray-900">Pupy</h1>
-                <p className="text-[10px] text-gray-400">Asesora Estratégica IA</p>
+                <h1 className="text-sm font-semibold text-white">Pupy</h1>
+                <p className="text-xs text-slate-500">Asesora estratégica IA</p>
               </div>
             </div>
           </div>
-          <button
-            onClick={nuevaConversacion}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Nueva conversación"
-          >
+          <button onClick={nuevaConversacion} className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors" title="Nueva conversación">
             <Plus className="w-3.5 h-3.5" />
             Nueva
           </button>
         </div>
 
-        {/* Área de mensajes */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Mensajes */}
+        <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="max-w-3xl mx-auto space-y-6">
             {/* Estado vacío */}
-            {mensajes.length === 0 && !isLoading && (
-              <div className="flex flex-col items-center justify-center h-full min-h-[60vh]">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center mb-4">
-                  <Sparkles className="w-6 h-6 text-white" />
+            {mensajeVacio && (
+              <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e63946] to-[#c62d3a] flex items-center justify-center mb-6">
+                  <Sparkles className="w-8 h-8 text-white" />
                 </div>
-                <h2 className="text-lg font-medium text-gray-900 mb-1">Pupy</h2>
-                <p className="text-sm text-gray-400 mb-8">Tu asesora estratégica de PSI</p>
+                <h2 className="text-xl font-semibold text-white mb-2">Hola, Nina</h2>
+                <p className="text-slate-400 max-w-md">
+                  Soy Pupy, tu asesora estratégica. Preguntame sobre marketing, ventas, alumnos o cualquier tema del negocio.
+                </p>
+                <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
+                  {['¿Cómo están las campañas?', '¿Cuántos alumnos activos hay?', '¿Qué oportunidades de cross-sell tenemos?', '¿Hay alertas pendientes?'].map((s, i) => (
+                    <button key={i} onClick={() => setInput(s)} className="p-3 text-sm text-left rounded-xl bg-slate-800/50 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/50 transition-all">
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Loading del briefing */}
-            {mensajes.length === 0 && isLoading && (
-              <div className="flex flex-col items-center justify-center h-full min-h-[60vh]">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center mb-4 animate-pulse">
-                  <Sparkles className="w-6 h-6 text-white" />
-                </div>
-                <p className="text-sm text-gray-400">Pupy está analizando los datos...</p>
+            {/* Cargando inicial */}
+            {!inicializado && (
+              <div className="flex flex-col items-center justify-center h-full min-h-[400px]">
+                <Loader2 className="w-8 h-8 animate-spin text-[#e63946] mb-4" />
+                <p className="text-slate-500 text-sm">Cargando conversación...</p>
               </div>
             )}
 
             {/* Mensajes */}
-            {mensajes.map((mensaje) => (
-              <div key={mensaje.id} className="mb-6">
-                {mensaje.rol === 'user' && (
-                  <div className="flex justify-end mb-2">
-                    <div className="max-w-[85%]">
-                      {mensaje.archivos && mensaje.archivos.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2 justify-end">
-                          {mensaje.archivos.map((archivo, i) => (
-                            <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded-lg">
-                              {archivo.tipo.startsWith('image/') ? (
-                                <ImageIcon className="w-3 h-3 text-gray-500" />
-                              ) : (
-                                <FileText className="w-3 h-3 text-gray-500" />
-                              )}
-                              <span className="text-[10px] text-gray-600 max-w-[120px] truncate">{archivo.nombre}</span>
-                            </div>
-                          ))}
+            {mensajes.map(m => (
+              <div key={m.id} className={`flex ${m.rol === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] ${m.rol === 'user'
+                  ? 'bg-[#e63946] text-white rounded-2xl rounded-br-md px-4 py-3'
+                  : 'text-slate-200'
+                }`}>
+                  {m.archivos && m.archivos.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {m.archivos.map((a, i) => (
+                        <div key={i} className="flex items-center gap-1.5 bg-black/20 rounded-lg px-2 py-1 text-xs">
+                          {a.tipo.startsWith('image/') ? <ImageIcon className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+                          <span className="truncate max-w-[150px]">{a.nombre}</span>
                         </div>
-                      )}
-                      <div className="bg-[#e63946] text-white rounded-2xl rounded-br-md px-4 py-2.5">
-                        <p className="text-sm whitespace-pre-wrap">{mensaje.contenido}</p>
-                      </div>
+                      ))}
                     </div>
-                  </div>
-                )}
-
-                {mensaje.rol === 'assistant' && (
-                  <div className="flex gap-3">
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Sparkles className="w-3.5 h-3.5 text-white" />
+                  )}
+                  <div
+                    className={`text-sm leading-relaxed ${m.rol === 'assistant' ? 'prose prose-invert prose-sm max-w-none' : ''}`}
+                    dangerouslySetInnerHTML={{ __html: formatearMd(m.contenido) }}
+                  />
+                  {m.rol === 'assistant' && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <button onClick={() => copiarTexto(m.contenido, m.id)} className="text-slate-600 hover:text-slate-400 transition-colors" title="Copiar">
+                        {copiedId === m.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div
-                        className="text-sm text-gray-800 leading-relaxed prose prose-sm max-w-none prose-strong:text-gray-900 prose-p:my-1"
-                        dangerouslySetInnerHTML={{ __html: renderMarkdown(mensaje.contenido) }}
-                      />
-                      <div className="flex items-center gap-2 mt-2">
-                        <button
-                          onClick={() => copiarMensaje(mensaje.id, mensaje.contenido)}
-                          className="text-[10px] text-gray-300 hover:text-gray-500 flex items-center gap-1 transition-colors"
-                        >
-                          {copiedId === mensaje.id ? (
-                            <><Check className="w-3 h-3" /> Copiado</>
-                          ) : (
-                            <><Copy className="w-3 h-3" /> Copiar</>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             ))}
 
-            {/* Indicador de carga */}
-            {isLoading && mensajes.length > 0 && (
-              <div className="flex gap-3 mb-6">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#e63946] to-[#c1121f] flex items-center justify-center flex-shrink-0">
-                  <Sparkles className="w-3.5 h-3.5 text-white animate-pulse" />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-gray-400">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Pupy está analizando...
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="flex items-center gap-2 text-slate-400 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Pupy está analizando datos...</span>
                 </div>
               </div>
             )}
@@ -627,74 +499,42 @@ export default function PupyPage() {
 
         {/* Archivos adjuntos preview */}
         {archivosAdjuntos.length > 0 && (
-          <div className="px-4 pb-2">
+          <div className="px-4 py-2 border-t border-slate-800/50">
             <div className="max-w-3xl mx-auto flex flex-wrap gap-2">
-              {archivosAdjuntos.map((archivo, index) => (
-                <div key={index} className="relative group">
-                  {archivo.preview ? (
-                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-200">
-                      <img src={archivo.preview} alt={archivo.nombre} className="w-full h-full object-cover" />
-                    </div>
-                  ) : (
-                    <div className="w-16 h-16 rounded-lg border border-gray-200 flex flex-col items-center justify-center bg-gray-50">
-                      <FileText className="w-5 h-5 text-gray-400" />
-                      <span className="text-[8px] text-gray-400 mt-0.5">PDF</span>
-                    </div>
-                  )}
-                  <button
-                    onClick={() => removerArchivo(index)}
-                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-gray-700 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-2.5 h-2.5" />
-                  </button>
-                  <p className="text-[8px] text-gray-400 text-center mt-0.5 max-w-[64px] truncate">{archivo.nombre}</p>
+              {archivosAdjuntos.map((a, i) => (
+                <div key={i} className="flex items-center gap-2 bg-slate-800 rounded-lg px-3 py-1.5 text-sm">
+                  {a.preview ? <img src={a.preview} alt="" className="w-6 h-6 rounded object-cover" /> : <FileText className="w-4 h-4 text-slate-400" />}
+                  <span className="text-slate-300 truncate max-w-[150px]">{a.nombre}</span>
+                  <button onClick={() => removeArchivo(i)} className="text-slate-500 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Input area */}
-        <div className="border-t border-gray-100 bg-white px-4 py-3">
+        {/* Input */}
+        <div className="px-4 py-4 border-t border-slate-800/50 bg-[#0a0a0f]">
           <div className="max-w-3xl mx-auto">
-            <div className="relative flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-2xl px-3 py-2 focus-within:border-[#e63946] focus-within:ring-1 focus-within:ring-[#e63946]/20 transition-all">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0 mb-0.5"
-                title="Adjuntar imagen o PDF"
-                disabled={isLoading}
-              >
-                <Paperclip className="w-4 h-4" />
+            <div className="flex items-end gap-2 bg-[#12121a] rounded-2xl border border-slate-800/50 focus-within:border-[#e63946]/50 transition-colors px-4 py-3">
+              <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*,.pdf" multiple className="hidden" />
+              <button onClick={() => fileInputRef.current?.click()} className="text-slate-500 hover:text-slate-300 transition-colors mb-0.5" title="Adjuntar archivo">
+                <Paperclip className="w-5 h-5" />
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
-                multiple
-                onChange={handleFileSelect}
-              />
               <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
+                ref={textareaRef} value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensaje(); } }}
                 placeholder="Preguntale a Pupy..."
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-gray-800 placeholder-gray-400 resize-none focus:outline-none max-h-[200px] py-1.5"
-                disabled={isLoading}
+                className="flex-1 bg-transparent text-white text-sm resize-none outline-none placeholder-slate-600 max-h-[200px]"
               />
-              <button
-                onClick={enviarMensaje}
-                disabled={(!input.trim() && archivosAdjuntos.length === 0) || isLoading}
-                className="p-1.5 bg-[#e63946] text-white rounded-lg hover:bg-[#c1121f] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0 mb-0.5"
-              >
-                <Send className="w-4 h-4" />
+              <button onClick={enviarMensaje} disabled={isLoading || (!input.trim() && archivosAdjuntos.length === 0)} className="text-slate-500 hover:text-[#e63946] disabled:opacity-30 disabled:hover:text-slate-500 transition-colors mb-0.5">
+                <Send className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-[10px] text-gray-300 text-center mt-1.5">
-              Pupy analiza datos en tiempo real · Podés adjuntar imágenes y PDFs
-            </p>
+            <div className="text-center mt-2">
+              <span className="text-xs text-slate-600">Pupy puede cometer errores. Verificá la información importante.</span>
+            </div>
           </div>
         </div>
       </div>

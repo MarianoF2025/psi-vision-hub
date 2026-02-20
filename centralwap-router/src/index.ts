@@ -45,7 +45,7 @@ const MENSAJE_EDUCATIVO = `¡Hola! 👋 Gracias por escribirnos.
 
 Para poder atenderte mejor, te pedimos que nos contactes por nuestro canal principal:
 
-👉 wa.me/5491156090819
+👉 wa.me/5491165510549
 
 Ahí vas a poder elegir el área que necesitás y te atendemos enseguida.
 
@@ -855,6 +855,318 @@ async function guardarMensajeSimple(
     })
     .eq('id', convId);
 }
+
+// ===========================================
+// WEBHOOK META CLOUD API - RECEPCIÓN DIRECTA
+// Reemplaza el WhatsApp Trigger de n8n
+// ===========================================
+const CLOUD_API_TOKEN = process.env.CLOUD_API_TOKEN || '';
+const CLOUD_API_PHONE_NUMBER_ID = process.env.CLOUD_API_PHONE_NUMBER_ID || '';
+const CLOUD_API_VENTAS_PHONE_NUMBER_ID = process.env.CLOUD_API_VENTAS_PHONE_NUMBER_ID || '';
+const CLOUD_API_BASE_URL = process.env.CLOUD_API_BASE_URL || 'https://graph.facebook.com/v21.0';
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || '';
+const META_APP_SECRET = process.env.META_APP_SECRET || '';
+const SUPABASE_STORAGE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_STORAGE_KEY = process.env.SUPABASE_SERVICE_KEY || '';
+
+// GET - Verificación del webhook por Meta
+app.get('/webhook/whatsapp', (req: Request, res: Response) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  console.log('[META-WEBHOOK] Verificación: mode=' + mode + ', token=' + token);
+
+  if (mode === 'subscribe' && token === WHATSAPP_VERIFY_TOKEN) {
+    console.log('[META-WEBHOOK] ✅ Verificación exitosa');
+    res.status(200).send(challenge);
+  } else {
+    console.log('[META-WEBHOOK] ❌ Verificación fallida');
+    res.sendStatus(403);
+  }
+});
+
+// POST - Recepción de mensajes/status de Meta
+app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
+  // Responder 200 inmediatamente (Meta requiere respuesta rápida)
+  res.sendStatus(200);
+
+  try {
+    const body = req.body;
+
+    if (!body.entry || !Array.isArray(body.entry)) return;
+
+    for (const entry of body.entry) {
+      if (!entry.changes || !Array.isArray(entry.changes)) continue;
+
+      for (const change of entry.changes) {
+        if (change.field !== 'messages') continue;
+
+        const value = change.value;
+        if (!value) continue;
+
+        // === STATUS UPDATES ===
+        if (value.statuses && Array.isArray(value.statuses) && value.statuses.length > 0) {
+          for (const status of value.statuses) {
+            try {
+              const { error } = await supabase
+                .from('mensajes')
+                .update({ estado_envio: status.status })
+                .eq('whatsapp_message_id', status.id);
+
+              if (error) {
+                console.error('[META-WEBHOOK] Error actualizando status:', error.message);
+              } else {
+                console.log('[META-WEBHOOK] Status: ' + status.id + ' → ' + status.status);
+              }
+            } catch (e) {
+              console.error('[META-WEBHOOK] Error en status update:', e);
+            }
+          }
+          continue;
+        }
+
+        // === MENSAJES ===
+        if (!value.messages || !Array.isArray(value.messages) || value.messages.length === 0) continue;
+
+        const msg = value.messages[0];
+        const contacts = value.contacts || [];
+        const tipo = msg.type;
+
+        // Payload para forward al handler existente
+        const forwardPayload: Record<string, any> = {
+          messaging_product: value.messaging_product || 'whatsapp',
+          metadata: value.metadata,
+          messages: value.messages,
+          contacts: contacts,
+          telefono: msg.from,
+          contenido: '',
+          whatsapp_message_id: msg.id,
+          tipo: tipo,
+          timestamp: msg.timestamp,
+          nombre_contacto: contacts[0]?.profile?.name || '',
+          whatsapp_context_id: msg.context?.id || '',
+        };
+
+        // Extraer contenido según tipo
+        if (tipo === 'text' && msg.text) {
+          forwardPayload.contenido = msg.text.body || '';
+        } else if (tipo === 'interactive' && msg.interactive) {
+          if (msg.interactive.type === 'list_reply') {
+            forwardPayload.contenido = msg.interactive.list_reply?.title || '';
+          } else if (msg.interactive.type === 'button_reply') {
+            forwardPayload.contenido = msg.interactive.button_reply?.title || '';
+          }
+        } else if (tipo === 'reaction' && msg.reaction) {
+          forwardPayload.contenido = '';
+          forwardPayload.emoji = msg.reaction.emoji || '';
+          forwardPayload.wamid = msg.reaction.message_id;
+        } else if (['image', 'audio', 'video', 'document', 'sticker'].includes(tipo)) {
+          // MULTIMEDIA: descargar de Meta y subir a Supabase Storage
+          const mediaObj = msg[tipo];
+          if (mediaObj && mediaObj.id) {
+            try {
+              const mediaId = mediaObj.id;
+              const mimeType = (mediaObj.mime_type || 'application/octet-stream').split(';')[0].trim();
+              const caption = mediaObj.caption || '';
+              const origFileName = mediaObj.filename || null;
+
+              const extMap: Record<string, string> = {
+                'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+                'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+                'video/mp4': 'mp4', 'video/3gpp': '3gp',
+                'application/pdf': 'pdf',
+              };
+              const ext = extMap[mimeType] || mimeType.split('/')[1] || 'bin';
+
+              const folderMap: Record<string, string> = {
+                image: 'images', audio: 'audios', video: 'videos',
+                document: 'documents', sticker: 'stickers',
+              };
+              const folder = folderMap[tipo] || 'otros';
+
+              const sanitize = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_');
+              const finalFileName = origFileName ? sanitize(origFileName) : Date.now() + '_' + mediaId + '.' + ext;
+              const storagePath = folder + '/' + finalFileName;
+
+              // 1. Obtener URL de descarga de Meta
+              const mediaUrlRes = await fetch(CLOUD_API_BASE_URL + '/' + mediaId, {
+                headers: { 'Authorization': 'Bearer ' + CLOUD_API_TOKEN },
+              });
+              const mediaUrlData: any = await mediaUrlRes.json();
+
+              if (mediaUrlData.url) {
+                // 2. Descargar
+                const downloadRes = await fetch(mediaUrlData.url, {
+                  headers: { 'Authorization': 'Bearer ' + CLOUD_API_TOKEN },
+                });
+                const fileBuffer = Buffer.from(await downloadRes.arrayBuffer());
+
+                // 3. Subir a Supabase Storage
+                const uploadRes = await fetch(SUPABASE_STORAGE_URL + '/storage/v1/object/media/' + storagePath, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': 'Bearer ' + SUPABASE_STORAGE_KEY,
+                    'Content-Type': mimeType,
+                    'x-upsert': 'true',
+                  },
+                  body: fileBuffer,
+                });
+
+                if (uploadRes.ok) {
+                  const publicUrl = SUPABASE_STORAGE_URL + '/storage/v1/object/public/media/' + storagePath;
+                  forwardPayload.media_url = publicUrl;
+                  forwardPayload.media_type = tipo;
+                  forwardPayload.media_id = mediaId;
+                  forwardPayload.contenido = caption || '[' + tipo.charAt(0).toUpperCase() + tipo.slice(1) + ']';
+                  console.log('[META-WEBHOOK] Media subida: ' + storagePath);
+                } else {
+                  console.error('[META-WEBHOOK] Error subiendo a Storage:', await uploadRes.text());
+                  forwardPayload.contenido = caption || '[' + tipo.charAt(0).toUpperCase() + tipo.slice(1) + ']';
+                }
+              }
+            } catch (mediaError) {
+              console.error('[META-WEBHOOK] Error procesando media:', mediaError);
+              forwardPayload.contenido = '[' + tipo.charAt(0).toUpperCase() + tipo.slice(1) + ']';
+            }
+          }
+        }
+
+        // Determinar línea por phone_number_id
+        const phoneNumberId = value.metadata?.phone_number_id || '';
+        let forwardPath = '/webhook/whatsapp/wsp4';
+        let lineaName = 'wsp4';
+
+        if (phoneNumberId === CLOUD_API_VENTAS_PHONE_NUMBER_ID) {
+          // VENTAS API → Automations (:3003), NO al Router
+          const isCtwa = msg.referral?.source_type === 'ad';
+          const isInteractive = tipo === 'interactive';
+
+          if (isCtwa) {
+            console.log('[META-WEBHOOK] CTWA → Automations /api/menu/enviar | from=' + msg.from);
+            try {
+              await fetch('http://127.0.0.1:3003/api/menu/enviar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  telefono: msg.from,
+                  ad_id: msg.referral?.source_id || '',
+                  ctwa_clid: msg.referral?.ctwa_clid || '',
+                  mensaje_inicial: msg.text?.body || '',
+                  nombre_contacto: contacts[0]?.profile?.name || ''
+                }),
+              });
+            } catch (e) { console.error('[META-WEBHOOK] Error CTWA:', e); }
+          } else if (isInteractive) {
+            const seleccionId = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || '';
+            console.log('[META-WEBHOOK] Interactive → Automations /api/menu/procesar-directo | from=' + msg.from);
+            try {
+              await fetch('http://127.0.0.1:3003/api/menu/procesar-directo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  telefono: msg.from,
+                  seleccion_id: seleccionId,
+                  nombre_contacto: contacts[0]?.profile?.name || ''
+                }),
+              });
+            } catch (e) { console.error('[META-WEBHOOK] Error Interactive:', e); }
+          } else {
+            // Texto, multimedia, reacción → primero autorespuesta, luego menú
+            console.log('[META-WEBHOOK] Ventas API → tipo=' + tipo + ' | from=' + msg.from);
+            try {
+              // 1. Verificar y enviar autorespuesta ANTES del menú
+              const autoRes = await fetch('http://127.0.0.1:3003/api/autorespuesta/verificar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ telefono: msg.from, linea: 'ventas_api' }),
+              });
+              const autoData: any = await autoRes.json();
+              if (autoData.enviar) {
+                const phoneNum = msg.from.replace(/\D/g, '');
+                await fetch(CLOUD_API_BASE_URL + '/' + CLOUD_API_VENTAS_PHONE_NUMBER_ID + '/messages', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': 'Bearer ' + CLOUD_API_TOKEN,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    to: phoneNum,
+                    type: 'text',
+                    text: { body: autoData.mensaje }
+                  }),
+                });
+                console.log('[META-WEBHOOK] Autorespuesta Ventas enviada a ' + msg.from);
+              }
+
+              // Siempre enviar menu despues (con o sin autorespuesta)
+              const directoRes = await fetch('http://127.0.0.1:3003/api/menu/directo', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(forwardPayload),
+                });
+                const directoResult: any = await directoRes.json();
+                console.log('[META-WEBHOOK] Directo resultado: ' + JSON.stringify(directoResult).substring(0, 200));
+            } catch (e) { console.error('[META-WEBHOOK] Error Ventas directo:', e); }
+          }
+          continue;
+        }
+
+        forwardPayload.linea_origen = 'wsp4';
+
+        // 1. Verificar autorespuesta WSP4 ANTES del forward
+        let wsp4AutoEnviada = false;
+        if (tipo === 'text' || tipo === 'image' || tipo === 'audio' || tipo === 'video' || tipo === 'document') {
+          try {
+            const autoRes = await fetch('http://127.0.0.1:3003/api/autorespuesta/verificar', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ telefono: msg.from, linea: 'wsp4' }),
+            });
+            const autoData: any = await autoRes.json();
+            if (autoData.enviar) {
+              const phoneNum = msg.from.replace(/\D/g, '');
+              await fetch(CLOUD_API_BASE_URL + '/' + CLOUD_API_PHONE_NUMBER_ID + '/messages', {
+                method: 'POST',
+                headers: {
+                  'Authorization': 'Bearer ' + CLOUD_API_TOKEN,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  messaging_product: 'whatsapp',
+                  to: phoneNum,
+                  type: 'text',
+                  text: { body: autoData.mensaje }
+                }),
+              });
+              console.log('[META-WEBHOOK] Autorespuesta WSP4 enviada a ' + msg.from + ' - sin menu');
+              wsp4AutoEnviada = true;
+            }
+          } catch (autoErr) { console.error('[META-WEBHOOK] Error autorespuesta WSP4:', autoErr); }
+        }
+
+        // Siempre forward al Router (con o sin autorespuesta)
+        {
+          console.log('[META-WEBHOOK] Forward → /webhook/whatsapp/wsp4 | tipo=' + tipo + ' | from=' + msg.from + ' | linea=wsp4');
+          try {
+            const internalRes = await fetch('http://127.0.0.1:' + PORT + '/webhook/whatsapp/wsp4', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(forwardPayload),
+            });
+            const result = await internalRes.json();
+            console.log('[META-WEBHOOK] Forward resultado: ' + JSON.stringify(result).substring(0, 200));
+          } catch (fwdError) {
+            console.error('[META-WEBHOOK] Error en forward interno:', fwdError);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('[META-WEBHOOK] Error general:', error);
+  }
+});
 
 // ===========================================
 // RUTAS
